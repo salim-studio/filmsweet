@@ -675,7 +675,8 @@ pub fn lumetri_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
 /// Properties panel (Premiere 26): a compact inspector for the selected clip.
 pub fn properties_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
-    let Some((clip, it, kind)) = selected_clip(app) else {
+    let clips = selected_clips(app);
+    let Some((clip, it, kind)) = clips.first().cloned() else {
         crate::dock::placeholder(ui, rect, &t, tl!("Select a clip to see its properties"));
         return;
     };
@@ -725,7 +726,7 @@ pub fn properties_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     };
     let eff_idx = |id: &str| it.effects.iter().position(|e| e.effect == id);
     let val = |eid: &str, p: &str| it.effect(eid).and_then(|e| e.param(p)).map(|p| p.value_at(mt));
-    if kind == filmcraft_project::TrackKind::Video {
+    if kind == TrackKind::Video {
         if section(&mut bui, app, "Transform", eff_idx("motion").map(|i| (i, clip.0)), &mut actions) {
             for (label, p, unit, speed, range) in [
                 (tl!("Position"), "position", "", 1.0, (-100_000.0, 100_000.0)),
@@ -796,7 +797,13 @@ pub fn properties_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 properties_nav(app, &mut bui, r, clip, &it, mt, "crop", p, &mut actions);
             }
         }
-    } else if section(&mut bui, app, "Audio", eff_idx("volume").map(|i| (i, clip.0)), &mut actions) {
+    }
+    if let Some((clip, it, _)) = clips.iter().find(|c| c.2 == TrackKind::Audio)
+        && section(&mut bui, app, "Audio", it.effects.iter().position(|e| e.effect == "volume").map(|i| (i, clip.0)), &mut actions)
+    {
+        let clip = *clip;
+        let mt = it.source_time_at(ph.clamp(it.start, (it.end() - Tick(1)).max(it.start)));
+        let val = |eid: &str, p: &str| it.effect(eid).and_then(|e| e.param(p)).map(|p| p.value_at(mt));
         let r = row(&mut bui, tl!("Level"));
         let mut vui = bui.new_child(
             egui::UiBuilder::new()
@@ -808,7 +815,7 @@ pub fn properties_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if let Some(nv) = nv {
             actions.push(("effects.setParam".into(), json!({"clip": clip.0, "effect": "volume", "param": "level", "value": nv})));
         }
-        properties_nav(app, &mut bui, r, clip, &it, mt, "volume", "level", &mut actions);
+        properties_nav(app, &mut bui, r, clip, it, mt, "volume", "level", &mut actions);
         let r = row(&mut bui, tl!("Pan"));
         let mut vui = bui.new_child(
             egui::UiBuilder::new()
