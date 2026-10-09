@@ -35,6 +35,50 @@ fn demo_project_is_valid_and_renders() {
     assert!(img.px.chunks(4).any(|p| p[3] > 0.9));
 }
 
+/// Ordinary and configured multi-frame offsets remain valid.
+#[test]
+fn frame_steps_in_new_custom_rate_sequences_move_in_the_requested_direction() {
+    for fps in [31.0, 23.98, 24.999] {
+        let mut s = Session::default();
+        s.execute("file.newSequence", json!({"fps": fps})).unwrap();
+        let rate = s.sequence_rate();
+        s.execute("playhead.set", json!({"frame": 10})).unwrap();
+        assert_eq!(rate.frame_at(s.playhead()), 10);
+        for frame in 11..=42 {
+            s.execute("playhead.stepForward", json!({})).unwrap();
+            assert_eq!(rate.frame_at(s.playhead()), frame);
+        }
+        for frame in (10..42).rev() {
+            s.execute("playhead.stepBack", json!({})).unwrap();
+            assert_eq!(rate.frame_at(s.playhead()), frame);
+        }
+        s.execute("prefs.set", json!({"key": "playback.stepManyFrames", "value": 12})).unwrap();
+        s.execute("playhead.stepForward5", json!({})).unwrap();
+        assert_eq!(rate.frame_at(s.playhead()), 22);
+        s.execute("playhead.stepBack5", json!({})).unwrap();
+        assert_eq!(rate.frame_at(s.playhead()), 10);
+        s.execute("playhead.step", json!({"frames": -20})).unwrap();
+        s.execute("playhead.stepBack", json!({})).unwrap();
+        assert_eq!(s.playhead(), Tick::ZERO);
+    }
+}
+
+#[test]
+fn overflowing_frame_steps_are_errors_and_leave_the_playhead_unchanged() {
+    let mut s = Session::default();
+    s.execute("file.newSequence", json!({"fps": 31.0})).unwrap();
+    for start in [10, 0] {
+        s.execute("playhead.set", json!({"frame": start})).unwrap();
+        let before = s.playhead();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.execute("playhead.step", json!({"frames": i64::MAX}))));
+        assert!(result.is_ok(), "an extreme frame offset must not panic");
+        assert!(matches!(result.unwrap(), Err(EngineError::BadParams { .. })));
+        assert_eq!(s.playhead(), before);
+    }
+    s.execute("playhead.step", json!({"frames": i64::MIN})).unwrap();
+    assert_eq!(s.playhead(), Tick::ZERO);
+}
+
 #[test]
 fn add_edit_undo_redo() {
     let mut s = demo();
