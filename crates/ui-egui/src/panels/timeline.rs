@@ -363,6 +363,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             continue;
         }
         let p = painter.with_clip_rect(Rect::from_min_max(pos2(content.min.x, row.min.y), pos2(content.max.x, row.max.y)));
+        // a track showing a track keyframe lane hides the clips' lines
+        let volume_line = r.kind == TrackKind::Audio && !app.ui.timeline.track_lanes.contains_key(&r.track.0);
         for it in &tr.items {
             let (start, dur, moved_track) = previews.get(&it.id).copied().unwrap_or((it.start, it.duration, None));
             if moved_track.is_some_and(|m| m != r.track) {
@@ -375,6 +377,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let x1 = layout.x_of(start + dur);
             let body = Rect::from_min_max(pos2(x0, r.rect.min.y + 1.0), pos2(x1.max(x0 + 1.0), r.rect.max.y - 1.0));
             draw_clip(app, &ctx, &p, body, it, r.kind, selection.contains(&it.id), &t, rate);
+            if volume_line {
+                super::timeline_volume::paint(&p, body, it);
+            }
             app.auto.add(&format!("timeline.clip.{}", it.id.0), body.intersect(content), &it.name);
             // a nest that runs past the end of its sequence's contents: that part is empty
             if !previews.contains_key(&it.id)
@@ -396,6 +401,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             {
                 let body = Rect::from_min_max(pos2(layout.x_of(*start), r.rect.min.y + 1.0), pos2(layout.x_of(*start + *dur), r.rect.max.y - 1.0));
                 draw_clip(app, &ctx, &p, body, it, r.kind, true, &t, rate);
+                if volume_line {
+                    super::timeline_volume::paint(&p, body, it);
+                }
             }
         }
         // Show Through Edits: a small bow-tie on cuts between continuous pieces of one clip
@@ -738,16 +746,6 @@ fn draw_waveform(app: &mut FilmcraftApp, p: &egui::Painter, body: Rect, it: &Tra
     if body.width() > 30.0 {
         p.rect_filled(cb, 1.0, Color32::from_black_alpha(160));
         p.text(cb.center(), Align2::CENTER_CENTER, "1", Tokens::ui(7.5), Color32::from_rgb(0xd9, 0xd9, 0xd9));
-    }
-    // volume rubber band (white line with a black shadow) at mid-height of the upper zone
-    let level = it.effect("volume").map(|e| e.f64_at("level", it.source_in)).unwrap_or(0.0);
-    let upper = Rect::from_min_max(pos2(body.min.x, body.min.y + 16.0), pos2(body.max.x, area.min.y));
-    if upper.height() > 6.0 {
-        let norm = ((level + 60.0) / 66.0).clamp(0.0, 1.0) as f32;
-        let y = upper.max.y - norm * upper.height();
-        let cp = p.with_clip_rect(body.intersect(p.clip_rect()));
-        cp.line_segment([pos2(body.min.x, y + 1.0), pos2(body.max.x, y + 1.0)], Stroke::new(1.0, Color32::BLACK));
-        cp.line_segment([pos2(body.min.x, y), pos2(body.max.x, y)], Stroke::new(1.0, Color32::WHITE));
     }
 }
 
