@@ -1599,7 +1599,7 @@ impl EditPointTarget {
 
 /// The edit point menu's trim types: label, id (`timeline.editPointMenu.<id>`), trim kind, and
 /// which side of the cut it selects (the incoming clip's In or the outgoing clip's Out).
-const EDIT_POINT_TYPES: &[(&str, &str, &str, filmcraft_edit::Edge)] = &[
+pub(crate) const EDIT_POINT_TYPES: &[(&str, &str, &str, filmcraft_edit::Edge)] = &[
     ("Ripple Trim In", "rippleIn", "ripple", filmcraft_edit::Edge::In),
     ("Ripple Trim Out", "rippleOut", "ripple", filmcraft_edit::Edge::Out),
     ("Roll Edit", "roll", "roll", filmcraft_edit::Edge::Out),
@@ -1619,6 +1619,7 @@ fn edit_point_menu(app: &mut FilmcraftApp, ctx: &egui::Context, ui: &mut egui::U
         let clip = clip.filter(|_| kind != "roll" || (target.left.is_some() && target.right.is_some()));
         let out = edge == filmcraft_edit::Edge::Out;
         let current = selected.is_some_and(|ep| Some(ep.clip) == clip && ep.out == out && serde_json::to_value(ep.kind).ok() == Some(json!(kind)));
+        let label = crate::i18n::t(label);
         let text = if current { format!("✓ {label}") } else { label.to_string() };
         let r = ui.add_enabled(clip.is_some(), egui::Button::new(text));
         app.auto.add(&format!("timeline.editPointMenu.{id}"), r.rect, label);
@@ -1633,8 +1634,9 @@ fn edit_point_menu(app: &mut FilmcraftApp, ctx: &egui::Context, ui: &mut egui::U
         }
     }
     ui.separator();
-    let r = ui.add_enabled(app.session.is_enabled("trim.applyDefaultTransition"), egui::Button::new("Apply Default Transitions"));
-    app.auto.add("timeline.editPointMenu.applyDefaultTransitions", r.rect, "Apply Default Transitions");
+    let label = tl!("Apply Default Transitions");
+    let r = ui.add_enabled(app.session.is_enabled("trim.applyDefaultTransition"), egui::Button::new(label));
+    app.auto.add("timeline.editPointMenu.applyDefaultTransitions", r.rect, label);
     if r.clicked() {
         if let Err(e) = crate::menus::invoke(app, ctx, "trim.applyDefaultTransition", json!({})) {
             app.ui.status = e;
@@ -1643,8 +1645,9 @@ fn edit_point_menu(app: &mut FilmcraftApp, ctx: &egui::Context, ui: &mut egui::U
     }
     // only this cut (and its linked partners), and only when it is a through edit
     let through = filmcraft_edit::through::through_edits(seq).iter().any(|e| Some(e.left) == target.left && Some(e.right) == target.right);
-    let r = ui.add_enabled(through, egui::Button::new("Join Through Edits"));
-    app.auto.add("timeline.editPointMenu.joinThroughEdits", r.rect, "Join Through Edits");
+    let label = tl!("Join Through Edits");
+    let r = ui.add_enabled(through, egui::Button::new(label));
+    app.auto.add("timeline.editPointMenu.joinThroughEdits", r.rect, label);
     if r.clicked()
         && let (Some(left), Some(right)) = (target.left, target.right)
     {
