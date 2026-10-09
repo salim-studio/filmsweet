@@ -112,3 +112,19 @@ fn effect_controls_show_the_audio_of_a_video_clip() {
     assert!(d.find("effectControls.effect.volume").is_none());
     d.rect("effectControls.effect.motion");
 }
+
+#[test]
+fn properties_show_the_audio_of_a_video_clip() {
+    let (mut d, pair) = Driver::demo(&["Properties"]);
+    d.exec("timeline.select", json!({"clips": [pair.video]}));
+    let scale = d.rect("properties.motion.scale.addKeyframe");
+    let level = d.rect("properties.volume.level.addKeyframe");
+    assert!(level[1] > scale[1]);
+    d.click("properties.volume.level.addKeyframe");
+    assert_eq!(d.item(pair.audio).effect("volume").unwrap().param("level").unwrap().keyframes.len(), 1);
+
+    d.exec("sequence.linkedSelection", json!({"on": false}));
+    d.exec("timeline.select", json!({"clips": [pair.audio]}));
+    d.rect("properties.volume.level.addKeyframe");
+    assert!(d.find("properties.motion.scale.addKeyframe").is_none());
+}
