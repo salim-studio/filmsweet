@@ -38,6 +38,15 @@ fn level_at(it: &TrackItem, t: Tick) -> f64 {
     level(it).map_or(0.0, |p| p.f64_at(it.source_time_at(t)))
 }
 
+/// The clip's Volume as a gain at timeline time `t`, for its waveform (1 when Volume is off or
+/// bypassed, as the mixer plays it).
+pub fn gain_at(it: &TrackItem, t: Tick) -> f32 {
+    match it.effect("volume").filter(|e| e.enabled && !e.param("bypass").and_then(|p| p.value.as_bool()).unwrap_or(false)) {
+        Some(e) => filmcraft_render::audio::db_to_gain(e.f64_at("level", it.source_time_at(t))),
+        None => 1.0,
+    }
+}
+
 /// Timeline time of media time `m`, the inverse of [`TrackItem::moving_source_time_at`].
 fn timeline_time(it: &TrackItem, m: Tick) -> Tick {
     let rel = if it.reverse { it.source_out().0.saturating_sub(1).saturating_sub(m.0) } else { m.0.saturating_sub(it.source_in.0) };
@@ -350,6 +359,18 @@ mod tests {
             let body = Rect::from_min_max(pos2(0.0, 0.0), pos2(400.0, 80.0));
             assert_eq!(keys(&it, body).len(), 2);
         }
+    }
+
+    #[test]
+    fn the_waveform_gain_is_the_volume_that_plays() {
+        let mut it = clip(1.0, false);
+        assert_eq!(gain_at(&it, Tick(2_000)), 1.0);
+        let e = it.effect_mut("volume").unwrap();
+        e.param_mut("level").unwrap().value = filmcraft_project::ParamValue::Float(-6.0);
+        assert!((gain_at(&it, Tick(2_000)) - 0.501).abs() < 0.01);
+        let e = it.effect_mut("volume").unwrap();
+        e.param_mut("bypass").unwrap().value = filmcraft_project::ParamValue::Bool(true);
+        assert_eq!(gain_at(&it, Tick(2_000)), 1.0, "bypassed");
     }
 
     #[test]

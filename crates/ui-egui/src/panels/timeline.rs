@@ -734,6 +734,8 @@ fn draw_waveform(app: &mut FilmcraftApp, p: &egui::Painter, body: Rect, it: &Tra
         for (a, b) in peaks.iter().skip(s0).take(s1 - s0) {
             m = m.max(a.abs()).max(b.abs());
         }
+        // as in Premiere, the waveform shows the clip's Volume
+        m *= super::timeline_volume::gain_at(it, t0);
         // View ▸ Dynamic Audio Waveforms (default): logarithmic scale, −48 dB → 0, 0 dB → full;
         // off: linear amplitude
         let h = if dynamic {
