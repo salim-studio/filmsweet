@@ -19,10 +19,10 @@ fills translated templates, and `i18n::t` translates names from registries. Plac
 (including user filenames containing braces) are inserted literally. Catalog translations are
 original work using ordinary language, without proprietary localisation resources.
 
-Spanish covers menus, panels, dialogs, settings and registry labels. Searches accept both the
+Spanish and Japanese cover menus, panels, dialogs, settings and registry labels. Searches accept both the
 translated label and its English source, including Unicode capitals. Project content, command ids
 and preference values retain their original values. Engine errors, CLI and MCP messages remain
-English; Japanese currently covers core menus and falls back to English elsewhere.
+English; Brazilian Portuguese currently covers core menus and falls back to English elsewhere.
 
 Verification: `cargo test -p filmcraft-ui-egui` checks catalog syntax, duplicate keys, placeholders,
 literal/menu/registry coverage and UI behaviour; `cargo xtask ci` runs the workspace gates. Visual
