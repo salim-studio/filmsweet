@@ -1063,6 +1063,8 @@ mod nesting_tests;
 #[cfg(test)]
 mod panels_tests;
 #[cfg(test)]
+mod par_tests;
+#[cfg(test)]
 mod presets_tests;
 #[cfg(test)]
 mod previews_tests;
