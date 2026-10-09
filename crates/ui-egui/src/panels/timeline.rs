@@ -114,6 +114,8 @@ pub enum Drag {
         clip: ClipId,
         delta: Tick,
     },
+    /// An audio clip's Volume line (see [`super::timeline_volume`]).
+    Volume(super::timeline_volume::LineDrag),
     Stretch {
         clip: ClipId,
         edge: filmcraft_edit::Edge,
@@ -150,6 +152,8 @@ pub struct Row {
     pub kind: TrackKind,
     pub index: usize,
     pub rect: Rect,
+    /// An audio track showing a track keyframe lane, which hides its clips' Volume lines.
+    pub lane: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -315,14 +319,16 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     app.ui.timeline.v_scroll = app.ui.timeline.v_scroll.clamp(0.0, max_vs);
     for (i, tr) in seq.video_tracks.iter().enumerate() {
         let top = video_area.min.y + v_off + (nv - 1 - i) as f32 * vh - (max_vs - app.ui.timeline.v_scroll);
-        rows.push(Row { track: tr.id, kind: TrackKind::Video, index: i, rect: Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + vh)) });
+        let rect = Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + vh));
+        rows.push(Row { track: tr.id, kind: TrackKind::Video, index: i, rect, lane: false });
     }
     let na = seq.audio_tracks.len();
     let max_as = (na as f32 * ah - audio_area.height()).max(0.0);
     app.ui.timeline.a_scroll = app.ui.timeline.a_scroll.clamp(0.0, max_as);
     for (i, tr) in seq.audio_tracks.iter().enumerate() {
         let top = audio_area.min.y + i as f32 * ah - app.ui.timeline.a_scroll;
-        rows.push(Row { track: tr.id, kind: TrackKind::Audio, index: i, rect: Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + ah)) });
+        let rect = Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + ah));
+        rows.push(Row { track: tr.id, kind: TrackKind::Audio, index: i, rect, lane: app.ui.timeline.track_lanes.contains_key(&tr.id.0) });
     }
     let layout = Layout { content, ruler, rows: rows.clone(), pps, scroll, split_y };
     app.tl.layout = Some(layout.clone());
@@ -363,8 +369,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             continue;
         }
         let p = painter.with_clip_rect(Rect::from_min_max(pos2(content.min.x, row.min.y), pos2(content.max.x, row.max.y)));
-        // a track showing a track keyframe lane hides the clips' lines
-        let volume_line = r.kind == TrackKind::Audio && !app.ui.timeline.track_lanes.contains_key(&r.track.0);
+        let volume_line = r.kind == TrackKind::Audio && !r.lane;
         for it in &tr.items {
             let (start, dur, moved_track) = previews.get(&it.id).copied().unwrap_or((it.start, it.duration, None));
             if moved_track.is_some_and(|m| m != r.track) {
@@ -515,6 +520,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
 
     // ---- interaction
     interact(app, ui, &seq, &layout, rect);
+    super::timeline_volume::interact(app, ui, &seq, &layout, aclip);
     // track keyframes (drawn and edited on top of the clips)
     super::timeline_automation::show(app, ui, &seq, &layout, aclip);
     if cap_n > 0 {
@@ -1451,6 +1457,7 @@ pub fn hit_json(app: &FilmcraftApp, pos: Pos2, mods: egui::Modifiers) -> Value {
     let grab = grab_at(seq, layout, pos, app.ui.tool, mods, app.session.prefs.trim.selection_tool_roll_ripple);
     let kind = match grab {
         Grab::Edge { kind, .. } => json!(kind.name()),
+        Grab::Volume { .. } => json!("volume"),
         Grab::Other(_) => Value::Null,
     };
     match grab.hit() {
@@ -1728,6 +1735,8 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         let g = grab_at(seq, layout, p, tool, mods, roll_ripple);
         let cur = match (tool, g) {
             (_, Grab::Edge { .. }) => CursorIcon::ResizeColumn,
+            (_, Grab::Volume { .. }) if tool == Tool::Pen || mods.command => CursorIcon::Crosshair,
+            (_, Grab::Volume { .. }) => CursorIcon::ResizeVertical,
             (Tool::Razor, Grab::Other(Hit::Clip { .. })) => CursorIcon::Crosshair,
             (Tool::Slip | Tool::Slide, Grab::Other(Hit::Clip { .. })) => CursorIcon::ResizeHorizontal,
             (Tool::Hand, _) => CursorIcon::Grab,
@@ -1761,7 +1770,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             }
         };
         let (p, t) = (pressed.pos, pressed.tick);
-        let started = match (tool, pressed.grab) {
+        let adding = tool == Tool::Pen || mods.command;
+        // a plain click on a Volume line selects the clip, as anywhere else on it
+        let grab = match pressed.grab {
+            Grab::Volume { .. } if resp.clicked() && !adding => Grab::Other(pressed.grab.hit()),
+            g => g,
+        };
+        let started = match (tool, grab) {
             (_, Grab::Other(Hit::Ruler)) => Some(Drag::Scrub),
             (Tool::Hand, _) => Some(Drag::Pan { last: p }),
             (Tool::Zoom, _) => {
@@ -1822,6 +1837,11 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 EdgeKind::Stretch => Drag::Stretch { clip, edge, delta: Tick::ZERO, from: t },
                 EdgeKind::Remix => Drag::Remix { clip, delta: Tick::ZERO, from: t },
             }),
+            (_, Grab::Volume { clip, .. }) if resp.drag_started() => super::timeline_volume::start(seq, layout, clip, p).map(Drag::Volume),
+            (_, Grab::Volume { clip, .. }) => {
+                super::timeline_volume::add_keyframe(app, seq, layout, clip, p.x);
+                None
+            }
             (Tool::Slip, Grab::Other(Hit::Clip { clip, .. })) => Some(Drag::Slip { clip, delta: Tick::ZERO }),
             (Tool::Slide, Grab::Other(Hit::Clip { clip, .. })) => Some(Drag::Slide { clip, delta: Tick::ZERO }),
             (_, Grab::Other(Hit::Clip { clip, track, .. })) => {
@@ -1937,6 +1957,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 let origin = ctx.input(|i| i.pointer.press_origin()).map(|o| layout.tick_at(o.x)).unwrap_or(t_here);
                 Some(Drag::Slide { clip, delta: rate.snap_nearest(t_here - origin) })
             }
+            Drag::Volume(v) => Some(Drag::Volume(super::timeline_volume::drag(app, ui, seq, layout, v, p.y))),
             Drag::Marquee { start } => {
                 let r = Rect::from_two_pos(start, p);
                 ui.painter().rect_filled(r, 0.0, Color32::from_white_alpha(18));
@@ -1947,7 +1968,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         };
         app.tl.drag = new;
         // auto-scroll when dragging near the edges
-        if !matches!(app.tl.drag, Some(Drag::Pan { .. }) | Some(Drag::ZoomBar { .. })) {
+        if !matches!(app.tl.drag, Some(Drag::Pan { .. }) | Some(Drag::ZoomBar { .. }) | Some(Drag::Volume(_))) {
             let v = &mut app.ui.timeline;
             if p.x > layout.content.max.x - 20.0 {
                 v.target_scroll += 6.0 / v.pps;
