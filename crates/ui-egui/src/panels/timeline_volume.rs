@@ -20,6 +20,7 @@ use super::timeline_hit::EDGE_PX;
 use crate::FilmcraftApp;
 use crate::icons::{self, Icon};
 use crate::state::Tool;
+use crate::theme::Tokens;
 
 const KEY_COL: Color32 = Color32::from_rgb(0xc8, 0xc8, 0xc8);
 
@@ -171,9 +172,11 @@ fn run(app: &mut FilmcraftApp, acts: Vec<(&str, Value)>) {
     }
 }
 
+/// The level next to the pointer while dragging: one line, always as wide, so it does not jump.
 fn tip(ui: &egui::Ui, db: f64) {
+    let text = if db <= FADER_MIN_DB { format!("{:>7} dB", "-∞") } else { format!("{db:>+7.2} dB") };
     egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("tl-volume-tip"), egui::PopupAnchor::Pointer).show(|ui| {
-        ui.label(format!("{db:.2} dB"));
+        ui.add(egui::Label::new(egui::RichText::new(text).font(Tokens::mono(12.0))).wrap_mode(egui::TextWrapMode::Extend));
     });
 }
 
