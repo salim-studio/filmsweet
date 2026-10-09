@@ -1211,17 +1211,18 @@ pub fn map_output(left: &[f32], right: &[f32], out: &mut [f32], ch: usize, map: 
     }
 }
 
-/// Settings ▸ Media ▸ Default Media Scaling for a clip of `src` size placed in a `frame`-sized
-/// sequence: `scaleToFrameSize` turns on Scale to Frame Size (rasterised at frame size),
-/// `setToFrameSize` sets Motion ▸ Scale so the picture fits the frame.
-pub fn apply_media_scaling(ti: &mut filmcraft_project::TrackItem, scaling: &str, frame: (u32, u32), src: (u32, u32)) {
-    if src.0 == 0 || src.1 == 0 {
+/// Settings ▸ Media ▸ Default Media Scaling for a clip placed in a `frame`-sized sequence. `src`
+/// is the clip's size at its display aspect in sequence pixels
+/// ([`filmcraft_project::conformed_size`]): `scaleToFrameSize` turns on Scale to Frame Size
+/// (rasterised at frame size), `setToFrameSize` sets Motion ▸ Scale so the picture fits the frame.
+pub fn apply_media_scaling(ti: &mut filmcraft_project::TrackItem, scaling: &str, frame: (u32, u32), src: (f64, f64)) {
+    if !(src.0 >= 1e-9 && src.1 >= 1e-9 && src.0.is_finite() && src.1.is_finite()) {
         return;
     }
     match scaling {
         "scaleToFrameSize" => ti.scale_to_frame = true,
         "setToFrameSize" => {
-            let fit = (frame.0 as f64 / src.0 as f64).min(frame.1 as f64 / src.1 as f64);
+            let fit = (frame.0 as f64 / src.0).min(frame.1 as f64 / src.1);
             if let Some(m) = ti.effects.iter_mut().find(|e| e.effect == "motion") {
                 m.params.insert("scale".into(), filmcraft_project::Param::new(filmcraft_project::ParamValue::Float((fit * 1000.0).round() / 10.0)));
             }
