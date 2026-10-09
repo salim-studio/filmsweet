@@ -65,6 +65,36 @@ fn graphic_duration_keeps_explicit_time_frame_and_timecode_placement() {
     }
 }
 
+/// A new graphic goes on the track and at the time it is given, for a shape as for text; a track
+/// that is not free there is an error named after the command that asked.
+#[test]
+fn graphic_placement_takes_a_track_and_a_time() {
+    let commands =
+        [("graphics.newText", json!({})), ("graphics.newShape", json!({})), ("graphics.newRectangle", json!({})), ("graphics.newPolygon", json!({"sides": 5}))];
+    for (command, mut params) in commands {
+        let mut s = Session::default();
+        s.execute("file.newSequence", json!({"name": "Placement", "fps": 24, "width": 128, "height": 128, "video": 3, "audio": 1})).unwrap();
+        s.execute("playhead.set", json!({"frame": 72})).unwrap();
+        params["track"] = json!(2);
+        params["frame"] = json!(24);
+        params["seconds"] = json!(1);
+        let r = s.execute(command, params.clone()).unwrap();
+        let clip = ClipId(r["clip"].as_u64().unwrap());
+        let q = s.active_sequence().unwrap();
+        let (track, it) = q.find_item(clip).unwrap();
+        assert_eq!(track, q.video_tracks[2].id, "{command}");
+        assert_eq!((it.start, it.duration), (Tick::from_seconds_f64(1.0), Tick::from_seconds_f64(1.0)), "{command}");
+        // the same place again is taken
+        let e = s.execute(command, params).unwrap_err().to_string();
+        assert!(e.contains("V3 is not free here"), "{command}: {e}");
+        let named = if command == "graphics.newText" { "graphics.newText" } else { "graphics.newShape" };
+        assert!(e.contains(named), "{command}: {e}");
+        assert_eq!(s.active_sequence().unwrap().video_tracks[2].items.len(), 1, "{command}");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert!(s.active_sequence().unwrap().find_item(clip).is_none(), "{command}");
+    }
+}
+
 #[test]
 fn new_text_makes_a_graphic_clip_above_the_footage() {
     let mut s = demo();
