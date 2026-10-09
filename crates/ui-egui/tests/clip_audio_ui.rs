@@ -1,5 +1,8 @@
 //! Audio of video clips (#223): a selected video clip shows the Volume, Channel Volume and Panner
-//! of the audio linked to it as well, as in Premiere.
+//! of the audio linked to it as well, as in Premiere, and the Volume line on audio clips in the
+//! timeline can be dragged and keyframed.
+//!
+//! With `FILMCRAFT_UI_SHOTS=<dir>` the tests also render the UI with wgpu and write PNGs there.
 
 use std::sync::mpsc::{Sender, channel};
 
@@ -13,6 +16,7 @@ use serde_json::{Value, json};
 struct Driver {
     harness: Harness<'static, FilmcraftApp>,
     tx: Sender<ControlRequest>,
+    shots: Option<std::path::PathBuf>,
 }
 
 /// The demo's first clip: its video on V1 and the audio linked to it on A1.
@@ -27,8 +31,13 @@ impl Driver {
         session.execute("file.openDemoProject", json!({})).expect("demo project");
         let (tx, rx) = channel();
         let app = FilmcraftApp::new(session).with_control(rx);
-        let harness = Harness::builder().with_size(egui::vec2(1600.0, 1100.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
-        let mut d = Driver { harness, tx };
+        let shots = std::env::var_os("FILMCRAFT_UI_SHOTS").map(std::path::PathBuf::from);
+        let mut b = Harness::builder().with_size(egui::vec2(1600.0, 1100.0)).with_max_steps(10_000);
+        if shots.is_some() {
+            b = b.wgpu().with_pixels_per_point(1.0);
+        }
+        let harness = b.build_eframe(move |_cc| app);
+        let mut d = Driver { harness, tx, shots };
         d.frames(4);
         let seq = d.exec("sequence.inspect", json!({}));
         let v = &seq["video"][0]["items"][0];
@@ -86,6 +95,27 @@ impl Driver {
     fn item(&self, clip: u64) -> TrackItem {
         self.harness.state().session.active_sequence().unwrap().find_item(ClipId(clip)).unwrap().1.clone()
     }
+    /// The clip's Volume level: its value and its keyframes (media time, dB).
+    fn level(&self, clip: u64) -> (f64, Vec<(i64, f64)>) {
+        let it = self.item(clip);
+        let p = it.effect("volume").unwrap().param("level").unwrap().clone();
+        (p.value.as_f64().unwrap(), p.keyframes.iter().map(|k| (k.time.0, k.value.as_f64().unwrap())).collect())
+    }
+    fn drag(&mut self, from: (f64, f64), by: (f64, f64)) {
+        self.ok("ui.drag", json!({"from": {"x": from.0, "y": from.1}, "to": {"x": from.0 + by.0, "y": from.1 + by.1}, "steps": 6}));
+        self.frames(3);
+    }
+    fn shot(&mut self, name: &str) {
+        let Some(dir) = self.shots.clone() else { return };
+        self.frames(10);
+        let img = self.harness.render().expect("wgpu render");
+        std::fs::create_dir_all(&dir).unwrap();
+        img.save(dir.join(format!("{name}.png"))).unwrap();
+    }
+}
+
+fn centre(r: [f64; 4]) -> (f64, f64) {
+    (r[0] + r[2] / 2.0, r[1] + r[3] / 2.0)
 }
 
 #[test]
@@ -127,4 +157,80 @@ fn properties_show_the_audio_of_a_video_clip() {
     d.exec("timeline.select", json!({"clips": [pair.audio]}));
     d.rect("properties.volume.level.addKeyframe");
     assert!(d.find("properties.motion.scale.addKeyframe").is_none());
+}
+
+#[test]
+fn dragging_the_volume_line_changes_the_level() {
+    let (mut d, pair) = Driver::demo(&[]);
+    let start = d.item(pair.audio).start;
+    let (before, _) = d.level(pair.audio);
+    d.shot("volume-line");
+    let line = d.rect(&format!("timeline.clip.{}.volume", pair.audio));
+    d.drag(centre(line), (0.0, -12.0));
+    let (after, keys) = d.level(pair.audio);
+    assert!(after > before + 1.0, "{before} dB → {after} dB");
+    assert!(keys.is_empty());
+    assert_eq!(d.item(pair.audio).start, start, "the clip did not move");
+    let moved = d.rect(&format!("timeline.clip.{}.volume", pair.audio));
+    assert!(moved[1] < line[1] - 8.0, "the line went up with the pointer: {line:?} → {moved:?}");
+    d.shot("volume-line-dragged");
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.level(pair.audio).0, before, "the drag was one undo step");
+}
+
+/// The line belongs to the clip: a click on it selects the clip and a right-click opens the clip
+/// menu, only a drag (or the Pen tool) edits the level.
+#[test]
+fn clicks_on_the_volume_line_still_reach_the_clip() {
+    let (mut d, pair) = Driver::demo(&[]);
+    let (x, y) = centre(d.rect(&format!("timeline.clip.{}.volume", pair.audio)));
+    assert_eq!(d.ok("ui.timeline.hit", json!({"x": x, "y": y}))["kind"], "volume");
+    d.ok("ui.click", json!({"x": x, "y": y}));
+    d.frames(3);
+    assert!(d.harness.state().session.state.selection.contains(&ClipId(pair.audio)));
+    d.ok("ui.click", json!({"x": x, "y": y, "button": "right"}));
+    d.frames(3);
+    d.rect("timeline.clipMenu.clip.link");
+    assert!(d.level(pair.audio).1.is_empty());
+}
+
+#[test]
+fn volume_keyframes_on_the_timeline() {
+    let (mut d, pair) = Driver::demo(&[]);
+    let id = format!("timeline.clip.{}.volume", pair.audio);
+    let clip = d.rect(&format!("timeline.clip.{}", pair.audio));
+    let (_, y) = centre(d.rect(&id));
+    // the Pen tool adds keyframes on the line
+    d.ok("ui.set", json!({"tool": "Pen"}));
+    for f in [0.3, 0.7] {
+        d.ok("ui.click", json!({"x": clip[0] + clip[2] * f, "y": y}));
+        d.frames(3);
+    }
+    let (_, keys) = d.level(pair.audio);
+    assert_eq!(keys.len(), 2, "{keys:?}");
+    d.ok("ui.set", json!({"tool": "Selection"}));
+
+    // the line between them takes both down
+    d.drag((clip[0] + clip[2] * 0.5, y), (0.0, 10.0));
+    let (_, low) = d.level(pair.audio);
+    assert_eq!(low.iter().map(|k| k.0).collect::<Vec<_>>(), keys.iter().map(|k| k.0).collect::<Vec<_>>());
+    assert!(low[0].1 < keys[0].1 - 1.0 && (low[0].1 - low[1].1).abs() < 1e-9, "{keys:?} → {low:?}");
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.level(pair.audio).1, keys);
+
+    // a keyframe moves in time and level
+    let k = d.rect(&format!("{id}.kf.1"));
+    d.drag(centre(k), (40.0, -10.0));
+    let (_, moved) = d.level(pair.audio);
+    assert_eq!(moved[0], keys[0]);
+    assert!(moved[1].0 > keys[1].0 && moved[1].1 > keys[1].1, "{keys:?} → {moved:?}");
+    d.shot("volume-keyframes");
+    d.exec("edit.undo", json!({}));
+    assert_eq!(d.level(pair.audio).1, keys, "the keyframe drag was one undo step");
+
+    // right-click ▸ Delete
+    d.ok("ui.click", json!({"id": format!("{id}.kf.0"), "button": "right"}));
+    d.frames(3);
+    d.click(&format!("{id}.kf.0.delete"));
+    assert_eq!(d.level(pair.audio).1, keys[1..]);
 }
