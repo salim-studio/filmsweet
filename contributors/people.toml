@@ -40,3 +40,7 @@ sync_github_name = true
 
 [people.ItzBloxy]
 display_name = "Bloxy"
+
+[people.ReReddo]
+display_name = "ReReddo"
+sync_github_name = false
