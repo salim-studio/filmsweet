@@ -2497,7 +2497,7 @@ fn build() -> Vec<CommandSpec> {
             "Move Keyframe",
             [],
             None,
-            r#"{"clip":id,"effect":str|index,"param":str,"mediaTime":ticks,"to":ticks}"#,
+            r#"{"clip":id,"effect":str|index,"param":str,"mediaTime":ticks,"to":ticks,"value":any?,"merge":bool?,"begin":bool?}"#,
             has_seq,
             |s, p| keyframe_op(s, p, "move")
         ),
@@ -2515,7 +2515,7 @@ fn build() -> Vec<CommandSpec> {
             "Edit Keyframe",
             [],
             None,
-            r#"{"clip":id,"effect":str|index,"param":str,"mediaTime":ticks,"value":any?,"inInfluence":0..1?,"outInfluence":0..1?}"#,
+            r#"{"clip":id,"effect":str|index,"param":str,"mediaTime":ticks,"value":any?,"inInfluence":0..1?,"outInfluence":0..1?,"merge":bool?,"begin":bool?}"#,
             has_seq,
             |s, p| keyframe_op(s, p, "set")
         ),
@@ -2704,7 +2704,12 @@ fn keyframe_op(s: &mut Session, p: &Value, op: &str) -> Result<Value> {
         "set" => "Edit Keyframe",
         _ => "Keyframe Interpolation",
     };
-    s.edit_sequence(label, |q, _, _| {
+    // a keyframe dragged on the timeline is one undo step, like a dragged value
+    let merge = bool_p(p, "merge").unwrap_or(false).then(|| format!("keyframe:{op}:{}:{eff}:{pid}:{}", c.0, p.get("mask").unwrap_or(&Value::Null)));
+    if bool_p(p, "begin").unwrap_or(false) {
+        s.history.merge_key = None;
+    }
+    s.edit_sequence_as(label, merge.as_deref(), |q, _, _| {
         let (_, it) = q.find_item_mut(c).ok_or(filmcraft_edit::EditError::NoItem(c))?;
         let mt_now = it.source_time_at(ph.clamp(it.start, (it.end() - Tick(1)).max(it.start)));
         let e = match &eff {
@@ -2730,6 +2735,9 @@ fn keyframe_op(s: &mut Session, p: &Value, op: &str) -> Result<Value> {
                 if let Some(i) = prm.keyframes.iter().position(|k| k.time == from) {
                     let mut k = prm.keyframes.remove(i);
                     k.time = to;
+                    if let Some(v) = p.get("value") {
+                        k.value = json_to_param(&k.value, v).ok_or_else(|| bad("keyframe", "value has the wrong type"))?;
+                    }
                     prm.keyframes.retain(|x| x.time != to);
                     let at = prm.keyframes.partition_point(|x| x.time < to);
                     prm.keyframes.insert(at, k);

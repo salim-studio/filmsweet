@@ -282,6 +282,51 @@ fn add_keyframe_toggles_the_keyframe_at_the_playhead() {
     assert_eq!(scale(&s), (0, 100.0));
 }
 
+/// Dragging the Volume line or one of its keyframes in the timeline (#223) sends a keyframe edit
+/// every frame; `merge` keeps the whole drag one undo step and `begin` starts the next one.
+#[test]
+fn keyframe_drags_are_one_undo_step() {
+    let mut s = demo();
+    let c = s.active_sequence().unwrap().audio_tracks[0].items[0].id.0;
+    let level = |s: &Session| -> Vec<(i64, f64)> {
+        let it = s.active_sequence().unwrap().find_item(filmcraft_project::ClipId(c)).unwrap().1;
+        it.effect("volume").unwrap().params["level"].keyframes.iter().map(|k| (k.time.0, k.value.as_f64().unwrap())).collect()
+    };
+    let key = json!({"clip": c, "effect": "volume", "param": "level"});
+    for sec in [0.5, 1.5] {
+        s.execute("playhead.set", json!({"seconds": sec})).unwrap();
+        s.execute("effects.addKeyframe", key.clone()).unwrap();
+    }
+    let before = level(&s);
+    let [(t0, _), (t1, _)] = before[..] else { panic!("two keyframes: {before:?}") };
+
+    // the line between them: both keyframes move together, frame after frame
+    for (i, v) in [-1.0, -2.0, -3.0].into_iter().enumerate() {
+        for t in [t0, t1] {
+            let p = json!({"clip": c, "effect": "volume", "param": "level", "mediaTime": t, "value": v, "merge": true, "begin": i == 0 && t == t0});
+            s.execute("effects.setKeyframe", p).unwrap();
+        }
+    }
+    assert_eq!(level(&s), [(t0, -3.0), (t1, -3.0)]);
+    s.undo();
+    assert_eq!(level(&s), before);
+
+    // one keyframe: time and value in one command
+    let mut at = t1;
+    for (i, d) in [1000, 2000, 3000].into_iter().enumerate() {
+        let p = json!({"clip": c, "effect": "volume", "param": "level", "mediaTime": at, "to": t1 + d, "value": -6.0, "merge": true, "begin": i == 0});
+        s.execute("effects.moveKeyframe", p).unwrap();
+        at = t1 + d;
+    }
+    assert_eq!(level(&s), [before[0], (t1 + 3000, -6.0)]);
+    s.undo();
+    assert_eq!(level(&s), before);
+
+    let bad = json!({"clip": c, "effect": "volume", "param": "level", "mediaTime": t0, "to": t0 + 1, "value": "loud"});
+    assert!(s.execute("effects.moveKeyframe", bad).is_err());
+    assert_eq!(level(&s), before);
+}
+
 #[test]
 fn transitions_and_markers() {
     let mut s = demo();
