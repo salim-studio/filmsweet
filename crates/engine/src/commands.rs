@@ -1325,13 +1325,17 @@ fn build() -> Vec<CommandSpec> {
                 Ok(Value::Null)
             }
         ),
+        // Each clip flips on its own, as in Premiere (#484): with one enabled and one disabled clip
+        // selected, Enable swaps them rather than first making both the same.
         cmd!("clip.enable", "Enable", ["Clip"], Some("Shift+E"), r#"{"clips":[id]?}"#, has_selection, |s, p| {
-            let sel = with_links(s, &clips_p(s, p));
+            let mut sel = with_links(s, &clips_p(s, p));
+            // a clip named twice must still flip once
+            sel.sort();
+            sel.dedup();
             s.edit_sequence("Enable", |q, _, _| {
-                let target = !sel.iter().all(|c| q.find_item(*c).is_some_and(|(_, i)| i.enabled));
                 for c in &sel {
                     if let Some((_, i)) = q.find_item_mut(*c) {
-                        i.enabled = target;
+                        i.enabled = !i.enabled;
                     }
                 }
                 Ok(())
