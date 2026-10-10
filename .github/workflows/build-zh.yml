@@ -1,0 +1,55 @@
+# 说明：把本文件放到你 fork 仓库的 .github/workflows/ 目录下（文件名随意，如 build-zh.yml）。
+# 它会在 GitHub 的云服务器上（Windows）用 Rust 编译出带中文的 FilmCraft.exe，
+# 编译完成后你从 Actions 页面的 Artifacts 下载即可。无需你本地安装任何编译环境。
+#
+# 前提：你已按《三步极简提交指南》把 zh.tsv 和两个 .new 文件放进仓库（即中文已就位）。
+# 本工作流只负责"编译"，不负责"翻译"。
+
+name: Build zh Windows (self-use)
+
+on:
+  # 手动在 Actions 页面点 "Run workflow" 触发（推荐）
+  workflow_dispatch:
+  # 推送到 main 也自动触发（比如你提交了中文文件后）
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    name: Build FilmCraft (zh) for Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: zh-win-x64
+
+      - name: Build release (FilmCraft GUI)
+        shell: bash
+        run: cargo build --release -p filmcraft
+
+      - name: Upload exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: filmcraft-windows-x64-zh
+          path: |
+            target/release/filmcraft.exe
+            target/release/filmcraft-cli.exe
+          if-no-files-found: error
+          retention-days: 30
