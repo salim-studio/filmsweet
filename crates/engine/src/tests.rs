@@ -641,3 +641,37 @@ fn dragging_an_effect_parameter_is_one_undo_step() {
     s.undo();
     assert_eq!(opacity(&s), start, "and then the whole first one");
 }
+
+/// #484: Enable flips each selected clip on its own, as in Premiere. With one enabled and one
+/// disabled clip selected it swaps them, instead of first making both the same.
+#[test]
+fn enable_flips_each_selected_clip() {
+    let mut s = demo();
+    let enabled = |s: &Session, c: u64| s.active_sequence().unwrap().find_item(ClipId(c)).unwrap().1.enabled;
+    let partner = |s: &Session, c: u64| {
+        let q = s.active_sequence().unwrap();
+        let link = q.find_item(ClipId(c)).unwrap().1.link?;
+        q.all_tracks().flat_map(|t| t.items.iter()).find(|i| i.link == Some(link) && i.id != ClipId(c)).map(|i| i.id.0)
+    };
+    let (a, b) = (v1(&s)[0].0, v1(&s)[1].0);
+    s.execute("clip.enable", json!({"clips": [a]})).unwrap();
+    assert_eq!((enabled(&s, a), enabled(&s, b)), (false, true));
+    // mixed selection: each flips
+    s.execute("clip.enable", json!({"clips": [a, b]})).unwrap();
+    assert_eq!((enabled(&s, a), enabled(&s, b)), (true, false));
+    s.execute("clip.enable", json!({"clips": [a, b]})).unwrap();
+    assert_eq!((enabled(&s, a), enabled(&s, b)), (false, true));
+    // a clip named twice still flips once, and one press is one undo step
+    s.execute("clip.enable", json!({"clips": [a, a]})).unwrap();
+    assert!(enabled(&s, a));
+    s.undo();
+    assert_eq!((enabled(&s, a), enabled(&s, b)), (false, true));
+    // with linked selection on, a clip's linked audio flips with it
+    if let Some(au) = partner(&s, a) {
+        assert_eq!(enabled(&s, au), enabled(&s, a));
+    }
+    // a uniform selection still toggles as before
+    s.execute("clip.enable", json!({"clips": [b]})).unwrap();
+    s.execute("clip.enable", json!({"clips": [a, b]})).unwrap();
+    assert_eq!((enabled(&s, a), enabled(&s, b)), (true, true));
+}
