@@ -600,7 +600,7 @@ fn draw_clip(
     let base = label_color(app, it.label);
     let inr = in_range(app, it);
     let fill = if !it.enabled {
-        Color32::from_rgb(0x2a, 0x2a, 0x2a)
+        t.disabled_clip_bg
     } else if inr {
         lighten(base, 0.12)
     } else if selected {
@@ -987,7 +987,7 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
             true,
             t,
             egui::Id::new(("locked", r.track.0)),
-            Some(if tr.locked { Color32::from_rgb(0xd1, 0xd1, 0xd1) } else { t.text_dim }),
+            Some(if tr.locked { t.icon_active } else { t.text_dim }),
         );
         app.auto.add(&format!("timeline.track.{label}.locked"), lock_r, "Toggle Track Lock");
         if lresp.clicked() {
@@ -995,7 +995,7 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
         }
         if tr.locked {
             // diagonal hatch over locked lanes is drawn by the lane painter; here a subtle tint
-            p.rect_filled(Rect::from_min_max(pos2(hrect.max.x - 4.0, hrect.min.y), hrect.max), 0.0, Color32::from_rgb(0x4b, 0x4b, 0x4b));
+            p.rect_filled(Rect::from_min_max(pos2(hrect.max.x - 4.0, hrect.min.y), hrect.max), 0.0, t.pressed);
         }
         // 3. target
         let targeted = tg.targeted.contains(&r.track);
@@ -1141,7 +1141,7 @@ fn draw_top(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq: &Sequenc
         let resp = ui.interact(r, egui::Id::new(("tl-toggle", key)), Sense::click()).on_hover_text(tip);
         app.auto.add(&format!("timeline.toggle.{key}"), r, tip);
         if toggle && on {
-            p.rect_filled(r, 4.0, Color32::from_rgb(0x4b, 0x4b, 0x4b));
+            p.rect_filled(r, 4.0, t.pressed);
         } else if resp.hovered() {
             p.rect_filled(r, 4.0, t.hover);
         }
@@ -1320,10 +1320,10 @@ fn zoom_scrollbar(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, seq_seco
     let (left, w, per_point) = zoom_thumb(bar, seq_seconds, v.scroll, v.pps);
     let thumb = Rect::from_min_max(pos2(left, bar.min.y), pos2(left + w, bar.max.y));
     let hover = ui.rect_contains_pointer(thumb);
-    p.rect_filled(thumb, thumb.height() / 2.0, if hover { Color32::from_rgb(0x6a, 0x6a, 0x6a) } else { Color32::from_rgb(0x4b, 0x4b, 0x4b) });
+    p.rect_filled(thumb, thumb.height() / 2.0, if hover { t.scroll_thumb_hover } else { t.scroll_thumb });
     for x in [thumb.min.x + thumb.height() / 2.0, thumb.max.x - thumb.height() / 2.0] {
         p.circle_filled(pos2(x, thumb.center().y), 4.5, t.panel_bg);
-        p.circle_stroke(pos2(x, thumb.center().y), 4.5, Stroke::new(1.5, Color32::from_rgb(0xd1, 0xd1, 0xd1)));
+        p.circle_stroke(pos2(x, thumb.center().y), 4.5, Stroke::new(1.5, t.icon_active));
     }
     app.auto.add("timeline.zoomBar", thumb, "zoom scroll bar");
     app.auto.add("timeline.zoomBar.track", bar, "zoom scroll bar track");
@@ -1403,13 +1403,12 @@ fn vertical_scrollbar(ui: &mut egui::Ui, bar: Rect, value: &mut f32, max: f32, i
     let pos = if invert { 1.0 - *value / max } else { *value / max };
     let y = bar.min.y + (bar.height() - h) * pos;
     let thumb = Rect::from_min_size(pos2(bar.min.x + 1.0, y), vec2(bar.width() - 2.0, h));
-    p.rect_filled(thumb, 3.0, Color32::from_rgb(80, 80, 80));
+    p.rect_filled(thumb, 3.0, t.vertical_scroll_thumb);
     let resp = ui.interact(bar, egui::Id::new(("tl-vs", id)), Sense::drag());
     if resp.dragged() {
         let d = resp.drag_delta().y / (bar.height() - h).max(1.0) * max;
         *value = (*value + if invert { -d } else { d }).clamp(0.0, max);
     }
-    let _ = t;
 }
 
 /// Snap `t` to nearby candidates (edits, playhead, markers, in/out). Returns snapped tick.
