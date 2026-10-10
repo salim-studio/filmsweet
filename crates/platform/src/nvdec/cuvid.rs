@@ -97,6 +97,9 @@ fn check_caps(caps: &CUVIDDECODECAPS, coded: (u32, u32), bits: u32) -> Result<()
     Ok(())
 }
 
+/// Slices per picture the driver's offset list is read for.
+const MAX_SLICES: u32 = 8192;
+
 struct State {
     api: Api,
     // Points to Session's separately boxed, immutable Device (stable across moves).
@@ -306,12 +309,24 @@ unsafe extern "C" fn sequence(data: *mut c_void, format: *mut CUVIDEOFORMAT) -> 
     unsafe { callback(data, |state| state.sequence(format.as_ref().ok_or("NVDEC sequence pointer is null")?)) }
 }
 unsafe extern "C" fn decode(data: *mut c_void, picture: *mut CUVIDPICPARAMS) -> i32 {
-    // SAFETY: the opaque picture parameters belong to cuvid for the callback's duration;
-    // they are only passed through to the live decoder with the context current.
+    // SAFETY: the picture parameters belong to cuvid for the callback's duration: their shared
+    // head is read (the slice offset list for at most `MAX_SLICES` entries, as the parser sized
+    // it), and they are passed through to the live decoder with the context current.
     unsafe {
         callback(data, |state| {
             if state.decoder.is_null() || picture.is_null() {
                 return Err("NVDEC decode pointer or decoder is null".into());
+            }
+            // A picture without bitstream data, or with slices past the end of it, is an error
+            // here and never reaches the driver.
+            let p = &*picture;
+            let offsets = if p.pSliceDataOffsets.is_null() || p.nNumSlices > MAX_SLICES {
+                &[][..]
+            } else {
+                std::slice::from_raw_parts(p.pSliceDataOffsets, p.nNumSlices as usize)
+            };
+            if p.pBitstreamData.is_null() || p.nBitstreamDataLen == 0 || offsets.is_empty() || offsets.iter().any(|&o| o > p.nBitstreamDataLen) {
+                return Err("NVDEC parser returned a picture without valid bitstream data".into());
             }
             state.drain()?;
             status((state.api.decode)(state.decoder, picture), "cuvidDecodePicture")?;

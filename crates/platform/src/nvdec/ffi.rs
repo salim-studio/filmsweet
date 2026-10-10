@@ -26,7 +26,7 @@
 //! NVDEC declarations transcribed from NVIDIA's MIT headers (NVDEC API 13.1).
 //! Linux LP64 only; C `tcu_ulong` is an unsigned long, not a u32.
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
-use std::ffi::{c_int, c_ulong, c_void};
+use std::ffi::{c_int, c_uint, c_ulong, c_void};
 pub const cudaVideoCodec_H264: c_int = 4;
 pub const cudaVideoCodec_HEVC: c_int = 8;
 pub const cudaVideoChromaFormat_420: c_int = 1;
@@ -37,9 +37,20 @@ pub const cudaVideoCreate_PreferCUVID: c_ulong = 4;
 pub const CUVID_PKT_ENDOFSTREAM: c_ulong = 1;
 pub const CUVID_PKT_TIMESTAMP: c_ulong = 2;
 pub const CUVID_PKT_ENDOFPICTURE: c_ulong = 8;
+/// The start of `CUVIDPICPARAMS`: the fields every codec shares and this backend checks. The rest
+/// (reserved words and the codec-specific union) is only ever passed through by pointer.
 #[repr(C)]
 pub struct CUVIDPICPARAMS {
-    _opaque: [u8; 0],
+    pub PicWidthInMbs: c_int,
+    pub FrameHeightInMbs: c_int,
+    pub CurrPicIdx: c_int,
+    pub field_pic_flag: c_int,
+    pub bottom_field_flag: c_int,
+    pub second_field: c_int,
+    pub nBitstreamDataLen: c_uint,
+    pub pBitstreamData: *const u8,
+    pub nNumSlices: c_uint,
+    pub pSliceDataOffsets: *const c_uint,
 }
 #[repr(C)]
 #[derive(Clone, Copy)]

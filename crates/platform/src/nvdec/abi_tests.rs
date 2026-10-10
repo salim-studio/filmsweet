@@ -6,6 +6,10 @@ use super::ffi::*;
 use std::mem::{align_of, offset_of, size_of};
 #[test]
 fn layouts_match_the_header() {
+    assert_eq!(offset_of!(CUVIDPICPARAMS, nBitstreamDataLen), 24, "CUVIDPICPARAMS.nBitstreamDataLen");
+    assert_eq!(offset_of!(CUVIDPICPARAMS, pBitstreamData), 32, "CUVIDPICPARAMS.pBitstreamData");
+    assert_eq!(offset_of!(CUVIDPICPARAMS, nNumSlices), 40, "CUVIDPICPARAMS.nNumSlices");
+    assert_eq!(offset_of!(CUVIDPICPARAMS, pSliceDataOffsets), 48, "CUVIDPICPARAMS.pSliceDataOffsets");
     assert_eq!((size_of::<CUVIDEOFORMAT>(), align_of::<CUVIDEOFORMAT>()), (64, 4));
     assert_eq!(offset_of!(CUVIDEOFORMAT, codec), 0);
     assert_eq!(offset_of!(CUVIDEOFORMAT, frame_rate), 4);
