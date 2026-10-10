@@ -129,12 +129,30 @@ fn parse_file(bytes: &[u8]) -> std::result::Result<PresetFile, String> {
 // settings
 // ---------------------------------------------------------------------------------------------
 
+/// `sampleRate` → `sample_rate`.
+fn camel_to_snake(k: &str) -> String {
+    let mut out = String::with_capacity(k.len() + 2);
+    for c in k.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('_');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Deep-merge `patch` into `base` (objects merge, everything else replaces).
 fn merge(base: &mut Value, patch: &Value) {
     match (base, patch) {
         (Value::Object(b), Value::Object(p)) => {
             for (k, v) in p {
-                merge(b.entry(k.clone()).or_insert(Value::Null), v);
+                // Some nested settings structs serialize snake_case (`audio.sample_rate`); accept the documented camelCase
+                // spelling for them too instead of adding a second, ignored key next to the default.
+                let snake = camel_to_snake(k);
+                let key = if !b.contains_key(k) && b.contains_key(&snake) { snake } else { k.clone() };
+                merge(b.entry(key).or_insert(Value::Null), v);
             }
         }
         (b, p) => *b = p.clone(),
