@@ -1996,4 +1996,4 @@ mod tests {
         nest.frame_hold = Some(f(100));
         assert_eq!(p.nest_overhang(&nest), Some(nest.range()));
     }
-            }
+}
