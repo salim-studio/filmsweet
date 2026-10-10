@@ -570,6 +570,29 @@ fn new_bin_asks_for_its_name() {
     assert!(d.app().ui.project_panel.rename.is_none());
 }
 
+#[test]
+fn new_bin_then_clear_removes_the_bin() {
+    // leftover Project item selection must not keep Clear from removing the new bin
+    let mut d = project_driver();
+    d.exec("project.view.set", json!({"view": "list"}));
+    d.click("project.button.new-item");
+    d.wait_for("project.newItem.file.newColorMatte");
+    d.click("project.newItem.file.newColorMatte");
+    d.click("colorMatte.ok");
+    let items0 = d.app().session.project.items.len();
+    let bins0 = d.app().session.project.root.children.len();
+    assert!(!d.app().session.state.project_selection.is_empty());
+    d.click("project.button.file.newBin");
+    d.frames(2);
+    let bin = d.app().ui.project_panel.selected_bin.expect("the new bin is selected");
+    assert!(d.app().session.state.project_selection.is_empty(), "New Bin clears leftover item selection");
+    d.click("project.button.project.delete");
+    d.frames(2);
+    assert!(d.app().session.project.root.find_bin(filmcraft_project::BinId(bin)).is_none(), "Clear removes the new bin");
+    assert_eq!(d.app().session.project.root.children.len(), bins0);
+    assert_eq!(d.app().session.project.items.len(), items0, "clips already in the project stay");
+}
+
 // ------------------------------------------------------------------------------------ Media Browser
 
 fn media_dir(tag: &str) -> std::path::PathBuf {
