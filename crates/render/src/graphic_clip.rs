@@ -12,7 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use filmcraft_geom::{Affine, Vec2};
-use filmcraft_project::graphic::{LayerContent, LayerSpec, ShapeProps, TextProps, eval_layer};
+use filmcraft_project::graphic::{LayerContent, LayerSpec, LinearGradient, ShapeProps, TextProps, eval_layer};
 use filmcraft_project::graphic_design::{GraphicMeta, PinNode, remap_time, resolve_pins, roll_offset};
 use filmcraft_project::{EffectInstance, TrackItem};
 use filmcraft_text::raster::{Xform, apply, fill_into, xform_scale};
@@ -191,6 +191,55 @@ fn over_mask(px: &mut [f32], m: &Mask, c: [f32; 4]) {
     });
 }
 
+fn invert_xform(m: &Xform) -> Option<Xform> {
+    let det = m[0] * m[3] - m[1] * m[2];
+    if det.abs() < 1e-8 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let a = m[3] * inv;
+    let b = -m[1] * inv;
+    let c = -m[2] * inv;
+    let d = m[0] * inv;
+    Some([a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])])
+}
+
+/// Paint `grad` through `msk`. 0° runs left to right across `lb` in layer space; the angle is
+/// clockwise on screen and turns with `inv` (the device→layer transform).
+fn over_linear_gradient(px: &mut [f32], msk: &Mask, grad: &LinearGradient, lb: [f32; 4], inv: &Xform, origin: (i32, i32)) {
+    if msk.w == 0 {
+        return;
+    }
+    let (cx, cy) = ((lb[0] + lb[2]) * 0.5, (lb[1] + lb[3]) * 0.5);
+    let (sin, cos) = grad.angle.to_radians().sin_cos();
+    let (ax, ay) = (cos, sin);
+    let corners = [(lb[0], lb[1]), (lb[2], lb[1]), (lb[0], lb[3]), (lb[2], lb[3])];
+    let half = corners.iter().map(|(x, y)| ((x - cx) * ax + (y - cy) * ay).abs()).fold(1e-3_f32, f32::max);
+    let w = msk.w;
+    let (start, end) = (grad.start, grad.end);
+    px.par_chunks_mut(4 * w).enumerate().for_each(|(row, dest)| {
+        let py = origin.1 as f32 + row as f32 + 0.5;
+        let mrow = &msk.a[row * w..(row + 1) * w];
+        for (col, (p, &cov)) in dest.as_chunks_mut::<4>().0.iter_mut().zip(mrow).enumerate() {
+            if cov <= 0.0 {
+                continue;
+            }
+            let (lx, ly) = apply(inv, origin.0 as f32 + col as f32 + 0.5, py);
+            let t = (((((lx - cx) * ax + (ly - cy) * ay) / half) + 1.0) * 0.5).clamp(0.0, 1.0);
+            let c = premul_linear([
+                start[0] * (1.0 - t) + end[0] * t,
+                start[1] * (1.0 - t) + end[1] * t,
+                start[2] * (1.0 - t) + end[2] * t,
+                start[3] * (1.0 - t) + end[3] * t,
+            ]);
+            let k = 1.0 - c[3] * cov;
+            for i in 0..4 {
+                p[i] = c[i] * cov + p[i] * k;
+            }
+        }
+    });
+}
+
 /// Rasterise one layer with layer→device transform `m`, clipped to a `cw`×`ch` canvas.
 pub fn raster_layer(spec: &LayerSpec, m: &Xform, cw: usize, ch: usize) -> Option<LayerRaster> {
     if !spec.enabled || spec.transform.opacity <= 0.0 {
@@ -294,7 +343,15 @@ pub fn raster_layer(spec: &LayerSpec, m: &Xform, cw: usize, ch: usize) -> Option
             over_mask(&mut px, sm, premul_linear(*c));
         }
     }
-    if let Some(c) = ap.fill {
+    if let Some(grad) = &ap.gradient
+        && !matches!(&spec.content, LayerContent::Text(t) if t.runs.iter().any(|(_, s)| s.fill.is_some()))
+    {
+        if let Some(inv) = invert_xform(m) {
+            over_linear_gradient(&mut px, &cover, grad, lb, &inv, (x0, y0));
+        } else if let Some(c) = ap.fill {
+            over_mask(&mut px, &cover, premul_linear(c));
+        }
+    } else if let Some(c) = ap.fill {
         // per-character fills: each style run with its own colour is drawn on its own
         let run_fills: Vec<Option<[f32; 4]>> = match &spec.content {
             LayerContent::Text(t) => t.runs.iter().map(|(_, s)| s.fill).collect(),
@@ -700,6 +757,45 @@ mod tests {
         let sh = img.get(150, 135);
         assert!(sh[3] > 0.5 && sh[0] < 0.05 && sh[2] < 0.05, "black shadow {sh:?}");
         assert_eq!(img.get(20, 20)[3], 0.0);
+    }
+
+    #[test]
+    fn linear_gradient_runs_left_to_right_on_a_shape_and_on_text() {
+        let mut shape = new_shape_layer(0, Vec2::new(100.0, 100.0), Vec2::new(80.0, 40.0), vec![]);
+        set(&mut shape, "fill_kind", ParamValue::Choice(1));
+        set(&mut shape, "gradient_start", ParamValue::Color([1.0, 0.0, 0.0, 1.0]));
+        set(&mut shape, "gradient_end", ParamValue::Color([0.0, 0.0, 1.0, 1.0]));
+        set(&mut shape, "gradient_angle", ParamValue::Float(0.0));
+        let mut img = Image::new(200, 200);
+        render_graphic_layers(&[shape], Tick::ZERO, (200, 200), &Affine::IDENTITY, &mut img);
+        let left = img.get(70, 100);
+        let right = img.get(130, 100);
+        assert!(left[3] > 0.9 && left[0] > left[2], "redder on the left {left:?}");
+        assert!(right[3] > 0.9 && right[2] > right[0], "bluer on the right {right:?}");
+
+        let mut text = new_text_layer("HHHHHHHH", Vec2::new(16.0, 90.0), 64.0);
+        set(&mut text, "fill_kind", ParamValue::Choice(1));
+        set(&mut text, "gradient_start", ParamValue::Color([1.0, 0.0, 0.0, 1.0]));
+        set(&mut text, "gradient_end", ParamValue::Color([0.0, 0.0, 1.0, 1.0]));
+        let mut img = Image::new(500, 180);
+        render_graphic_layers(&[text], Tick::ZERO, (500, 180), &Affine::IDENTITY, &mut img);
+        let ink: Vec<(usize, usize)> = (0..img.h).flat_map(|y| (0..img.w).map(move |x| (x, y))).filter(|&(x, y)| img.get(x, y)[3] > 0.8).collect();
+        let minx = ink.iter().map(|p| p.0).min().unwrap();
+        let maxx = ink.iter().map(|p| p.0).max().unwrap();
+        let span = (maxx - minx).max(1);
+        let (mut ln, mut rn, mut ls, mut rs) = (0.0_f32, 0.0, 0.0, 0.0);
+        for &(x, y) in &ink {
+            let p = img.get(x, y)[0];
+            if x < minx + span / 3 {
+                ls += p;
+                ln += 1.0;
+            } else if x > maxx - span / 3 {
+                rs += p;
+                rn += 1.0;
+            }
+        }
+        assert!(ln > 30.0 && rn > 30.0, "ink on both ends of the title: {ln} {rn} x {minx}..{maxx}");
+        assert!(ls / ln > rs / rn + 0.15, "text ramps from red to blue: {} {}", ls / ln, rs / rn);
     }
 
     #[test]

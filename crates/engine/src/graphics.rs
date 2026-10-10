@@ -190,6 +190,10 @@ fn param_id(k: &str) -> &str {
         "fontSize" => "size",
         "fontStyle" | "style" => "font_style",
         "fillColor" | "color" => "fill_color",
+        "fillKind" => "fill_kind",
+        "gradientStart" => "gradient_start",
+        "gradientEnd" => "gradient_end",
+        "gradientAngle" => "gradient_angle",
         "strokeColor" => "stroke_color",
         "strokeWidth" => "stroke_width",
         "backgroundColor" => "background_color",
@@ -212,6 +216,7 @@ pub(crate) fn to_param(template: &ParamValue, id: &str, v: &Value) -> Option<Par
             "align" => graphic::ALIGN_OPTS,
             "caps" => graphic::CAPS_OPTS,
             "stroke_type" | "stroke2_type" => graphic::STROKE_OPTS,
+            "fill_kind" => graphic::FILL_KIND_OPTS,
             "shape" => SHAPE_OPTS,
             _ => &[],
         };
