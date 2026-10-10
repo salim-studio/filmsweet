@@ -34,14 +34,18 @@ pub enum Language {
     /// Persisted as `pt-br` (the blanket `rename_all` would produce `ptbr`).
     #[serde(rename = "pt-br")]
     PtBr,
+    /// Persisted as `zh` (Simplified Chinese).
+    #[serde(rename = "zh")]
+    Zh,
 }
 
 static JAPANESE: OnceLock<Catalog> = OnceLock::new();
 static SPANISH: OnceLock<Catalog> = OnceLock::new();
 static PORTUGUESE: OnceLock<Catalog> = OnceLock::new();
+static CHINESE: OnceLock<Catalog> = OnceLock::new();
 
 impl Language {
-    pub const ALL: [Self; 4] = [Self::En, Self::Ja, Self::Es, Self::PtBr];
+    pub const ALL: [Self; 5] = [Self::En, Self::Ja, Self::Es, Self::PtBr, Self::Zh];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -49,6 +53,7 @@ impl Language {
             Self::Ja => "日本語",
             Self::Es => "Español",
             Self::PtBr => "Português (Brasil)",
+            Self::Zh => "简体中文",
         }
     }
 
@@ -58,6 +63,7 @@ impl Language {
             "ja" => Some(Self::Ja),
             "es" => Some(Self::Es),
             "pt-br" => Some(Self::PtBr),
+            "zh" => Some(Self::Zh),
             _ => None,
         }
     }
@@ -66,7 +72,7 @@ impl Language {
     /// (BCP 47 or POSIX locale tags such as `es-419`, `pt_BR.UTF-8`, most preferred first) that the
     /// interface has, else English. Any Portuguese gets the Brazilian catalog, the only one there is.
     pub fn from_locales(tags: &[String]) -> Self {
-        const PRIMARY: [(&str, Language); 4] = [("en", Language::En), ("ja", Language::Ja), ("es", Language::Es), ("pt", Language::PtBr)];
+        const PRIMARY: [(&str, Language); 5] = [("en", Language::En), ("ja", Language::Ja), ("es", Language::Es), ("pt", Language::PtBr), ("zh", Language::Zh)];
         tags.iter()
             .find_map(|tag| {
                 let primary = tag.split(['-', '_', '.', '@']).next().unwrap_or_default();
@@ -82,6 +88,7 @@ impl Language {
             Self::Ja => "ja",
             Self::Es => "es",
             Self::PtBr => "pt-br",
+            Self::Zh => "zh",
         }
     }
 
@@ -92,6 +99,7 @@ impl Language {
             Self::Ja => Some(JAPANESE.get_or_init(|| Catalog::parse(include_str!("ja.tsv")))),
             Self::Es => Some(SPANISH.get_or_init(|| Catalog::parse(include_str!("es.tsv")))),
             Self::PtBr => Some(PORTUGUESE.get_or_init(|| Catalog::parse(include_str!("pt-br.tsv")))),
+            Self::Zh => Some(CHINESE.get_or_init(|| Catalog::parse(include_str!("zh.tsv")))),
         }
     }
 
@@ -240,13 +248,71 @@ pub fn install_japanese_font(ctx: &egui::Context) -> bool {
     true
 }
 
+/// Common Simplified Chinese characters the interface font must cover.
+const CHINESE_SAMPLE: &str = "简体中文界面字体渲染测试";
+
+/// Installed families preferred for Simplified Chinese interface text, best first (sans-serif
+/// faces read best at menu sizes). Any other installed face that covers [`CHINESE_SAMPLE`] is
+/// used if none of these is present.
+const PREFERRED_CHINESE: &[&str] = &[
+    "Microsoft YaHei",
+    "PingFang SC",
+    "PingFang TC",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK TC",
+    "Noto Sans SC",
+    "Source Han Sans SC",
+    "Source Han Sans",
+    "Heiti SC",
+    "SimHei",
+    "WenQuanYi Micro Hei",
+    "WenQuanYi Zen Hei",
+    "Droid Sans Fallback",
+];
+
+const CHINESE_FONT: &str = "system-chinese";
+
+/// A Simplified Chinese font already installed on this system, for the interface (none is
+/// bundled). Looked up once per process: the system font folders are scanned on first use
+/// (name tables only), then the chosen face's file is read. `None` on the web and on systems
+/// without a CJK font.
+pub fn system_chinese_font() -> Option<Arc<egui::FontData>> {
+    static FONT: OnceLock<Option<Arc<egui::FontData>>> = OnceLock::new();
+    FONT.get_or_init(|| {
+        filmcraft_text::fonts::scan_system();
+        let faces: Vec<_> = filmcraft_text::fonts::all_faces().into_iter().filter(|f| f.info.origin == "system" && !f.info.italic).collect();
+        let covers = |f: &filmcraft_text::fonts::Face| CHINESE_SAMPLE.chars().all(|c| f.has_char(c));
+        let by_weight = |f: &&Arc<filmcraft_text::fonts::Face>| f.info.weight.abs_diff(400);
+        let preferred =
+            PREFERRED_CHINESE.iter().find_map(|name| faces.iter().filter(|f| f.info.family.eq_ignore_ascii_case(name) && covers(f)).min_by_key(by_weight));
+        let face = preferred.or_else(|| faces.iter().filter(|f| covers(f)).min_by_key(by_weight))?;
+        let bytes: &'static [u8] = Box::leak(face.data()?.into_boxed_slice());
+        Some(Arc::new(egui::FontData { font: std::borrow::Cow::Borrowed(bytes), index: face.info.index, tweak: Default::default() }))
+    })
+    .clone()
+}
+
+/// Simplified Chinese for the interface: adds the system's Chinese font as the last fallback
+/// of every theme font family, from the next pass on. Returns false (and changes nothing)
+/// when no CJK-capable font is installed. Call it again after `theme::install`, which replaces
+/// the font definitions.
+pub fn install_chinese_font(ctx: &egui::Context) -> bool {
+    let Some(font) = system_chinese_font() else { return false };
+    let families = crate::theme::font_families()
+        .into_iter()
+        .map(|family| egui::epaint::text::InsertFontFamily { family, priority: egui::epaint::text::FontPriority::Lowest })
+        .collect();
+    ctx.add_font(egui::epaint::text::FontInsert { name: CHINESE_FONT.into(), data: (*font).clone(), families });
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn catalogs_are_well_formed() {
-        for (code, text) in [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv"))] {
+        for (code, text) in [("es", include_str!("es.tsv")), ("ja", include_str!("ja.tsv")), ("pt-br", include_str!("pt-br.tsv")), ("zh", include_str!("zh.tsv"))] {
             let (entries, errors) = catalog::parse_entries(text);
             assert!(errors.is_empty(), "{code}: {errors:?}");
             for (i, (ctx, en, tr)) in entries.iter().enumerate() {
