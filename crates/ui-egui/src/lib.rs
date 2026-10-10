@@ -46,6 +46,7 @@ pub mod panels;
 pub mod perf;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod play_ahead;
+pub mod scrub;
 pub mod source_playback;
 pub mod state;
 pub mod theme;
@@ -204,9 +205,10 @@ const SCREENSHOT_TIMEOUT_S: f64 = 10.0;
 /// timeline zoom animation finished) before capturing what is there.
 const SCREENSHOT_SETTLE_MAX_S: f64 = 5.0;
 
-/// File ▸ Export entries that run from the menus through the save panel: command, filter label,
+/// Export entries that run from the menus through the save panel: command, filter label,
 /// extension.
-pub(crate) const EXPORT_SAVE_DIALOGS: [(&str, &str, &str); 6] = [
+pub(crate) const EXPORT_SAVE_DIALOGS: [(&str, &str, &str); 7] = [
+    ("markers.exportCsv", "Marker report (CSV)", "csv"),
     ("file.exportEdl", "EDL", "edl"),
     ("file.exportFcp7Xml", "Final Cut Pro XML", "xml"),
     ("file.exportFcpxml", "FCPXML", "fcpxml"),
@@ -223,6 +225,8 @@ pub struct FilmcraftApp {
     pub playback: Playback,
     pub source_playback: source_playback::SourcePlayback,
     pub audio: Option<Box<dyn AudioOut>>,
+    /// Audio during scrubbing (#211).
+    pub scrub: scrub::ScrubAudio,
     pub hooks: HostHooks,
     pub dialog: Option<Dialog>,
     pub file_dialogs: panels::file_dialogs::FileDialogState,
@@ -426,6 +430,7 @@ impl FilmcraftApp {
             playback: Playback { speed: 1.0, ..Default::default() },
             source_playback: Default::default(),
             audio: None,
+            scrub: Default::default(),
             hooks: HostHooks::default(),
             // Unsaved changes left by a session that died are offered first thing.
             dialog: recovery.then_some(Dialog::Recovery),
@@ -534,6 +539,9 @@ impl FilmcraftApp {
             if language == i18n::Language::Ja && !i18n::install_japanese_font(ctx) {
                 self.ui.language = i18n::Language::En;
                 self.ui.status = tl!("no Japanese font is installed on this system; the interface stays in English").into();
+            } else if language == i18n::Language::ZhCn && !i18n::chinese_font_available() {
+                self.ui.language = i18n::Language::En;
+                self.ui.status = tl!("no Chinese font is installed on this system; the interface stays in English").into();
             } else {
                 self.ui.language = language;
             }
@@ -1351,6 +1359,7 @@ impl FilmcraftApp {
         self.handle_shortcuts(&ctx);
         self.advance_playback(&ctx);
         self.advance_source_playback(&ctx);
+        self.scrub_audio(&ctx);
         let t = self.tokens;
         let full = ui.max_rect();
         ui.painter().rect_filled(full, 0.0, t.app_bg);
@@ -1612,7 +1621,9 @@ impl eframe::App for FilmcraftApp {
             theme::install(ctx, &self.tokens);
             // theme::install replaces the fonts: add the system Japanese font back (or fall back to
             // English when a saved Japanese setting meets a system without one)
-            if self.ui.language == i18n::Language::Ja && !i18n::install_japanese_font(ctx) {
+            // (likewise Chinese without a Chinese face)
+            let japanese_missing = self.ui.language == i18n::Language::Ja && !i18n::install_japanese_font(ctx);
+            if japanese_missing || (self.ui.language == i18n::Language::ZhCn && !i18n::chinese_font_available()) {
                 self.ui.language = i18n::Language::En;
             }
             self.styled = true;

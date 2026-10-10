@@ -680,7 +680,15 @@ static CATEGORIES: &[Category] = &[
             f(
                 "general.interfaceLanguage",
                 "Interface Language",
-                Kind::Choice(&[("system", "System Language"), ("en", "English"), ("ja", "日本語"), ("es", "Español"), ("pt-br", "Português (Brasil)")]),
+                Kind::Choice(&[
+                    ("system", "System Language"),
+                    ("en", "English"),
+                    ("ja", "日本語"),
+                    ("es", "Español"),
+                    ("pt-br", "Português (Brasil)"),
+                    ("uk", "Українська"),
+                    ("zh-cn", "简体中文"),
+                ]),
                 true,
             ),
             f("general.atStartup", "At Startup", Kind::Choice(STARTUP), true),
