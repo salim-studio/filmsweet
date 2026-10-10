@@ -673,3 +673,21 @@ fn shorter_head_closes_the_stretch_after_the_cut_on_sync_locked_tracks() {
         assert_eq!(fx.spans(v1), vec![(0, 10), (10, 10), (20, 10)], "unchanged on failure");
     }
 }
+
+#[test]
+fn roll_reversed_clips_keeps_media_mapping() {
+    let mut fx = Fx::new();
+    let v = fx.v(0);
+    let mut a = fx.item(0, 30, 20);
+    a.reverse = true;
+    let mut b = fx.item(30, 30, 50);
+    b.reverse = true;
+    let (ia, ib) = (a.id, b.id);
+    fx.seq.track_mut(v).unwrap().items.extend([a, b]);
+    let mut n = 0;
+    roll(&mut fx.seq, ia, ib, f(10), &mut Fx::ctx(&mut n)).unwrap();
+    let (_, l) = fx.seq.find_item(ia).unwrap();
+    assert_eq!((l.start, l.duration, l.source_in), (f(0), f(40), f(10)));
+    let (_, r) = fx.seq.find_item(ib).unwrap();
+    assert_eq!((r.start, r.duration, r.source_in), (f(40), f(20), f(50)));
+}
