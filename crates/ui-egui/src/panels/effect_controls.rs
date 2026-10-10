@@ -466,6 +466,14 @@ pub(crate) fn param_row(
             if egui::color_picker::color_edit_button_rgba(&mut vui, &mut rgba, egui::color_picker::Alpha::Opaque).changed() {
                 set = Some(json!([rgba.r(), rgba.g(), rgba.b(), rgba.a()]));
             }
+            // Eyedropper: arm it, then click a pixel in the Program monitor (Esc cancels)
+            let target = crate::state::Eyedropper { clip: clip.0, effect: idx, param: pd.id.to_string(), mask };
+            let armed = app.ui.eyedropper.as_ref() == Some(&target);
+            let drop = icons::button(&mut vui, Icon::Eyedropper, 18.0, armed, &t, tl!("Eyedropper (pick a color from the Program monitor)"));
+            app.auto.add(&format!("effectControls.{}.{}.eyedropper", e.effect, pkey), drop.rect, "Eyedropper");
+            if drop.clicked() {
+                app.ui.eyedropper = if armed { None } else { Some(target) };
+            }
         }
         (ParamKind::Path, _) => {
             crate::panels::masks::path_value(app, &mut vui, clip, idx, mask, actions);
