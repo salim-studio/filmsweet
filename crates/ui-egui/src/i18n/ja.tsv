@@ -93,3 +93,6 @@
 	OK	OK
 	Type Tool	文字ツール
 	Vertical Type Tool	縦書き文字ツール
+
+# System appearance mode menu command.
+	Next Appearance Mode	次の外観モード

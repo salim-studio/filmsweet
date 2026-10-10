@@ -455,6 +455,11 @@ impl Preferences {
         settings::sanitize(&mut v, &Self::default().to_value());
         let mut p: Preferences = serde_json::from_value(v).map_err(|e| format!("`{key}`: {e}"))?;
         p.clamp();
+        // Old clients that set the single Color Theme still pick the theme they name.
+        if key == "appearance.colorTheme" {
+            let theme = p.appearance.color_theme.clone();
+            p.appearance.select_theme(&theme);
+        }
         *self = p;
         Ok(())
     }
