@@ -156,9 +156,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G10. Container and codec gaps on import
 
 - **Have:** E-AC-3 (Dolby Digital Plus) in MP4, MOV, Matroska and MPEG-TS (#647): independent
-  substream, 1–6 blocks per syncframe, spectral extension.
-- **Missing:** E-AC-3 adaptive hybrid transform, enhanced coupling and the extra channels of 7.1
-  dependent substreams (played as the 5.1 core), AVI (#598; listed as an extension but no
+  substream, 1–6 blocks per syncframe, spectral extension. MP2 (MPEG audio layer II) in MP4 and
+  MOV, sample-exact against ffmpeg (#800).
+- **Missing:** MP2 at bit rates ISO/IEC 11172-3 disallows: mono above 192 kbit/s (ffmpeg's default
+  for mono MP2 is 384 kbit/s) and stereo below 64 kbit/s; the bootstrap decoder (symphonia, also
+  0.6) rejects every such frame, so the track plays silent: needs our own layer I/II decoder.
+  E-AC-3 adaptive hybrid transform, enhanced coupling and the extra channels of 7.1 dependent
+  substreams (played as the 5.1 core), AVI (#598; listed as an extension but no
   demuxer), WMV / ASF, DV / DVCPRO / DV100, MPEG-4 Part 2, FLAC in MP4 (#603), camera RAW (R3D
   incl. R3D NE, ARRIRAW, Sony RAW / X-OCN, Canon RAW, BRAW, ProRes RAW; #345, #383), JPEG 2000 /
   JPEG XS MXF, Cinema DNG; stills: PSD, EXR, DPX, Targa, HEIF / HEIC, Radiance HDR, AI / EPS;
@@ -187,10 +191,11 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G13. Delivery formats
 
 - **Missing:** AV1 export (software or hardware), MPEG-2 / DVD / Blu-ray, DCP, JPEG 2000 MXF,
-  AS-10 / AS-11, XDCAM HD MXF, P2, OpenEXR sequences, MP3 and AAC-only audio,
+  AS-10 / AS-11, XDCAM HD MXF, P2, compressed (ZIP / PIZ / DWA) OpenEXR, MP3 and AAC-only audio,
   ProRes 4444 / XQ in the export UI (#342; the encoder has the profiles), interlaced encoding,
   smart render, HEVC software encoder (HEVC exists only where a hardware encoder does).
-- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779).
+- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779); OpenEXR
+  sequences (half float, linear, uncompressed; #806).
 - **Estimate:** 60–110 h. Doc: [file-format-parity.md](file-format-parity.md).
 
 ## G14. Localization: 8 of the 12 key languages missing
@@ -227,11 +232,12 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G18. Effects depth: approximations and missing behaviour
 
-- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut approximate, Lumetri
-  HDR-aware maths, multicam paging beyond 16 angles, redesigned 26.0 mask tools (constrained
-  lines; an on-monitor corner-roundness handle).
+- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut has no face tracking
+  (and occlusion edges are soft), Lumetri HDR-aware maths, multicam paging beyond 16 angles,
+  redesigned 26.0 mask tools (constrained lines; an on-monitor corner-roundness handle).
 - **Have:** Optical Flow time interpolation synthesises motion-compensated in-between frames (dense
-  coarse-to-fine Lucas–Kanade, CPU; #780); Transform shutter angle motion blur (#415); Ultra Key
+  coarse-to-fine Lucas–Kanade, CPU; #780); Morph Cut morphs the subject along that optical flow
+  instead of cross-dissolving (CPU; #805); Transform shutter angle motion blur (#415); Ultra Key
   Setting applied as a parameter preset (#458); rectangle and polygon masks round their corners
   with circular fillets (`masks.add` `cornerRadius`, `masks.roundCorners`, every path keyframe;
   #813).
