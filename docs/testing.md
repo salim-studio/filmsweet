@@ -73,7 +73,8 @@ are never linked or shipped ([AGENTS.md](../AGENTS.md) §2).
   without a Direct3D 11 video device or the HEVC / VP9 / AV1 codec extensions of the Microsoft Store. The VP9 and
   AV1 fixtures (libvpx-vp9, libaom-av1; 360p, 1080p, 2160p, hidden alt-ref frames, two GOPs) need an ffmpeg with those encoders.
 
-The NVENC tests (`crates/platform/tests/nvenc.rs` and `nvenc_export.rs` for H.264, `nvenc_hevc.rs`,
+The NVENC tests (`crates/platform/tests/nvenc.rs` and `nvenc_export.rs` for H.264, `nvenc_rgba_input.rs` for
+the GPU's RGB → 4:2:0 conversion, `nvenc_hevc.rs`,
 `nvenc_hevc_export.rs`, `nvenc_hevc_probe.rs` and `nvenc_hevc_warm.rs` for H.265, `nvenc_hevc_main10.rs` and
 `nvenc_hevc_hdr_export.rs` for Main 10 HDR; Windows only) skip, printing `SKIPPED`, without an NVIDIA GPU
 with NVENC (H.265: when the HEVC probe says there is no HEVC encoder; Main 10: when the Main 10 probe says
