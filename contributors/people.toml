@@ -40,3 +40,6 @@ sync_github_name = true
 
 [people.ItzBloxy]
 display_name = "Bloxy"
+
+[people.liangforstudy]
+sync_github_name = true
