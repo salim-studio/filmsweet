@@ -22,6 +22,10 @@ macro_rules! uic {
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
+    uic!("window.dockAction", "Docking Action", [], None),
+    uic!("window.dockPanel", "Dock Panel", [], None),
+    uic!("window.floatPanel", "Undock Panel", [], None),
+    uic!("window.closePanel", "Close Panel", [], None),
     uic!("app.language.english", "English", ["Edit", "Language"], None),
     uic!("app.language.japanese", "日本語", ["Edit", "Language"], None),
     uic!("app.language.spanish", "Español", ["Edit", "Language"], None),
@@ -224,6 +228,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if id == "perf.stats" {
         // the engine's counters plus playback, frame workers and UI timings
         return Ok(crate::perf::stats(app));
+    }
+    if let Some(result) = crate::dock_ui::route(app, ctx, id, &params) {
+        return result;
     }
     if let Some(rest) = id.strip_prefix("window.panel.") {
         let p = PanelKind::from_name(rest).ok_or_else(|| format!("unknown panel `{rest}`"))?;

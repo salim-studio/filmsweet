@@ -235,7 +235,7 @@ pub fn route(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: &Val
 fn toggle_maximize(app: &mut FilmcraftApp, p: PanelKind) -> Value {
     app.ui.keys.maximized = if app.ui.keys.maximized.is_some() { None } else { Some(p) };
     if let Some(p) = app.ui.keys.maximized {
-        app.ui.dock.activate(p);
+        let _ = app.apply_dock(craft_ui::docking::Action::Activate { panel: p });
         app.ui.focused = p;
     }
     json!({"maximized": app.ui.keys.maximized.map(|p| p.title())})
@@ -244,7 +244,7 @@ fn toggle_maximize(app: &mut FilmcraftApp, p: PanelKind) -> Value {
 /// The visible panel under the pointer (from last frame's automation rects).
 fn panel_under_pointer(app: &FilmcraftApp, ctx: &egui::Context) -> Option<PanelKind> {
     let pos = ctx.input(|i| i.pointer.latest_pos())?;
-    app.auto.query("panel.").into_iter().find_map(|e| {
+    app.auto.query("panel.").into_iter().rev().find_map(|e| {
         let r = egui::Rect::from_min_size(egui::pos2(e.rect[0], e.rect[1]), egui::vec2(e.rect[2], e.rect[3]));
         r.contains(pos).then(|| PanelKind::from_name(&e.id["panel.".len()..])).flatten()
     })
@@ -254,7 +254,9 @@ fn panel_under_pointer(app: &FilmcraftApp, ctx: &egui::Context) -> Option<PanelK
 fn visible_panels(app: &FilmcraftApp) -> Vec<PanelKind> {
     let mut all = Vec::new();
     app.ui.dock.panels(&mut all);
-    all.into_iter().filter(|p| app.ui.dock.is_visible(*p) && !p.compact()).collect()
+    let mut visible: Vec<_> = all.into_iter().filter(|p| app.ui.dock.is_visible(*p) && !p.compact()).collect();
+    visible.extend(app.ui.floating.iter().filter_map(|group| group.panels.get(group.active).copied()).filter(|panel| !panel.compact()));
+    visible
 }
 
 fn cycle_panel(app: &mut FilmcraftApp, next: bool) -> Value {
