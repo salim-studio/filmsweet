@@ -31,7 +31,7 @@ impl Driver {
         }));
         let mut builder = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000);
         if std::env::var_os("FILMCRAFT_UI_SNAPSHOT_DIR").is_some() {
-            builder = builder.with_wgpu_render();
+            builder = builder.wgpu();
         }
         let harness = builder.build_eframe(move |_cc| app);
         let mut d = Driver { harness, tx };
