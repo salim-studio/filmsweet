@@ -414,7 +414,7 @@ async fn cli() {
             let out = a.opt("--out").unwrap_or("frame.png");
             s.set_playhead(filmcraft_time::Tick::from_seconds_f64(secs));
             let t0 = std::time::Instant::now();
-            let Some(img) = s.render_program(scale) else { fail("no sequence") };
+            let img = render_at_playhead(&s, scale).unwrap_or_else(|e| fail(e));
             let dt = t0.elapsed();
             let png = filmcraft_automation::png_rgba(img.w as u32, img.h as u32, img.over_black_rgba8(), 0).unwrap_or_else(|e| fail(e));
             std::fs::write(out, png).unwrap_or_else(|e| fail(format!("{out}: {e}")));
@@ -454,8 +454,25 @@ fn written_paths(result: &Value, requested: &str) -> Vec<String> {
     if paths.is_empty() { vec![requested.to_string()] } else { paths }
 }
 
+/// The active sequence at the playhead, or the reason it cannot be rendered (no sequence, bad scale).
+fn render_at_playhead(s: &Session, scale: f32) -> Result<filmcraft_engine::render::Image, String> {
+    s.try_render_program_at(scale, s.playhead()).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod format_tests {
+    #[test]
+    fn render_reports_the_real_reason() {
+        let mut s = filmcraft_engine::Session::default();
+        assert!(super::render_at_playhead(&s, 0.5).unwrap_err().contains("sequence"));
+        s.execute("file.newSequence", serde_json::json!({"width": 16, "height": 16})).unwrap();
+        for scale in [0.0, -1.0, f32::NAN] {
+            let e = super::render_at_playhead(&s, scale).unwrap_err();
+            assert!(e.contains("finite and positive"), "{e}");
+        }
+        assert_eq!(super::render_at_playhead(&s, 0.5).unwrap().w, 8);
+    }
+
     /// The CLI (and MCP / headless runs, which share its entry point) registers the hardware
     /// decoders at start-up.
     #[test]
