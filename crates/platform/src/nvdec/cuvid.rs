@@ -286,7 +286,7 @@ impl Drop for Mapped<'_> {
 
 /// Callback state is exclusively accessed by synchronous callbacks while parse is running.
 unsafe fn callback(data: *mut c_void, f: impl FnOnce(&mut State) -> Result<i32, String>) -> i32 {
-    // SAFETY: cuvid receives the stable Box<State> pointer at parser creation; callbacks run
+    // SAFETY: cuvid receives the stable, leaked State pointer at parser creation; callbacks run
     // synchronously, without a live Rust reference to State in the enclosing parse call.
     let Some(state) = (unsafe { data.cast::<State>().as_mut() }) else { return 0 };
     if state.error.is_some() {
@@ -342,14 +342,18 @@ unsafe extern "C" fn display(data: *mut c_void, picture: *mut CUVIDPARSERDISPINF
 
 /// A movable session. Each operation pushes its CUDA context on the calling thread.
 pub struct Session {
-    state: Box<State>,
+    // From `Box::into_raw` and freed in `Drop`: the parser's callbacks get this same pointer as
+    // their user data, so Rust code reaches the state only through it (never through a `Box`
+    // whose later use would invalidate the pointer the driver holds).
+    state: ptr::NonNull<State>,
     parser: *mut c_void,
     device: Box<Device>,
     // Dropped after device/context release, and after all cuvid handles have been destroyed.
     _library: libloading::Library,
 }
-// SAFETY: no callbacks or GPU-memory references outlive an operation. The boxed state and device
-// retain stable addresses across moves; every driver call pushes the context on its calling thread.
+// SAFETY: no callbacks or GPU-memory references outlive an operation. The state allocation and
+// boxed device retain stable addresses across moves; every driver call pushes the context on its
+// calling thread.
 unsafe impl Send for Session {}
 impl Session {
     pub fn new(codec: NalCodec, coded: (u32, u32), geometry: Geometry, reorder: usize) -> Result<Self, String> {
@@ -370,7 +374,7 @@ impl Session {
             status(unsafe { (api.caps)(&mut capabilities) }, "cuvidGetDecoderCaps")?;
             check_caps(&capabilities, coded, geometry.bits)?;
         }
-        let state = Box::new(State {
+        let state = ptr::NonNull::new(Box::into_raw(Box::new(State {
             api,
             device: ptr::from_ref(device.as_ref()),
             decoder: ptr::null_mut(),
@@ -383,38 +387,53 @@ impl Session {
             pending: Vec::new(),
             ready: Vec::new(),
             error: None,
-        });
+        })))
+        .ok_or("NVDEC state allocation is null")?;
+        // From here on `Drop` frees the state, also when creating the parser fails.
         let mut session = Self { state, parser: ptr::null_mut(), device, _library: library };
         session.create_parser()?;
         Ok(session)
     }
+    /// The callback state. Never hold the reference across a driver call that can run the
+    /// parser's callbacks (`cuvidParseVideoData`): they reach the state through the same pointer.
+    fn state(&mut self) -> &mut State {
+        // SAFETY: the pointer comes from `Box::into_raw` and only `Drop` frees it, so it is valid and
+        // aligned. `&mut self` makes this the only Rust access; callbacks run only inside
+        // `parse`'s driver call, during which no reference from here is live.
+        unsafe { self.state.as_mut() }
+    }
     fn create_parser(&mut self) -> Result<(), String> {
+        let (api, codec, delay) = {
+            let state = self.state();
+            (state.api, state.codec, state.delay)
+        };
         let _current = self.device.push_current()?;
         // SAFETY: plain C data, nullable callback pointers and opaque pointers allow zeros.
         let mut params: CUVIDPARSERPARAMS = unsafe { std::mem::zeroed() };
-        params.CodecType = self.state.codec;
+        params.CodecType = codec;
         params.ulMaxNumDecodeSurfaces = 1; // sequence callback supplies the real DPB size
         params.ulClockRate = 0;
-        params.ulMaxDisplayDelay = self.state.delay;
-        params.pUserData = (&raw mut *self.state).cast();
+        params.ulMaxDisplayDelay = delay;
+        params.pUserData = self.state.as_ptr().cast();
         params.pfnSequenceCallback = Some(sequence);
         params.pfnDecodePicture = Some(decode);
         params.pfnDisplayPicture = Some(display);
-        // SAFETY: params and output pointer are valid; boxed user data remains alive until
-        // parser destruction, and the library is retained by Session.
-        status(unsafe { (self.state.api.create_parser)(&mut self.parser, &mut params) }, "cuvidCreateVideoParser")?;
+        // SAFETY: params and output pointer are valid; the state allocation remains alive until
+        // after parser destruction (Drop), and the library is retained by Session.
+        status(unsafe { (api.create_parser)(&mut self.parser, &mut params) }, "cuvidCreateVideoParser")?;
         if self.parser.is_null() {
             return Err("NVDEC returned a null parser".into());
         }
         Ok(())
     }
     fn parse(&mut self, payload: &[u8], pts: i64, flags: u64) -> Result<Vec<(i64, VideoFrame)>, String> {
-        if let Some(error) = &self.state.error {
+        if let Some(error) = &self.state().error {
             return Err(error.clone());
         }
         if self.parser.is_null() {
             return Err("NVDEC parser is not available".into());
         }
+        let api = self.state().api;
         let _current = self.device.push_current()?;
         let mut packet = CUVIDSOURCEDATAPACKET {
             flags,
@@ -422,18 +441,21 @@ impl Session {
             payload: if payload.is_empty() { ptr::null() } else { payload.as_ptr() },
             timestamp: pts,
         };
-        // SAFETY: parser is live, payload and packet outlive this synchronous call. We do not
-        // borrow State across it, so callbacks can access their exclusive boxed user data.
-        let st = unsafe { (self.state.api.parse)(self.parser, &mut packet) };
-        if let Some(error) = &self.state.error {
+        // SAFETY: parser is live, payload and packet outlive this synchronous call. No reference
+        // to State is live across it, so callbacks have exclusive access through their pointer.
+        let st = unsafe { (api.parse)(self.parser, &mut packet) };
+        // SAFETY: as in `state()`; the parse call has returned, so no callback runs while this
+        // reference lives (the readback below calls no parser function).
+        let state = unsafe { self.state.as_mut() };
+        if let Some(error) = &state.error {
             return Err(error.clone());
         }
         status(st, "cuvidParseVideoData")?;
-        match catch_unwind(AssertUnwindSafe(|| self.state.drain())) {
+        match catch_unwind(AssertUnwindSafe(|| state.drain())) {
             Ok(result) => result?,
             Err(_) => return Err("NVDEC readback panicked".into()),
         }
-        Ok(std::mem::take(&mut self.state.ready))
+        Ok(std::mem::take(&mut state.ready))
     }
     pub fn feed(&mut self, annex_b: &[u8], pts: i64) -> Result<Vec<(i64, VideoFrame)>, String> {
         if annex_b.is_empty() || annex_b.len() > MAX_PACKET_BYTES {
@@ -441,7 +463,7 @@ impl Session {
         }
         let result = self.parse(annex_b, pts, CUVID_PKT_TIMESTAMP | CUVID_PKT_ENDOFPICTURE);
         if let Err(error) = &result {
-            self.state.error.get_or_insert_with(|| error.clone());
+            self.state().error.get_or_insert_with(|| error.clone());
         }
         result
     }
@@ -454,33 +476,37 @@ impl Session {
     /// costs tens of milliseconds, and the next parser's sequence callback takes it as it is).
     fn destroy(&mut self, keep_decoder: bool) -> Result<(), String> {
         let _current = self.device.push_current()?;
+        let parser = self.parser;
+        // SAFETY: as in `state()`; while this reference lives only the unmap and destroy calls
+        // run, and they invoke no parser callbacks.
+        let state = unsafe { self.state.as_mut() };
         let mut error = None;
-        if let Some(address) = self.state.mapped.get() {
+        if let Some(address) = state.mapped.get() {
             // SAFETY: retry an outstanding map before releasing its decoder; context is current.
-            match status(unsafe { (self.state.api.unmap)(self.state.decoder, address) }, "cuvidUnmapVideoFrame64") {
-                Ok(()) => self.state.mapped.set(None),
+            match status(unsafe { (state.api.unmap)(state.decoder, address) }, "cuvidUnmapVideoFrame64") {
+                Ok(()) => state.mapped.set(None),
                 Err(e) => {
                     error = Some(e);
                 }
             }
         }
-        if !keep_decoder && !self.state.decoder.is_null() {
+        if !keep_decoder && !state.decoder.is_null() {
             // SAFETY: owned decoder, no host views or callbacks remain; unmapping was attempted
             // first, and context and library remain live while the driver releases its resources.
-            match status(unsafe { (self.state.api.destroy_decoder)(self.state.decoder) }, "cuvidDestroyDecoder") {
+            match status(unsafe { (state.api.destroy_decoder)(state.decoder) }, "cuvidDestroyDecoder") {
                 Ok(()) => {
-                    self.state.decoder = ptr::null_mut();
-                    self.state.surfaces = 0;
-                    self.state.mapped.set(None);
+                    state.decoder = ptr::null_mut();
+                    state.surfaces = 0;
+                    state.mapped.set(None);
                 }
                 Err(e) => {
                     error.get_or_insert(e);
                 }
             }
         }
-        if !self.parser.is_null() {
+        if !parser.is_null() {
             // SAFETY: owned parser, no parse call running; user data and library are still live.
-            match status(unsafe { (self.state.api.destroy_parser)(self.parser) }, "cuvidDestroyVideoParser") {
+            match status(unsafe { (state.api.destroy_parser)(parser) }, "cuvidDestroyVideoParser") {
                 Ok(()) => self.parser = ptr::null_mut(),
                 Err(e) => {
                     error.get_or_insert(e);
@@ -493,12 +519,13 @@ impl Session {
         }
     }
     fn restart(&mut self) -> Result<(), String> {
-        self.state.ready.clear();
-        self.state.pending.clear();
-        self.state.error = None;
+        let state = self.state();
+        state.ready.clear();
+        state.pending.clear();
+        state.error = None;
         let result = self.destroy(true).and_then(|()| self.create_parser());
         if let Err(error) = &result {
-            self.state.error = Some(error.clone());
+            self.state().error = Some(error.clone());
         }
         result
     }
@@ -512,6 +539,14 @@ impl Drop for Session {
     fn drop(&mut self) {
         if let Err(e) = self.destroy(false) {
             log::warn!("NVDEC cleanup failed: {e}");
+        }
+        // A parser that failed to be destroyed is leaked rather than left pointing at freed state.
+        if self.parser.is_null() {
+            // SAFETY: the pointer came from `Box::into_raw` in `new`, is freed only here, and no parser
+            // holds it any more (destroyed above), so nothing can reach it afterwards.
+            drop(unsafe { Box::from_raw(self.state.as_ptr()) });
+        } else {
+            log::warn!("NVDEC parser could not be destroyed: leaking its state");
         }
     }
 }
