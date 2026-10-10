@@ -85,7 +85,9 @@ let availability = filmcraft_platform::register(); // Available("VideoToolbox") 
   in the parser's sequence callback, decodes in its picture callback, and reads each displayed
   picture back (NV12 / P016) through the CUDA driver into the same planes as the other backends.
   The factory goes in front of VA-API's: what NVDEC declines still reaches VA-API (another GPU),
-  then the software decoders. After a start at a CRA picture its RASL pictures are not fed (no
+  then the software decoders. With both registered, `perf.stats` names NVDEC as the hardware
+  backend, also for the streams VA-API decodes. The callback state is a `Box::into_raw` allocation
+  the parser and `Session` reach through the same pointer, freed in `Drop`. After a start at a CRA picture its RASL pictures are not fed (no
   decoder outputs them, and the parser would otherwise show the CRA picture with the last one's
   timestamp). A seek recreates the parser and keeps the decoder.
 - **Linux: VA-API, H.264 (`avcC`) and HEVC (`hvcC`)**: H.264 8-bit 4:2:0 progressive, Constrained
