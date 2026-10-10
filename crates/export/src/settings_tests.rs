@@ -218,6 +218,103 @@ fn wav_and_aiff_audio_only() {
     }
 }
 
+/// Root-mean-square level of decoded planar audio.
+fn rms(planes: &[Vec<f32>]) -> f32 {
+    let n = planes.iter().map(Vec::len).sum::<usize>().max(1);
+    (planes.iter().flatten().map(|s| s * s).sum::<f32>() / n as f32).sqrt()
+}
+
+#[test]
+fn aac_audio_writes_m4a_and_adts() {
+    let (p, seq, m) = matte([0.0, 0.0, 0.0, 1.0], 64, 36, Some(-6.0));
+    let dir = Scratch::new("aac-audio");
+    let range = Some(TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)));
+    // .m4a: one AAC track, no video, the encoder delay in an edit list
+    let m4a = dir.path("a.m4a");
+    let s = ExportSettings { format: Format::Aac, path: m4a.clone(), range, ..Default::default() };
+    assert!(!s.has_video());
+    assert_eq!(s.audio_codec(), AudioCodec::Aac);
+    assert_eq!(s.extension(), "m4a");
+    let r = export(&p, seq, &s, &m, &Progress::default()).unwrap();
+    assert_eq!(r.frames, 48_000, "one second of samples");
+    let bytes = std::fs::read(&m4a).unwrap();
+    let file = filmcraft_isobmff::open(bytes.clone()).unwrap();
+    assert_eq!(file.tracks.len(), 1, "audio only");
+    let t = &file.tracks[0];
+    let filmcraft_isobmff::CodecConfig::Aac(cfg) = &t.entries[0].codec else { panic!("not AAC: {:?}", t.entries[0].codec) };
+    assert_eq!((cfg.object_type, cfg.sample_rate, cfg.channel_config), (2, 48_000, 2));
+    assert!(t.samples.len() >= 48_000 / 1024, "{} access units", t.samples.len());
+    let mut dec = filmcraft_aac::Decoder::new(&cfg.asc).unwrap();
+    let mut pcm: Vec<Vec<f32>> = Vec::new();
+    for i in 0..t.samples.len() {
+        let out = dec.decode(&file.read_sample(&bytes, 0, i).unwrap()).unwrap();
+        pcm.resize(out.len(), Vec::new());
+        pcm.iter_mut().zip(out).for_each(|(a, b)| a.extend(b));
+    }
+    // the -6 dBFS tone (RMS about 0.35) survives the round trip
+    assert!((0.2..0.5).contains(&rms(&pcm)), "rms {}", rms(&pcm));
+    if let Some(j) = ffprobe_json(&["-show_streams", "-show_format"], &m4a) {
+        assert_eq!(j["streams"].as_array().unwrap().len(), 1);
+        let st = &j["streams"][0];
+        assert_eq!(st["codec_name"], "aac");
+        assert_eq!(st["sample_rate"], "48000");
+        assert_eq!(st["channels"], 2);
+        let d: f64 = j["format"]["duration"].as_str().unwrap().parse().unwrap();
+        assert!((d - 1.0).abs() < 0.03, "duration {d}");
+    }
+
+    // .aac: raw ADTS, mono 44.1 kHz at 128 kbps
+    let adts = dir.path("a.aac");
+    let mut s = ExportSettings { format: Format::Aac, path: adts.clone(), range, ..Default::default() };
+    s.audio = AudioSettings { sample_rate: Some(44_100), channels: 1, bitrate_kbps: 128, ..Default::default() };
+    export(&p, seq, &s, &m, &Progress::default()).unwrap();
+    let b = std::fs::read(&adts).unwrap();
+    // AAC-LC 44.1 kHz (index 4) mono: 00010 0100 0001 000
+    let mut dec = filmcraft_aac::Decoder::new(&[0x12, 0x08]).unwrap();
+    let (mut pos, mut units, mut pcm) = (0usize, 0usize, vec![Vec::new()]);
+    while pos < b.len() {
+        let h = &b[pos..pos + 7];
+        assert_eq!((h[0], h[1] & 0xF6), (0xFF, 0xF0), "ADTS sync at {pos}");
+        assert_eq!(h[1] & 0x01, 1, "no CRC");
+        assert_eq!(((h[2] >> 2) & 0x0F, ((h[2] & 1) << 2) | (h[3] >> 6)), (4, 1), "44.1 kHz mono");
+        let len = ((h[3] as usize & 0x03) << 11) | ((h[4] as usize) << 3) | (h[5] as usize >> 5);
+        assert!(len > 7 && pos + len <= b.len(), "frame length {len} at {pos}");
+        pcm[0].extend(dec.decode(&b[pos + 7..pos + len]).unwrap().swap_remove(0));
+        pos += len;
+        units += 1;
+    }
+    assert!(units >= 44_100 / 1024, "{units} frames");
+    assert!((0.2..0.5).contains(&rms(&pcm)), "rms {}", rms(&pcm));
+    if let Some(j) = ffprobe_json(&["-show_streams", "-show_format"], &adts) {
+        assert_eq!(j["format"]["format_name"], "aac");
+        let st = &j["streams"][0];
+        assert_eq!(st["codec_name"], "aac");
+        assert_eq!(st["sample_rate"], "44100");
+        assert_eq!(st["channels"], 1);
+    }
+    if let Some(ffmpeg) = filmcraft_testkit::ffmpeg_or_skip("AAC Audio decode") {
+        for f in [&m4a, &adts] {
+            let out = std::process::Command::new(&ffmpeg).args(["-v", "error", "-xerror", "-i", f, "-f", "null", "-"]).output().unwrap();
+            assert!(out.status.success() && out.stderr.is_empty(), "{f}: {}", String::from_utf8_lossy(&out.stderr));
+        }
+    }
+}
+
+#[test]
+fn aac_audio_settings_and_names() {
+    assert_eq!(Format::from_name("m4a"), Some(Format::Aac));
+    assert_eq!(Format::from_name("AAC Audio"), Some(Format::Aac));
+    assert_eq!(Format::from_name(Format::Aac.id()), Some(Format::Aac));
+    assert!(Format::ALL.contains(&Format::Aac) && Format::Aac.is_audio_only() && !Format::H264.is_audio_only());
+    let s = ExportSettings { format: Format::Aac, include_audio: false, ..Default::default() };
+    let sum = s.summary(1920, 1080, FrameRate::FPS_24, 48_000, Tick(10 * TICKS_PER_SECOND));
+    assert_eq!(sum.video, "No video");
+    assert_eq!(sum.audio, "AAC, 320 kbps, 48000 Hz, Stereo");
+    assert_eq!(sum.estimated_bytes, 400_000, "320 kbps for 10 s, no picture");
+    let preset = presets::find_builtin("AAC Audio 48 kHz 320 kbps").unwrap();
+    assert_eq!(preset.settings.format, Format::Aac);
+}
+
 #[test]
 fn wav_export_honours_explicit_sample_rates() {
     let (project, sequence, sources) = matte([0.0, 0.0, 0.0, 1.0], 64, 36, Some(-6.0));
@@ -658,7 +755,7 @@ fn h265_is_a_format_that_needs_a_registered_encoder() {
     }
     assert_eq!(Format::from_name(Format::Hevc.id()), Some(Format::Hevc));
     assert_eq!((Format::Hevc.extension(), Format::Hevc.label()), ("mp4", "H.265 (HEVC)"));
-    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 18);
+    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 19);
     let s: ExportSettings = serde_json::from_value(serde_json::json!({"format": "hevc"})).unwrap();
     assert_eq!(s.format, Format::Hevc);
     assert_eq!(serde_json::to_value(&s).unwrap()["format"], "hevc");
