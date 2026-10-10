@@ -251,10 +251,12 @@ panel state and the Type-tool selection.
 ## Gradient fills
 
 Appearance › Fill Type › Linear Gradient paints the shape or the text with a ramp from Gradient
-Start to Gradient End. The angle is degrees clockwise on screen; 0° runs left to right across the
-layer's own bounds, and the ramp turns with the layer. `graphics.set` accepts `fill_kind`
-(`solid` or `linear gradient`), `gradient_start`, `gradient_end` and `gradient_angle`. A
-per-character fill colour still paints those characters as a solid.
+Start to Gradient End. Stops are blended in linear light. The angle is degrees clockwise on
+screen; 0° runs left to right across the layer's own bounds, and the ramp turns with the layer.
+`graphics.set` accepts `fill_kind` (`solid` or `linear gradient`), `gradient_start`,
+`gradient_end` and `gradient_angle`. A per-character fill colour still paints those characters
+as a solid; the rest of the text keeps the ramp. A singular layer transform falls back to the
+solid fill colour.
 
 ## Not yet
 
