@@ -16,6 +16,9 @@ use filmcraft_media::{FrameRequest, MediaError, MediaSource};
 const NOISE: &[&str] =
     &["-f", "lavfi", "-i", "aevalsrc=exprs=0.3*sin(2*PI*441*t)+0.1*sin(2*PI*3100*t)|0.25*sin(2*PI*660*t)+0.1*sin(2*PI*(500+4000*t)*t):s=48000"];
 
+/// A mono tone.
+const MONO: &[&str] = &["-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000"];
+
 fn spec(name: &str) -> Vec<String> {
     let cat = |p: &[&[&str]]| p.concat().into_iter().map(String::from).collect::<Vec<_>>();
     match name {
@@ -142,6 +145,12 @@ fn spec(name: &str) -> Vec<String> {
             cat(&[&["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"], NOISE, &["-t", "0.6", "-c:v", "mpeg2video", "-bf", "2", "-g", "6", "-c:a", "mp2"]])
         }
         "audio.mp2" => cat(&[NOISE, &["-t", "1", "-c:a", "mp2", "-b:a", "224k", "-f", "mp2"]]),
+        // mono MP2 at ffmpeg's default bit rate, 384 kbit/s, which ISO/IEC 11172-3 does not allow
+        "audio_mono.mp2" => cat(&[MONO, &["-t", "1", "-c:a", "mp2", "-f", "mp2"]]),
+        "ts_mpeg2_mono_mp2.ts" => {
+            cat(&[&["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"], MONO, &["-t", "1", "-c:v", "mpeg2video", "-c:a", "mp2", "-f", "mpegts"]])
+        }
+        "mkv_mono_mp2.mkv" => cat(&[MONO, &["-t", "1", "-c:a", "mp2"]]),
         "es_mpeg2.m2v" => {
             cat(&[&["-f", "lavfi", "-i", "testsrc2=size=352x288:rate=25"], &["-t", "1", "-c:v", "mpeg2video", "-bf", "2", "-g", "9", "-f", "mpeg2video"]])
         }
@@ -164,6 +173,9 @@ pub const ALL: &[&str] = &[
     "mp4_mpeg2.mp4",
     "mkv_mpeg2.mkv",
     "audio.mp2",
+    "audio_mono.mp2",
+    "ts_mpeg2_mono_mp2.ts",
+    "mkv_mono_mp2.mkv",
     "es_mpeg2.m2v",
 ];
 
@@ -513,6 +525,36 @@ fn standalone_mp2_file() {
     let buf = src.audio(0, n, 48_000).unwrap();
     let worst = (0..n).map(|i| (buf.channels[0][i] - want[2 * i]).abs().max((buf.channels[1][i] - want[2 * i + 1]).abs())).fold(0f32, f32::max);
     assert!(worst <= 2e-4, "{worst}");
+}
+
+/// #809: mono MP2 at 384 kbit/s, ffmpeg's default, played as silence in every container because
+/// symphonia rejects the bit rate / mode combinations ISO/IEC 11172-3 does not allow.
+#[test]
+fn mono_mp2_at_ffmpegs_default_bit_rate() {
+    let ff = filmcraft_testkit::require_ffmpeg!();
+    let f = make(&ff, "audio_mono.mp2");
+    assert_eq!(std::fs::read(&f).unwrap()[2] >> 4, 14, "384 kbit/s");
+    let worst = check_audio(&ff, &make(&ff, "ts_mpeg2_mono_mp2.ts"), 2e-4);
+    println!("ts_mpeg2_mono_mp2.ts: max error {worst}");
+    // Matroska: ffmpeg trims the 481-sample encoder delay; we trim `CodecDelay` rounded to the
+    // millisecond (#790), so allow a lag of a sample or two there
+    for (name, max_lag) in [("audio_mono.mp2", 0i64), ("mkv_mono_mp2.mkv", 2)] {
+        let f = make(&ff, name);
+        let src = filmcraft_codecs::open_bytes(name, bytes(&f)).unwrap();
+        let a = src.info().audio().cloned().unwrap();
+        assert_eq!((a.sample_rate, a.channels), (48_000, 1), "{name}");
+        let want = ffmpeg_audio_f32(&ff, &f, &[]);
+        let n = want.len() - 4;
+        let worst = (-max_lag..=max_lag)
+            .map(|lag| {
+                let buf = src.audio(2 + lag, n, 48_000).unwrap();
+                want[2..].iter().zip(&buf.channels[0]).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max)
+            })
+            .fold(f32::INFINITY, f32::min);
+        let peak = want.iter().fold(0f32, |m, x| m.max(x.abs()));
+        println!("{name}: max error {worst}, peak {peak}");
+        assert!(peak > 0.1 && worst <= 2e-4, "{name}: peak {peak}, max error {worst}");
+    }
 }
 
 #[test]
