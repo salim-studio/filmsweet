@@ -141,8 +141,18 @@ fn cropped_pictures_match_ffmpeg() {
         let v = src.info().video.clone().unwrap();
         assert_eq!((v.width, v.height), (w, h), "{name}: reported size");
         let (cw, ch) = (w.div_ceil(2) as usize, h.div_ceil(2) as usize);
-        let raw = ffmpeg_frames(&ff, &path, "yuv420p");
+        // `-flags unaligned`: ffmpeg otherwise skips a left crop that would misalign its frame
+        // pointers (on AVX-512 machines it needs 64-byte alignment) and returns wider frames
+        let raw = ffmpeg_out(
+            &ff,
+            &["-flags", "unaligned", "-i", path.to_str().unwrap(), "-map", "0:v:0", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
+        );
         let frame_bytes = (w * h) as usize + 2 * cw * ch;
+        if name.contains("clap") && raw.len() % frame_bytes != 0 {
+            // ffmpeg before 7.1 ignores `clap` and decodes the whole picture
+            eprintln!("SKIPPED ({name}): this ffmpeg does not apply the clean aperture");
+            continue;
+        }
         assert_eq!(raw.len() % frame_bytes, 0, "{name}: ffmpeg's frames are {w}x{h}");
         let n = raw.len() / frame_bytes;
         assert_eq!(n, 30, "{name}");
