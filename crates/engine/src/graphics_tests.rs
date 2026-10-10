@@ -150,6 +150,24 @@ fn align_and_distribute_layers() {
 }
 
 #[test]
+fn linear_gradient_fill_sets_and_evaluates() {
+    let mut s = demo();
+    let r = s.execute("graphics.newShape", json!({"shape": "rectangle", "position": [200, 200], "size": [80, 40]})).unwrap();
+    let clip = ClipId(r["clip"].as_u64().unwrap());
+    s.execute(
+        "graphics.set",
+        json!({"clip": clip.0, "props": {"fill_kind": "linear gradient", "gradient_start": "#ff0000", "gradient_end": "#0000ff", "gradient_angle": 0}}),
+    )
+    .unwrap();
+    let g = layers(&s, clip)[0].appearance.gradient.clone().expect("linear fill");
+    assert_eq!(g.start[0], 1.0);
+    assert!(g.start[1] < 0.01 && g.end[2] > 0.9 && g.end[0] < 0.01, "{g:?}");
+    assert_eq!(g.angle, 0.0);
+    s.execute("graphics.set", json!({"clip": clip.0, "props": {"fill_kind": "solid"}})).unwrap();
+    assert!(layers(&s, clip)[0].appearance.gradient.is_none());
+}
+
+#[test]
 fn graphic_renders_in_the_program_and_survives_save() {
     let mut s = demo();
     let r = s.execute("graphics.newText", json!({"text": "BIG", "size": 300, "position": [100, 500]})).unwrap();
