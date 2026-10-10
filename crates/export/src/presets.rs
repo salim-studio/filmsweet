@@ -161,6 +161,12 @@ pub fn builtin_presets() -> Vec<ExportPreset> {
         ),
         p("DPX Sequence", "Image Sequence", "Numbered DPX stills (10-bit RGB)", ExportSettings { format: Format::DpxSequence, ..Default::default() }),
         p(
+            "OpenEXR Sequence",
+            "Image Sequence",
+            "Numbered OpenEXR stills (half float, linear, uncompressed)",
+            ExportSettings { format: Format::ExrSequence, ..Default::default() },
+        ),
+        p(
             "Animated GIF 640×360",
             "Animated GIF",
             "Looping GIF, 640×360 at 15 fps",

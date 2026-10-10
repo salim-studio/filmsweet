@@ -160,6 +160,49 @@ fn jpeg_targa_and_dpx_sequences() {
     assert!(jpeg_sizes[0] > jpeg_sizes[1], "quality 95 must be larger than quality 20: {jpeg_sizes:?}");
 }
 
+/// OpenEXR sequences (#806): numbered like the others, half-float linear light, RGBA with
+/// premultiplied alpha when asked; ffprobe / ffmpeg (external test oracles) read every still.
+#[test]
+fn openexr_sequences() {
+    let (p, seq, m) = matte([0.0, 0.0, 1.0, 0.5], 64, 36, None);
+    for alpha in [false, true] {
+        let dir = Scratch::new(&format!("seq-exr-{alpha}"));
+        let mut s = ExportSettings { format: Format::ExrSequence, path: dir.path("Shot.exr"), alpha, ..Default::default() };
+        s.range = Some(TimeRange::new(Tick::ZERO, FrameRate::FPS_24.tick_of(3)));
+        assert_eq!(Format::from_name("OpenEXR"), Some(Format::ExrSequence));
+        assert!(s.is_image_sequence() && s.supports_alpha() && s.keeps_alpha() == alpha && !s.has_audio());
+        let r = export(&p, seq, &s, &m, &Progress::default()).unwrap();
+        assert_eq!(r.frames, 3);
+        let want: Vec<String> = (0..3).map(|i| format!("Shot{i:03}.exr")).collect();
+        assert_eq!(files_in(&dir.0), want);
+        let first = dir.0.join(&want[0]);
+        let bytes = std::fs::read(&first).unwrap();
+        assert_eq!(&bytes[..4], &[0x76, 0x2F, 0x31, 0x01]);
+        let Some(ffmpeg) = filmcraft_testkit::ffmpeg_or_skip("OpenEXR sequences") else { continue };
+        let out = std::process::Command::new(ffmpeg)
+            .args(["-v", "error", "-i"])
+            .arg(&first)
+            .args(["-f", "rawvideo", "-pix_fmt", "gbrapf32le", "-"])
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let n = 64 * 36;
+        assert_eq!(out.stdout.len(), n * 16);
+        let plane = |p: usize| -> Vec<f32> { out.stdout[p * n * 4..(p + 1) * n * 4].as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect() };
+        let (g, b, r, a) = (plane(0), plane(1), plane(2), plane(3));
+        for i in 0..n {
+            assert!(g[i].abs() < 1e-3 && r[i].abs() < 1e-3, "pixel {i}: no red or green");
+            if alpha {
+                // pure blue (linear 1.0) at 50 % opacity, premultiplied
+                assert!((a[i] - 0.5).abs() < 0.01 && (b[i] - a[i]).abs() < 2e-3, "pixel {i}: {} / {}", b[i], a[i]);
+            } else {
+                // flattened over black, then linearised: well below the encoded half level
+                assert!(a[i] == 1.0 && b[i] > 0.1 && b[i] < 0.5, "pixel {i}: {} / {}", b[i], a[i]);
+            }
+        }
+    }
+}
+
 /// `alpha` keeps straight alpha in PNG and TIFF sequences; off (the default) flattens over black (#160).
 #[test]
 fn image_sequences_keep_alpha_when_asked() {
@@ -658,7 +701,7 @@ fn h265_is_a_format_that_needs_a_registered_encoder() {
     }
     assert_eq!(Format::from_name(Format::Hevc.id()), Some(Format::Hevc));
     assert_eq!((Format::Hevc.extension(), Format::Hevc.label()), ("mp4", "H.265 (HEVC)"));
-    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 18);
+    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 19);
     let s: ExportSettings = serde_json::from_value(serde_json::json!({"format": "hevc"})).unwrap();
     assert_eq!(s.format, Format::Hevc);
     assert_eq!(serde_json::to_value(&s).unwrap()["format"], "hevc");
