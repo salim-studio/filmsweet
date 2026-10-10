@@ -228,11 +228,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G18. Effects depth: approximations and missing behaviour
 
 - **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut approximate, Lumetri
-  HDR-aware maths, multicam paging beyond 16 angles, redesigned 26.0 mask tools (rounded corners,
-  constrained lines).
+  HDR-aware maths, multicam paging beyond 16 angles, redesigned 26.0 mask tools (constrained
+  lines; an on-monitor corner-roundness handle).
 - **Have:** Optical Flow time interpolation synthesises motion-compensated in-between frames (dense
   coarse-to-fine Lucas–Kanade, CPU; #780); Transform shutter angle motion blur (#415); Ultra Key
-  Setting applied as a parameter preset (#458).
+  Setting applied as a parameter preset (#458); rectangle and polygon masks round their corners
+  with circular fillets (`masks.add` `cornerRadius`, `masks.roundCorners`, every path keyframe;
+  #813).
 - **Estimate:** 60–110 h.
 
 ## G19. Speech to text off in release builds
