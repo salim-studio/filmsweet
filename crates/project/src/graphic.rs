@@ -162,7 +162,8 @@ pub struct LinearGradient {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Appearance {
     pub fill: Option<[f32; 4]>,
-    /// Set when Fill Type is Linear Gradient. Replaces the solid fill for the whole layer.
+    /// Set when Fill Type is Linear Gradient. Replaces the solid fill. A text run with its own
+    /// fill colour stays solid; the other characters keep the ramp.
     pub gradient: Option<LinearGradient>,
     /// (colour, width px, type: 0 outer, 1 centre, 2 inner), outermost last.
     pub strokes: Vec<([f32; 4], f32, u32)>,
