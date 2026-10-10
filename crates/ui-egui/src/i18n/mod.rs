@@ -474,6 +474,7 @@ mod tests {
             }
         }
         crate::panels::timeline::CLIP_MENU.iter().flat_map(|g| g.iter()).for_each(|(l, _)| push(&mut out, l));
+        crate::panels::timeline::EDIT_POINT_TYPES.iter().for_each(|(l, ..)| push(&mut out, l));
         crate::panels::project::NEW_ITEMS.iter().for_each(|(l, _)| push(&mut out, l));
         // section headers keyed by their English name (collapsed state), translated when drawn
         let sections = [
