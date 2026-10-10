@@ -235,6 +235,27 @@ fn close_gap_works() {
 }
 
 #[test]
+fn reversed_trim_uses_the_handle_its_playback_direction_consumes() {
+    let mut fx = Fx::new();
+    let v1 = fx.v(0);
+    // source frames [5, 15) played backwards; the media is 1000 frames long
+    let a = fx.put(v1, 30, 10, 5);
+    fx.seq.find_item_mut(a).unwrap().1.reverse = true;
+    let mut n = fx.next;
+    // out extends into the 5 frames before source_in, not into the 985 after source_out
+    let d = trim(&mut fx.seq, a, Edge::Out, TrimMode::Regular, f(20), &mut Fx::ctx(&mut n)).unwrap();
+    assert_eq!(d, f(5));
+    let it = fx.seq.find_item(a).unwrap().1;
+    assert_eq!((it.source_in, it.source_out()), (f(0), f(15)));
+    // in extends into the media after source_out
+    let d = trim(&mut fx.seq, a, Edge::In, TrimMode::Regular, -f(10), &mut Fx::ctx(&mut n)).unwrap();
+    assert_eq!(d, -f(10));
+    let it = fx.seq.find_item(a).unwrap().1;
+    assert_eq!((it.source_in, it.source_out()), (f(0), f(25)));
+    fx.seq.check().unwrap();
+}
+
+#[test]
 fn regular_trim_respects_neighbours_and_handles() {
     let mut fx = Fx::new();
     let v1 = fx.v(0);
