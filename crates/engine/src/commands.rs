@@ -1837,6 +1837,15 @@ fn build() -> Vec<CommandSpec> {
             })?;
             Ok(Value::Null)
         }),
+        cmd!(
+            "markers.exportCsv",
+            "Export Markers as CSV…",
+            ["Markers"],
+            None,
+            r#"{"path":str} (all markers in the active sequence)"#,
+            has_seq,
+            crate::marker_export::export
+        ),
         cmd!("markers.clearAll", "Clear Markers", ["Markers"], Some("Cmd+Alt+Shift+M"), r#"{"target":"program|source"}"#, always, |s, p| {
             if let Some(v) = crate::source_monitor::route(s, "markers.clearAll", p)? {
                 return Ok(v);
