@@ -62,7 +62,7 @@ impl H264Profile {
 }
 
 /// Export ▸ Hardware encoding: whether H.264 may be encoded by the system's hardware video encoder
-/// (VideoToolbox on macOS, NVENC on NVIDIA GPUs on Windows and Linux) instead of FilmCraft's own encoder. Off
+/// (VideoToolbox on macOS, NVENC on NVIDIA GPUs on Windows) instead of FilmCraft's own encoder. Off
 /// by default: hardware encoders make different streams, and exports are otherwise byte-identical
 /// from run to run and machine to machine.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,11 +378,11 @@ impl ExportSettings {
         if self.format.is_mxf() { self.mxf_video_codec.encoder_format() } else { self.format }
     }
 
-    /// Whether the output can carry an alpha channel ([`ExportSettings::alpha`]): PNG, TIFF and
-    /// Targa sequences and ProRes 4444 / 4444 XQ QuickTime movies.
+    /// Whether the output can carry an alpha channel ([`ExportSettings::alpha`]): PNG, TIFF,
+    /// Targa and OpenEXR sequences and ProRes 4444 / 4444 XQ QuickTime movies.
     pub fn supports_alpha(&self) -> bool {
         match self.format {
-            Format::PngSequence | Format::TiffSequence | Format::TgaSequence => true,
+            Format::PngSequence | Format::TiffSequence | Format::TgaSequence | Format::ExrSequence => true,
             Format::ProRes => crate::prores_profile(&self.prores_profile).chroma() == filmcraft_prores::ChromaFormat::Yuv444,
             _ => false,
         }
@@ -490,6 +490,8 @@ impl ExportSettings {
             Format::TgaSequence => px * if self.keeps_alpha() { 4.0 } else { 3.0 } * 8.0 * fps,
             // 10-bit RGB in one 32-bit word per pixel
             Format::DpxSequence => px * 4.0 * 8.0 * fps,
+            // two bytes per half-float channel
+            Format::ExrSequence => px * if self.keeps_alpha() { 8.0 } else { 6.0 } * 8.0 * fps,
             Format::Gif => px * 0.6 * 8.0 * fps,
             Format::Wav | Format::Aiff | Format::MxfOp1a | Format::MxfOpAtom => 0.0,
         };
@@ -573,6 +575,7 @@ impl ExportSettings {
                 Format::Apv => v += &format!(", {}", crate::apv_profile(&self.apv_profile).name()),
                 Format::Mjpeg | Format::JpegSequence => v += &format!(", quality {}", self.quality),
                 Format::DpxSequence => v += ", 10-bit RGB",
+                Format::ExrSequence => v += ", 16-bit half float, linear",
                 _ => {}
             }
             v
