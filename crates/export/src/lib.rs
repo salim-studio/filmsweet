@@ -6,7 +6,7 @@
 //!
 //! Video encoders implement [`VideoEncoder`]; codec crates register theirs with
 //! [`register_encoder`] (H.264, ProRes …). Built in: Motion-JPEG (MOV), PNG / TIFF / BMP / JPEG /
-//! Targa / DPX sequences, GIF, WAV and AIFF.
+//! Targa / DPX / OpenEXR sequences, GIF, WAV and AIFF.
 //!
 //! [`ExportSettings`] carries every Export-mode setting (frame size, rate, bitrate encoding, audio
 //! format, multiplexer, captions, effects, metadata) as serde data; [`presets`] defines the
@@ -106,6 +106,9 @@ pub enum Format {
     /// Numbered DPX stills (SMPTE ST 268, 10-bit RGB, BT.709).
     #[serde(rename = "dpx", alias = "DpxSequence")]
     DpxSequence,
+    /// Numbered OpenEXR stills (half-float scene-linear RGB, RGBA with [`ExportSettings::alpha`]).
+    #[serde(rename = "exr", alias = "ExrSequence")]
+    ExrSequence,
     #[serde(rename = "gif", alias = "Gif")]
     Gif,
     #[serde(rename = "wav", alias = "Wav")]
@@ -140,6 +143,7 @@ impl Format {
             "jpg" | "jpgsequence" | "jpegsequence" => Format::JpegSequence,
             "tga" | "targa" | "tgasequence" | "targasequence" => Format::TgaSequence,
             "dpx" | "dpxsequence" => Format::DpxSequence,
+            "exr" | "openexr" | "exrsequence" | "openexrsequence" => Format::ExrSequence,
             "gif" | "animatedgif" => Format::Gif,
             "wav" | "waveform" | "waveformaudio" => Format::Wav,
             "aif" | "aiff" | "aifc" => Format::Aiff,
@@ -162,6 +166,7 @@ impl Format {
             Format::JpegSequence => "jpg",
             Format::TgaSequence => "tga",
             Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aiff",
@@ -179,6 +184,7 @@ impl Format {
             Format::JpegSequence => "jpg",
             Format::TgaSequence => "tga",
             Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aif",
@@ -200,6 +206,7 @@ impl Format {
             Format::JpegSequence => "JPEG",
             Format::TgaSequence => "Targa",
             Format::DpxSequence => "DPX",
+            Format::ExrSequence => "OpenEXR",
             Format::Gif => "Animated GIF",
             Format::Wav => "Waveform Audio",
             Format::Aiff => "AIFF",
@@ -209,7 +216,16 @@ impl Format {
     }
     /// Numbered stills, one per frame ([`image_sequence_path`]).
     pub fn is_image_sequence(self) -> bool {
-        matches!(self, Format::PngSequence | Format::TiffSequence | Format::BmpSequence | Format::JpegSequence | Format::TgaSequence | Format::DpxSequence)
+        matches!(
+            self,
+            Format::PngSequence
+                | Format::TiffSequence
+                | Format::BmpSequence
+                | Format::JpegSequence
+                | Format::TgaSequence
+                | Format::DpxSequence
+                | Format::ExrSequence
+        )
     }
     /// An MXF container format.
     pub fn is_mxf(self) -> bool {
@@ -232,7 +248,7 @@ impl Format {
     pub fn is_mp4_with(self, mux: Multiplexer) -> bool {
         self == Format::Av1 || (self.is_h26x() && mux == Multiplexer::Mp4)
     }
-    pub const ALL: [Format; 18] = [
+    pub const ALL: [Format; 19] = [
         Format::H264,
         Format::Hevc,
         Format::Av1,
@@ -246,6 +262,7 @@ impl Format {
         Format::JpegSequence,
         Format::TgaSequence,
         Format::DpxSequence,
+        Format::ExrSequence,
         Format::Gif,
         Format::Wav,
         Format::Aiff,
@@ -302,9 +319,10 @@ pub struct ExportSettings {
     /// sequence's HDR space and signal it (VUI / `colr` / `mdcv` / `clli` / SEI).
     #[serde(default)]
     pub sdr: bool,
-    /// Keep the alpha channel in PNG, TIFF and Targa sequences and ProRes 4444 / 4444 XQ QuickTime movies
-    /// (straight alpha, Premiere's "Include Alpha Channel"). Off, every frame is flattened over
-    /// black (#160). Other formats ignore it.
+    /// Keep the alpha channel in PNG, TIFF, Targa and OpenEXR sequences and ProRes 4444 / 4444 XQ
+    /// QuickTime movies (straight alpha, Premiere's "Include Alpha Channel"; OpenEXR stores it
+    /// premultiplied, as the format defines). Off, every frame is flattened over black (#160).
+    /// Other formats ignore it.
     #[serde(default)]
     pub alpha: bool,
     /// Output frame size (None = Match Source: the sequence size times `scale`).
@@ -1659,7 +1677,8 @@ pub fn encode_png(rgba: Vec<u8>, w: u32, h: u32) -> Result<Vec<u8>> {
 }
 
 /// Encode one still of an image sequence (also Export Frame). PNG always carries the alpha
-/// channel it is given; `alpha` keeps it in TIFF and Targa too, which are otherwise written as RGB.
+/// channel it is given; `alpha` keeps it in TIFF, Targa and OpenEXR too, which are otherwise written
+/// as RGB.
 /// JPEG uses the default export quality ([`encode_still_with_quality`] picks another).
 pub fn encode_still(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool) -> Result<Vec<u8>> {
     encode_still_with_quality(format, rgba, w, h, alpha, ExportSettings::default().quality)
@@ -1683,6 +1702,7 @@ pub fn encode_still_with_quality(format: Format, rgba: Vec<u8>, w: u32, h: u32, 
         }
         Format::TgaSequence => return raster::tga(&rgba, w, h, alpha),
         Format::DpxSequence => return raster::dpx(&rgba, w, h),
+        Format::ExrSequence => return raster::exr(&rgba, w, h, alpha),
         Format::PngSequence => {
             image::ImageEncoder::write_image(image::codecs::png::PngEncoder::new(&mut out), &rgba, w, h, image::ExtendedColorType::Rgba8).map_err(enc)?
         }
