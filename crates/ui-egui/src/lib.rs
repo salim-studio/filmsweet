@@ -1411,6 +1411,7 @@ impl FilmcraftApp {
             }
             // Clear in the Project panel removes the selected bin when no item is selected (#587).
             let clear = if self.ui.focused == PanelKind::Project && id == "project.delete" {
+                self.ui.project_panel.rename = None;
                 crate::panels::project_views::clear_params(&self.session.state.project_selection, self.ui.project_panel.selected_bin)
             } else {
                 None
