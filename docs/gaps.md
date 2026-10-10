@@ -157,8 +157,9 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 - **Have:** E-AC-3 (Dolby Digital Plus) in MP4, MOV, Matroska and MPEG-TS (#647): independent
   substream, 1–6 blocks per syncframe, spectral extension. MP1 / MP2 (MPEG audio Layer I / II):
-  own decoder (#809) in raw files, MPEG-TS / PS and Matroska, including the bit rate / mode
-  combinations ISO/IEC 11172-3 disallows but ffmpeg writes (its mono default is 384 kbit/s).
+  own decoder (#809) in raw files, MP4 and MOV (#800), MPEG-TS / PS and Matroska, including the
+  bit rate / mode combinations ISO/IEC 11172-3 disallows but ffmpeg writes (its mono default is
+  384 kbit/s).
 - **Missing:** free-format MPEG audio, MP1 in Matroska (`A_MPEG/L1`), E-AC-3 adaptive hybrid
   transform, enhanced coupling and the extra channels of 7.1 dependent substreams (played as the
   5.1 core), AVI (#598; listed as an extension but no
@@ -190,18 +191,19 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G13. Delivery formats
 
 - **Missing:** AV1 export (software or hardware), MPEG-2 / DVD / Blu-ray, DCP, JPEG 2000 MXF,
-  AS-10 / AS-11, XDCAM HD MXF, P2, OpenEXR sequences, MP3 and AAC-only audio,
+  AS-10 / AS-11, XDCAM HD MXF, P2, compressed (ZIP / PIZ / DWA) OpenEXR, MP3 and AAC-only audio,
   ProRes 4444 / XQ in the export UI (#342; the encoder has the profiles), interlaced encoding,
   smart render, HEVC software encoder (HEVC exists only where a hardware encoder does).
-- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779).
+- **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779); OpenEXR
+  sequences (half float, linear, uncompressed; #806).
 - **Estimate:** 60–110 h. Doc: [file-format-parity.md](file-format-parity.md).
 
 ## G14. Localization: 8 of the 12 key languages missing
 
-- **Have:** Spanish, Japanese and Simplified Chinese catalogs cover ~99.6–99.9% of the ~3,500
-  cataloged strings; Portuguese (Brazil) and Ukrainian ~10% (menus).
+- **Have:** Spanish, Japanese, Simplified Chinese and French (#498) catalogs cover ~99.6–100% of
+  the ~3,500 cataloged strings; Portuguese (Brazil) and Ukrainian ~10% (menus).
 - **Missing:** Hindi, Arabic (no RTL interface layout; Arabic titles reported broken, #395),
-  French (#498), Indonesian, German (#490), Korean (#508; needs Hangul fonts in craft-fonts),
+  Indonesian, German beyond menus (#490), Korean (#508; needs Hangul fonts in craft-fonts),
   Vietnamese, Portuguese beyond menus; Premiere also ships Italian and Russian. Engine errors,
   CLI and MCP stay English. No language has a recorded native-speaker review.
 - **Estimate:** 150–230 h. Doc: [localization-parity.md](localization-parity.md).
@@ -230,11 +232,12 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G18. Effects depth: approximations and missing behaviour
 
-- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut approximate, Lumetri
-  HDR-aware maths, multicam paging beyond 16 angles, redesigned 26.0 mask tools (rounded corners,
-  constrained lines).
+- **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut has no face tracking
+  (and occlusion edges are soft), Lumetri HDR-aware maths, multicam paging beyond 16 angles,
+  redesigned 26.0 mask tools (rounded corners, constrained lines).
 - **Have:** Optical Flow time interpolation synthesises motion-compensated in-between frames (dense
-  coarse-to-fine Lucas–Kanade, CPU; #780); Transform shutter angle motion blur (#415); Ultra Key
+  coarse-to-fine Lucas–Kanade, CPU; #780); Morph Cut morphs the subject along that optical flow
+  instead of cross-dissolving (CPU; #805); Transform shutter angle motion blur (#415); Ultra Key
   Setting applied as a parameter preset (#458).
 - **Estimate:** 60–110 h.
 
