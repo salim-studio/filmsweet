@@ -64,6 +64,19 @@ fn export_integer_parameters_cannot_wrap_or_overflow() {
     assert!(s.execute("export.resolve", json!({"bitrateKbps":8000.0, "keyframeDistance":48.0})).is_ok(), "integer-valued floats are integers");
 }
 
+#[test]
+fn nested_camel_case_settings_are_honoured() {
+    let mut s = demo();
+    let camel = json!({"audio":{"sampleRate":96000}, "effects":{"loudness":{"enabled":true, "targetLufs":-16}}});
+    let snake = json!({"audio":{"sample_rate":96000}, "effects":{"loudness":{"enabled":true, "target_lufs":-16}}});
+    let camel = s.execute("export.resolve", json!({"format":"wav", "settings":camel})).unwrap();
+    let snake = s.execute("export.resolve", json!({"format":"wav", "settings":snake})).unwrap();
+    assert_eq!(camel["output"]["sampleRate"], 96000);
+    assert_eq!(camel["settings"]["audio"]["sample_rate"], 96000);
+    assert_eq!(camel["settings"]["effects"]["loudness"]["target_lufs"], -16.0);
+    assert_eq!(camel["settings"], snake["settings"]);
+}
+
 fn probe(path: &str) -> Option<Value> {
     let ffprobe = filmcraft_testkit::ffprobe_or_skip("export presets")?;
     let out = std::process::Command::new(ffprobe).args(["-v", "error", "-of", "json", "-show_format", "-show_streams", path]).output().unwrap();
