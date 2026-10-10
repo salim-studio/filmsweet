@@ -373,11 +373,7 @@ async fn cli() {
             if let Some(r) = a.opt("--range") {
                 p["range"] = json!(r);
             }
-            if let (Some(s0), Some(s1)) = (a.opt("--start"), a.opt("--end")) {
-                p["range"] = json!("custom");
-                p["startSeconds"] = parse_value(s0);
-                p["endSeconds"] = parse_value(s1);
-            }
+            set_custom_bounds(&mut p, a.opt("--start"), a.opt("--end"));
             if let Some(js) = a.opt("--settings") {
                 p["settings"] = serde_json::from_str(js).unwrap_or_else(|e| usage(format!("--settings: {e}")));
             }
@@ -454,6 +450,21 @@ fn written_paths(result: &Value, requested: &str) -> Vec<String> {
     if paths.is_empty() { vec![requested.to_string()] } else { paths }
 }
 
+/// `--start` / `--end` ask for a custom range. A lone bound is forwarded too, so the engine reports the missing one
+/// instead of the export silently running over the whole sequence.
+fn set_custom_bounds(p: &mut Value, start: Option<&str>, end: Option<&str>) {
+    if start.is_none() && end.is_none() {
+        return;
+    }
+    p["range"] = json!("custom");
+    if let Some(s0) = start {
+        p["startSeconds"] = parse_value(s0);
+    }
+    if let Some(s1) = end {
+        p["endSeconds"] = parse_value(s1);
+    }
+}
+
 #[cfg(test)]
 mod format_tests {
     /// The CLI (and MCP / headless runs, which share its entry point) registers the hardware
@@ -476,6 +487,23 @@ mod format_tests {
         assert_eq!(super::written_paths(&queued, "a.mp4"), ["a.mp4.mov", "b.wav"]);
         assert_eq!(super::written_paths(&json!({}), "x.mov"), ["x.mov"]);
         assert_eq!(super::written_paths(&json!({"items": []}), "x.mov"), ["x.mov"]);
+    }
+
+    #[test]
+    fn export_lone_bound_is_forwarded_as_custom_range() {
+        use serde_json::json;
+        let mut p = json!({});
+        super::set_custom_bounds(&mut p, Some("0.25"), None);
+        assert_eq!(p["range"], "custom");
+        assert_eq!(p["startSeconds"], 0.25);
+        assert!(p.get("endSeconds").is_none());
+        let mut p = json!({});
+        super::set_custom_bounds(&mut p, None, Some("0.25"));
+        assert_eq!(p["range"], "custom");
+        assert_eq!(p["endSeconds"], 0.25);
+        let mut p = json!({});
+        super::set_custom_bounds(&mut p, None, None);
+        assert!(p.get("range").is_none());
     }
 
     #[test]
