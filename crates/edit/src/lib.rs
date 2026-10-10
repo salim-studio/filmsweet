@@ -751,10 +751,19 @@ pub fn roll(seq: &mut Sequence, left: ClipId, right: ClipId, delta: Tick, ctx: &
     let mut d = delta;
     // left out-point limits
     d = d.max(-(l.duration - ctx.min_duration)).min(r.duration - ctx.min_duration);
-    if let Some(m) = media_len(ctx, l) {
+    // a reversed clip consumes media from the opposite end, so its media limit is the other one
+    if l.reverse {
+        d = d.min(Tick((head(ctx, l).0 as f64 / l.speed.abs()).floor() as i64));
+    } else if let Some(m) = media_len(ctx, l) {
         d = d.min(Tick(((m - l.source_out()).0 as f64 / l.speed.abs()).floor() as i64));
     }
-    d = d.max(-Tick((head(ctx, r).0 as f64 / r.speed.abs()).floor() as i64));
+    if r.reverse {
+        if let Some(m) = media_len(ctx, r) {
+            d = d.max(-Tick(((m - r.source_out()).0 as f64 / r.speed.abs()).floor() as i64));
+        }
+    } else {
+        d = d.max(-Tick((head(ctx, r).0 as f64 / r.speed.abs()).floor() as i64));
+    }
     if d == Tick::ZERO {
         return Ok(d);
     }
@@ -762,15 +771,19 @@ pub fn roll(seq: &mut Sequence, left: ClipId, right: ClipId, delta: Tick, ctx: &
     let before = seq.clone();
     {
         let (_, l) = seq.find_item_mut(left).ok_or(EditError::NoItem(left))?;
+        if l.reverse {
+            l.source_in -= src_of(d, ls);
+        }
         l.duration += d;
     }
     {
         let (_, r) = seq.find_item_mut(right).ok_or(EditError::NoItem(right))?;
         r.start += d;
         r.duration -= d;
-        r.source_in += src_of(d, rs);
+        if !r.reverse {
+            r.source_in += src_of(d, rs);
+        }
     }
-    let _ = ls;
     transitions_follow_cuts(&before, seq);
     Ok(d)
 }
