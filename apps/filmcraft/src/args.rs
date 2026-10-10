@@ -26,7 +26,7 @@ pub enum Cli {
 }
 
 /// Options of a normal start.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Launch {
     pub control_port: Option<u16>,
     /// A project and / or media files to open.
