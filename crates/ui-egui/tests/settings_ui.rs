@@ -251,9 +251,12 @@ fn view_menu_and_settings_name_each_color_theme_alike() {
     let menu = d.ok("ui.menu.list", json!({}));
     let menu_label = |id: &str| menu.as_array().unwrap().iter().find(|m| m["id"] == id).unwrap()["label"].as_str().unwrap().to_string();
     d.menu("app.settings.appearance");
-    d.click("settings.appearance.colorTheme");
-    for (menu_id, pref) in [("view.theme.dark", "darkest"), ("view.theme.medium", "dark"), ("view.theme.light", "light")] {
-        let id = format!("settings.appearance.colorTheme.{pref}");
+    // the theme cards' choices (the single Color Theme is no longer drawn)
+    for (menu_id, id) in [
+        ("view.theme.dark", "settings.appearance.darkTheme.darkest"),
+        ("view.theme.medium", "settings.appearance.darkTheme.dark"),
+        ("view.theme.light", "settings.appearance.lightTheme.light"),
+    ] {
         let found = d.ok("ui.elements", json!({"prefix": id}));
         let choice = found.as_array().unwrap().iter().find(|e| e["id"] == json!(id)).unwrap();
         assert_eq!(menu_label(menu_id), choice["label"].as_str().unwrap(), "{menu_id} and {id} name the same theme");

@@ -392,6 +392,7 @@ impl Preferences {
         self.playback.postroll_seconds = secs(self.playback.postroll_seconds);
         self.trim.large_trim_offset = self.trim.large_trim_offset.clamp(1, 1000);
         self.labels.sanitize_labels();
+        self.appearance.sync_color_theme();
         self.version = settings::PREFS_VERSION;
     }
 
@@ -454,12 +455,13 @@ impl Preferences {
         let _: Preferences = serde_json::from_value(v.clone()).map_err(|e| format!("`{key}`: {e}"))?;
         settings::sanitize(&mut v, &Self::default().to_value());
         let mut p: Preferences = serde_json::from_value(v).map_err(|e| format!("`{key}`: {e}"))?;
-        p.clamp();
-        // Old clients that set the single Color Theme still pick the theme they name.
+        // Old clients that set the single Color Theme still pick the theme they name (before
+        // `clamp`, which brings `colorTheme` back in line with the mode and theme choices).
         if key == "appearance.colorTheme" {
             let theme = p.appearance.color_theme.clone();
             p.appearance.select_theme(&theme);
         }
+        p.clamp();
         *self = p;
         Ok(())
     }

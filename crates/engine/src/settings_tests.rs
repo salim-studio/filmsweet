@@ -598,6 +598,17 @@ fn appearance_choices_validate_and_legacy_theme_still_selects() {
     assert_eq!(s.prefs.appearance.dark_theme, "dark", "the dark choice is kept");
     set(&mut s, "appearance.colorTheme", json!("darkest"));
     assert_eq!((s.prefs.appearance.appearance_mode.as_str(), s.prefs.appearance.dark_theme.as_str()), ("dark", "darkest"));
+    // the legacy Color Theme follows the mode and theme choices, so clients reading it aren't stale
+    assert_eq!(s.prefs.appearance.color_theme, "darkest");
+    set(&mut s, "appearance.appearanceMode", json!("light"));
+    assert_eq!(s.prefs.appearance.color_theme, "light");
+    set(&mut s, "appearance.appearanceMode", json!("dark"));
+    set(&mut s, "appearance.darkTheme", json!("dark"));
+    assert_eq!(s.prefs.appearance.color_theme, "dark");
+    set(&mut s, "appearance.appearanceMode", json!("auto"));
+    assert_eq!(s.prefs.appearance.color_theme, "dark", "Auto: the dark theme");
+    set(&mut s, "appearance.colorTheme", json!("light"));
+    assert_eq!((s.prefs.appearance.appearance_mode.as_str(), s.prefs.appearance.color_theme.as_str()), ("light", "light"));
     // the header button's cycle
     let mut a = settings::AppearancePrefs::default();
     let mut seen = Vec::new();
