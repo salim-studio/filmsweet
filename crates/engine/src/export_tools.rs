@@ -769,7 +769,7 @@ fn queue_move(s: &mut Session, p: &Value) -> Result<Value> {
     let n = s.export_queue.items.len() as i64;
     let to = match (p.get("to").and_then(Value::as_i64), p.get("by").and_then(Value::as_i64)) {
         (Some(t), _) => t,
-        (None, Some(b)) => i as i64 + b,
+        (None, Some(b)) => (i as i64).saturating_add(b),
         _ => return Err(bad(cmd, "need `to` (index) or `by` (±n)")),
     }
     .clamp(0, n - 1) as usize;
