@@ -538,7 +538,13 @@ pub fn clamp_trim(seq: &Sequence, clip: ClipId, edge: Edge, mode: TrimMode, delt
             let max_ext = Tick((head(ctx, it).0 as f64 / speed).floor() as i64);
             let lo = if mode == TrimMode::Regular { (-(it.start - prev_end)).max(-max_ext) } else { -max_ext };
             let hi = it.duration - ctx.min_duration;
-            d = d.clamp(if it.frame_hold.is_some() { Tick::MIN } else { lo }, hi);
+            // a frame hold needs no source head, but a Regular trim still stops at the previous clip
+            let lo = match (it.frame_hold.is_some(), mode) {
+                (true, TrimMode::Regular) => -(it.start - prev_end),
+                (true, _) => Tick::MIN,
+                (false, _) => lo,
+            };
+            d = d.clamp(lo, hi);
         }
         Edge::Out => {
             let lo = -(it.duration - ctx.min_duration);
