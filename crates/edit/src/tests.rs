@@ -275,6 +275,24 @@ fn regular_trim_respects_neighbours_and_handles() {
 }
 
 #[test]
+fn held_regular_in_trim_stops_at_previous_clip() {
+    let mut fx = Fx::new();
+    let v1 = fx.v(0);
+    fx.put(v1, 0, 10, 0);
+    let b = fx.put(v1, 15, 10, 5);
+    fx.seq.find_item_mut(b).unwrap().1.frame_hold = Some(f(5));
+    let mut n = fx.next;
+    // 5 frames of gap: a 20 frame extension is clamped to 5 instead of overlapping the previous clip
+    let d = trim(&mut fx.seq, b, Edge::In, TrimMode::Regular, -f(20), &mut Fx::ctx(&mut n)).unwrap();
+    assert_eq!(d, -f(5));
+    assert_eq!(fx.spans(v1), vec![(0, 10), (10, 15)]);
+    // no space left: nothing to do, and no error
+    let d = trim(&mut fx.seq, b, Edge::In, TrimMode::Regular, -f(3), &mut Fx::ctx(&mut n)).unwrap();
+    assert_eq!(d, Tick::ZERO);
+    fx.seq.check().unwrap();
+}
+
+#[test]
 fn ripple_trim_shifts_following() {
     let mut fx = Fx::new();
     let (v1, a1) = (fx.v(0), fx.a(0));
