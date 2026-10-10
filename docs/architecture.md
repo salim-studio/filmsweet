@@ -529,7 +529,8 @@ with different vertex counts hold). Feather, Opacity and Expansion are ordinary 
 - **GPU.** `filmcraft-gpu::GpuMask` evaluates the same coverage and mix in WGSL (compute), tested
   to agree with the CPU within 3·10⁻⁶. Layers with masks are CPU-rendered images in frame plans.
 - **Editing.** `masks.*` commands (add / remove / set / moveVertex / translate / addVertex /
-  removeVertex / toggleVertexSmooth / select / list); keyframe commands take `"mask": n`. The
+  removeVertex / toggleVertexSmooth / roundCorners / select / list; `masks.add` takes a
+  `cornerRadius` for a rounded rectangle); keyframe commands take `"mask": n`. The
   Program monitor overlay drags vertices, Bézier handles, the whole mask and the feather /
   expansion handles; drags merge into one undo step.
 - **Tracking** (`render::track`, `masks.track`): Shi–Tomasi features inside the mask, pyramidal
