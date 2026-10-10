@@ -2212,8 +2212,16 @@ fn build() -> Vec<CommandSpec> {
                 .unwrap_or_default();
             let clips = with_links(s, &[c]);
             s.edit_sequence("Slip", |q, ctx, _| {
+                // clamp across all linked partners, then slip them by the common delta
+                let mut dd = d;
                 for c in &clips {
-                    edit::slip(q, *c, d, ctx)?;
+                    let x = edit::slip(&mut q.clone(), *c, dd, ctx)?;
+                    if x.abs() < dd.abs() {
+                        dd = x;
+                    }
+                }
+                for c in &clips {
+                    edit::slip(q, *c, dd, ctx)?;
                 }
                 Ok(())
             })?;
