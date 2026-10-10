@@ -33,6 +33,26 @@ claude mcp add filmcraft-headless -- /abs/path/filmcraft/target/release/filmcraf
 { "mcpServers": { "filmcraft": { "command": "/abs/path/filmcraft-cli", "args": ["mcp", "--bridge", "127.0.0.1:9876"] } } }
 ```
 
+### From an installed release
+
+The release packages ship `filmcraft-cli` alongside the desktop app, so no build is needed:
+
+| Install | CLI |
+|---|---|
+| Windows (MSI) | `C:\Program Files\FilmCraft\filmcraft-cli.exe`, not added to `PATH` |
+| Linux (deb, rpm) | `/usr/bin/filmcraft-cli` |
+| macOS | the separate `filmcraft-cli-<version>-macos-universal.zip` release asset (the `.app` holds only the desktop app) |
+
+```sh
+# Windows
+claude mcp add filmcraft -- "C:\Program Files\FilmCraft\filmcraft-cli.exe" mcp
+# Linux, or macOS with the CLI unzipped onto PATH
+claude mcp add filmcraft -- filmcraft-cli mcp
+```
+
+An unofficial community plugin, [artcraft-claude-plugin](https://github.com/sawizzle/artcraft-claude-plugin),
+registers the installed ArtCraft apps in Claude Code in one step and adds usage notes for agents.
+
 ### Tools
 
 | Tool | Modes | Purpose |
