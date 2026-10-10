@@ -3435,8 +3435,13 @@
 	Username	ユーザー名
 	Vertical Type Tool	縦書き文字ツール
 
-# System appearance mode menu command.
+# System appearance modes and theme cards.
+	Active	使用中
+	Appearance Mode	外観モード
+	Dark Theme	ダークテーマ
+	Light Theme	ライトテーマ
 	Next Appearance Mode	次の外観モード
+	Sync with system	システムと同期
 	Go to previous keyframe	前のキーフレームへ移動
 	Go to next keyframe	次のキーフレームへ移動
 	Add keyframe	キーフレームを追加
