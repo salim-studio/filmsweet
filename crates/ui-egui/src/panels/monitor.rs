@@ -287,8 +287,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which)
     // Click/drag in the picture: the Hand tool pans a magnified picture, otherwise focus.
     let pic_resp = ui.interact(pic, egui::Id::new((prefix, "pic")), if show_picture { Sense::click_and_drag() } else { Sense::hover() });
     app.auto.add(&format!("{prefix}.picture"), pic.intersect(video_area), "picture");
-    if show_picture {
-        monitor_view::pan_input(app, ui, which, video_area, pic);
+    // (Comparison View always fits both frames)
+    if show_picture && !compare {
+        monitor_view::zoom_pan_input(app, ui, which, video_area, pic, display_w, ppp);
     }
     if which == Which::Program && show_picture {
         eyedropper(app, ui, &pic_resp, pic, target, rate, time);
