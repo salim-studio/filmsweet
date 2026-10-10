@@ -310,8 +310,12 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             let view = filmcraft_engine::clip_ops::source_view(&app.session, item).ok_or("Source clip is unavailable")?;
             let count = if id.ends_with('5') { i64::from(app.session.prefs.playback.step_many_frames) } else { 1 };
             let direction = if id.contains("Back") { -1 } else { 1 };
-            let delta = view.rate.frame_duration().0.saturating_mul(count).saturating_mul(direction);
-            let time = filmcraft_time::Tick(app.session.state.source_playhead.0.saturating_add(delta));
+            let time = if view.rate.frame_duration().0 == 0 {
+                app.session.state.source_playhead
+            } else {
+                let frame = view.rate.frame_at(app.session.state.source_playhead).saturating_add(count.saturating_mul(direction));
+                view.rate.tick_of(frame)
+            };
             return app.session.execute("source.setPlayhead", json!({"time": time.0})).map_err(|e| e.to_string());
         }
         "playback.forward" => {

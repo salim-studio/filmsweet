@@ -1898,8 +1898,11 @@ fn build() -> Vec<CommandSpec> {
         cmd!("playhead.step", "Step Frames", [], None, r#"{"frames":i64}"#, has_seq, |s, p| {
             let n = p.get("frames").and_then(Value::as_i64).unwrap_or(1);
             let r = s.sequence_rate();
-            let f = r.frame_at(s.playhead()) + n;
-            s.set_playhead(r.tick_of(f.max(0)));
+            let f = r.frame_at(s.playhead()).checked_add(n).ok_or_else(|| bad("playhead.step", "frame offset is too large"))?.max(0);
+            if f > r.frame_at(Tick::MAX) {
+                return Err(bad("playhead.step", "target frame exceeds the supported time range"));
+            }
+            s.set_playhead(r.tick_of(f));
             Ok(json!({"frame": r.frame_at(s.playhead())}))
         }),
         cmd!("playhead.stepForward", "Step Forward One Frame", [], Some("Right"), "{}", has_seq, |s, _| s.execute("playhead.step", json!({"frames": 1}))),

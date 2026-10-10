@@ -674,8 +674,9 @@ fn source_nav(app: &mut FilmcraftApp, cmd: &str) {
     let t = match cmd {
         "src.goIn" => v.mark_in.unwrap_or(v.start),
         "src.goOut" => v.mark_out.unwrap_or(v.end - rate.frame_duration()),
-        "src.stepBack" => cur - rate.frame_duration(),
-        _ => cur + rate.frame_duration(),
+        _ if rate.frame_duration() == Tick::ZERO => cur,
+        "src.stepBack" => rate.tick_of(rate.frame_at(cur).saturating_sub(1)),
+        _ => rate.tick_of(rate.frame_at(cur).saturating_add(1)),
     };
     let _ = app.session.execute("source.setPlayhead", json!({"time": t.0}));
 }
