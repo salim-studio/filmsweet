@@ -248,7 +248,17 @@ panel state and the Type-tool selection.
 | `file.replaceFonts` | Graphics and Titles ▸ Replace Fonts in Projects… | `from` (family or {family, style}), `to`, `toStyle`: graphic layers, character styles, source graphics and caption tracks |
 | `graphics.fonts.used` | (query) | fonts in use with counts and whether they are missing |
 
+## Gradient fills
+
+Appearance › Fill Type › Linear Gradient paints the shape or the text with a ramp from Gradient
+Start to Gradient End. Stops are blended in linear light. The angle is degrees clockwise on
+screen; 0° runs left to right across the layer's own bounds, and the ramp turns with the layer.
+`graphics.set` accepts `fill_kind` (`solid` or `linear gradient`), `gradient_start`,
+`gradient_end` and `gradient_angle`. A per-character fill colour still paints those characters
+as a solid; the rest of the text keeps the ramp. A singular layer transform falls back to the
+solid fill colour.
+
 ## Not yet
 
-Mask-with-text, gradient fills, per-layer blend modes, Bézier curves in the pen tool (paths are
-polygons), media layers inside graphics, and template controls grouped into folders.
+Mask-with-text, per-layer blend modes, Bézier curves in the pen tool (paths are polygons), media
+layers inside graphics, and template controls grouped into folders.
