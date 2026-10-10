@@ -57,7 +57,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let head = Rect::from_min_size(rect.min + vec2(8.0, 4.0), vec2(split - rect.min.x - 12.0, 24.0));
     // Premiere: two pill tabs — "Source · clip" and "Sequence · clip" (active)
     let pill = |ui: &mut egui::Ui, r: Rect, text: &str, active: bool| {
-        ui.painter().rect_filled(r, 4.0, if active { Color32::from_rgb(0x3a, 0x3a, 0x3a) } else { t.panel_bg });
+        ui.painter().rect_filled(r, 4.0, if active { t.pill_active_bg } else { t.panel_bg });
         if !active {
             ui.painter().rect_stroke(r, 4.0, Stroke::new(1.0, t.separator), egui::StrokeKind::Inside);
         }
@@ -78,7 +78,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let ruler = Rect::from_min_max(lane.min, pos2(lane.max.x, lane.min.y + RULER_H));
     paint_ruler(ui.painter(), ruler, &it, rate, seq.settings.drop_frame, &t);
     let bar = Rect::from_min_max(pos2(lane.min.x, ruler.max.y + 4.0), pos2(lane.max.x, ruler.max.y + 4.0 + CLIP_BAR_H));
-    ui.painter().rect_filled(bar.shrink2(vec2(0.0, 2.0)), 2.0, Color32::from_rgb(58, 58, 70));
+    ui.painter().rect_filled(bar.shrink2(vec2(0.0, 2.0)), 2.0, t.clip_bar_bg);
     ui.painter().with_clip_rect(bar).text(pos2(bar.min.x + 4.0, bar.center().y), Align2::LEFT_CENTER, &it.name, Tokens::ui(10.0), t.text);
     // click or drag anywhere on the ruler (or the bar) to move the playhead
     let scrub = Rect::from_min_max(ruler.min, bar.max);
@@ -892,10 +892,10 @@ pub(crate) fn graph_rows(
     let y_of = |v: f64| area.max.y - ((v - lo) / (hi - lo)) as f32 * area.height();
     let v_of = |y: f32| lo + ((area.max.y - y) / area.height()) as f64 * (hi - lo);
     let p = ui.painter();
-    p.rect_filled(area, 0.0, Color32::from_rgb(0x19, 0x19, 0x19));
+    p.rect_filled(area, 0.0, t.keyframe_plot_bg);
     for g in 1..4 {
         let y = area.min.y + area.height() * g as f32 / 4.0;
-        p.line_segment([pos2(area.min.x, y), pos2(area.max.x, y)], Stroke::new(1.0, Color32::from_rgb(0x2a, 0x2a, 0x2a)));
+        p.line_segment([pos2(area.min.x, y), pos2(area.max.x, y)], Stroke::new(1.0, t.keyframe_plot_grid));
     }
     // range labels in the property column
     let dec = if let ParamKind::Float { decimals, .. } = pd.kind { decimals as usize } else { 1 };
@@ -909,9 +909,9 @@ pub(crate) fn graph_rows(
     let vel: Vec<f64> = (0..n).map(|i| (vals[i + 1] - vals[i]) / secs.max(1e-9)).collect();
     let vmax = vel.iter().fold(1e-6f64, |a, v| a.max(v.abs())) * 1.15;
     let varea = Rect::from_min_max(pos2(lane.min.x, velr.min.y + 2.0), pos2(lane.max.x, velr.max.y - 4.0));
-    p.rect_filled(varea, 0.0, Color32::from_rgb(0x19, 0x19, 0x19));
+    p.rect_filled(varea, 0.0, t.keyframe_plot_bg);
     let vy = |v: f64| varea.center().y - (v / vmax) as f32 * varea.height() / 2.0;
-    p.line_segment([pos2(varea.min.x, varea.center().y), pos2(varea.max.x, varea.center().y)], Stroke::new(1.0, Color32::from_rgb(0x33, 0x33, 0x33)));
+    p.line_segment([pos2(varea.min.x, varea.center().y), pos2(varea.max.x, varea.center().y)], Stroke::new(1.0, t.keyframe_plot_axis));
     let vline: Vec<Pos2> = vel.iter().enumerate().map(|(i, v)| pos2(x_of((i as f32 + 0.5) / n as f32), vy(*v))).collect();
     p.add(egui::Shape::line(vline, Stroke::new(1.2, Color32::from_rgb(0xd0, 0xa0, 0x40))));
     p.text(pos2(velr.min.x + 44.0, varea.center().y), Align2::LEFT_CENTER, tl!("Velocity"), Tokens::ui(11.0), t.text_dim);
@@ -944,8 +944,8 @@ pub(crate) fn graph_rows(
             let hdx: f32 = ui.data(|d| d.get_temp(hid)).unwrap_or(0.0);
             let hx = c.x + side * (infl * seg + hdx * side).clamp(seg * 0.01, seg);
             let hp = pos2(hx, c.y);
-            p.line_segment([c, hp], Stroke::new(1.0, Color32::from_rgb(0x90, 0x90, 0x90)));
-            p.circle_filled(hp, 3.5, Color32::from_rgb(0xd0, 0xd0, 0xd0));
+            p.line_segment([c, hp], Stroke::new(1.0, t.plot_handle_dim));
+            p.circle_filled(hp, 3.5, t.keyframe_handle);
             let hr = ui.interact(Rect::from_center_size(hp, vec2(10.0, 10.0)), hid.with("h"), Sense::drag());
             if hr.dragged() {
                 let nx = hdx + hr.drag_delta().x;
@@ -958,7 +958,7 @@ pub(crate) fn graph_rows(
                 actions.push(("effects.setKeyframe".into(), with_mask(json!({"clip": clip.0, "effect": idx, "param": pd.id, "mediaTime": k.time.0, key: ni}))));
             }
         }
-        p.circle_filled(c, 4.5, if resp.dragged() { t.hot_text } else { Color32::from_rgb(0xe0, 0xe0, 0xe0) });
+        p.circle_filled(c, 4.5, if resp.dragged() { t.hot_text } else { t.plot_handle });
         if resp.dragged() {
             let ny = dy + resp.drag_delta().y;
             ui.data_mut(|d| d.insert_temp(id, ny));
