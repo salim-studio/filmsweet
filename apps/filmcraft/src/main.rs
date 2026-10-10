@@ -23,6 +23,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable))]
 
 mod app_nap;
+mod appearance;
 mod args;
 mod audio;
 mod audio_in;
@@ -229,6 +230,9 @@ fn main() -> eframe::Result {
             app.hooks.open_path = Some(Box::new(open_path));
             // Settings ▸ General ▸ Interface Language ▸ System Language (#218).
             app.hooks.system_languages = Some(Box::new(|| sys_locale::get_locales().collect()));
+            // Settings ▸ Appearance ▸ Appearance Mode ▸ Sync with system on Linux desktops whose
+            // compositor reports no theme to winit (no polling: see appearance.rs).
+            app.hooks.system_theme = appearance::service();
             app.hooks.raise_without_focus = Some(Box::new(|| {
                 window_raise::raise_without_focus();
             }));
