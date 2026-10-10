@@ -535,7 +535,13 @@ pub fn clamp_trim(seq: &Sequence, clip: ClipId, edge: Edge, mode: TrimMode, delt
     match edge {
         Edge::In => {
             // extending left (d<0) needs media before source_in; shortening needs min duration
-            let max_ext = Tick((head(ctx, it).0 as f64 / speed).floor() as i64);
+            // a reversed clip plays source_out down to source_in, so its In edge consumes media after source_out
+            let handle = match (it.reverse, media) {
+                (true, Some(m)) => (m - it.source_out()).max(Tick::ZERO),
+                (true, None) => Tick::MAX,
+                (false, _) => head(ctx, it),
+            };
+            let max_ext = if handle == Tick::MAX { Tick::MAX } else { Tick((handle.0 as f64 / speed).floor() as i64) };
             let lo = if mode == TrimMode::Regular { (-(it.start - prev_end)).max(-max_ext) } else { -max_ext };
             let hi = it.duration - ctx.min_duration;
             d = d.clamp(if it.frame_hold.is_some() { Tick::MIN } else { lo }, hi);
@@ -543,7 +549,10 @@ pub fn clamp_trim(seq: &Sequence, clip: ClipId, edge: Edge, mode: TrimMode, delt
         Edge::Out => {
             let lo = -(it.duration - ctx.min_duration);
             let mut hi = if mode == TrimMode::Regular { next_start - it.end() } else { Tick::MAX };
-            if let Some(m) = media {
+            if it.reverse && it.frame_hold.is_none() {
+                // a reversed clip's Out edge consumes media before source_in
+                hi = hi.min(Tick((head(ctx, it).0 as f64 / speed).floor() as i64));
+            } else if let Some(m) = media {
                 let remain = Tick(((m - it.source_out()).0 as f64 / speed).floor() as i64);
                 hi = hi.min(remain);
             }
