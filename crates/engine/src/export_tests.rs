@@ -360,6 +360,22 @@ fn queue_orders_cancels_and_retries() {
 }
 
 #[test]
+fn queue_move_by_extreme_offsets_clamps_instead_of_overflowing() {
+    let mut s = demo();
+    let ids: Vec<u64> = (0..3)
+        .map(|_| {
+            let r = s.execute("export.queue.add", json!({"preset": "Waveform Audio 48 kHz 16-bit", "path": "queued-output/"})).unwrap();
+            r["added"][0].as_u64().unwrap()
+        })
+        .collect();
+    let order = |s: &mut Session| -> Vec<u64> { queue(s).iter().map(|i| i["id"].as_u64().unwrap()).collect() };
+    s.execute("export.queue.move", json!({"id": ids[1], "by": i64::MAX})).unwrap();
+    assert_eq!(order(&mut s), [ids[0], ids[2], ids[1]]);
+    s.execute("export.queue.move", json!({"id": ids[1], "by": i64::MIN})).unwrap();
+    assert_eq!(order(&mut s), [ids[1], ids[0], ids[2]]);
+}
+
+#[test]
 fn queue_cancels_a_running_export_and_retries_a_failed_one() {
     let mut s = demo();
     let dir = Scratch::new("queue-cancel");
