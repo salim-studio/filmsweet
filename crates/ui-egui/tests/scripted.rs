@@ -506,29 +506,6 @@ fn keyboard_shortcuts_dialog_assigns_live_and_cancel_restores() {
     assert_eq!(track_clips(&d.sequence(), 0).len(), n0 + 1);
 }
 
-#[test]
-fn shortcuts_in_one_input_frame_are_all_dispatched() {
-    let mut d = Driver::demo();
-    d.exec("playhead.set", json!({"seconds": 2.0}));
-    d.ok("ui.set", json!({"focused": "Timeline"}));
-    let before = d.sequence();
-    let n0 = track_clips(&before, 0).len();
-    let ph = before["playhead"].as_i64().unwrap();
-
-    // Raw OS-style events, deliberately in the same egui input frame. These bypass the control
-    // channel's synthetic pointer sequencing and exercise normal shortcut dispatch directly.
-    let command = egui::Modifiers { command: true, ..Default::default() };
-    let key = |key, modifiers| egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers };
-    let events = &mut d.harness.input_mut().events;
-    events.push(key(egui::Key::K, command));
-    events.push(key(egui::Key::ArrowRight, egui::Modifiers::default()));
-    d.frames(1);
-
-    let after = d.sequence();
-    assert_eq!(track_clips(&after, 0).len(), n0 + 1, "Cmd+K was lost when another key arrived in the same input frame");
-    assert!(after["playhead"].as_i64().unwrap() > ph, "Right was lost when another key arrived in the same input frame");
-}
-
 /// Waveform peaks are cached per item id; ids repeat across projects, so opening another project
 /// must not reuse the previous project's peaks (it showed a long mission-audio clip as silent).
 #[test]

@@ -1769,4 +1769,4 @@ fn short_clips(s: &Session, clips: &[u64]) -> Vec<Value> {
             (frames > 0).then(|| json!({"clip": c, "shortByFrames": frames}))
         })
         .collect()
-                 }
+}
