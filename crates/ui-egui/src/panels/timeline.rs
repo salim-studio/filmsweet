@@ -1902,11 +1902,11 @@ fn multicam_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui, picked: &[&TrackItem
 }
 
 /// What the wheel and the trackpad did this frame.
-struct WheelInput {
+pub(crate) struct WheelInput {
     /// Scroll in points (wheel lines and pages converted), positive = content moves right / down.
-    delta: egui::Vec2,
+    pub(crate) delta: egui::Vec2,
     /// Pinch factor (1 = none).
-    pinch: f32,
+    pub(crate) pinch: f32,
     command: bool,
     alt: bool,
     shift: bool,
@@ -1915,7 +1915,7 @@ struct WheelInput {
 /// The wheel events of this frame, read from the events themselves: egui turns Cmd + wheel into a
 /// zoom and Shift + wheel into a sideways scroll before anyone asks, and the Timeline has its own
 /// meaning for both. The modifiers are those of the events (a script's wheel carries its own).
-fn wheel_input(ctx: &egui::Context) -> WheelInput {
+pub(crate) fn wheel_input(ctx: &egui::Context) -> WheelInput {
     ctx.input(|i| {
         let mut w = WheelInput { delta: egui::Vec2::ZERO, pinch: 1.0, command: false, alt: false, shift: false };
         for e in &i.events {
