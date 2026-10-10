@@ -360,6 +360,25 @@ fn roll_slip_slide() {
 }
 
 #[test]
+fn slide_keeps_reversed_neighbours_content() {
+    let mut fx = Fx::new();
+    let v1 = fx.v(0);
+    let a = fx.put(v1, 0, 30, 20);
+    let b = fx.put(v1, 30, 30, 50);
+    let c = fx.put(v1, 60, 30, 70);
+    for id in [a, c] {
+        fx.seq.find_item_mut(id).unwrap().1.reverse = true;
+    }
+    let mut n = fx.next;
+    slide(&mut fx.seq, b, f(10), &mut Fx::ctx(&mut n)).unwrap();
+    assert_eq!(fx.spans(v1), vec![(0, 40), (40, 30), (70, 20)]);
+    assert_eq!(fx.seq.find_item(a).unwrap().1.source_in, f(10));
+    assert_eq!(fx.seq.find_item(b).unwrap().1.source_in, f(50));
+    assert_eq!(fx.seq.find_item(c).unwrap().1.source_in, f(70));
+    fx.seq.check().unwrap();
+}
+
+#[test]
 fn transitions_stay_on_their_cuts() {
     let mut fx = Fx::new();
     let v1 = fx.v(0);

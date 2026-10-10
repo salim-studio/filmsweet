@@ -799,7 +799,10 @@ pub fn slide(seq: &mut Sequence, clip: ClipId, delta: Tick, ctx: &mut EditCtx) -
     let mut d = delta;
     if let Some(p) = &prev {
         d = d.max(-(p.duration - ctx.min_duration));
-        if let Some(m) = media_len(ctx, p) {
+        if p.reverse {
+            // a reversed neighbour grows by pulling earlier media in front of its source In
+            d = d.min(Tick((head(ctx, p).0 as f64 / p.speed.abs()).floor() as i64));
+        } else if let Some(m) = media_len(ctx, p) {
             d = d.min(Tick(((m - p.source_out()).0 as f64 / p.speed.abs()).floor() as i64));
         }
     } else {
@@ -807,7 +810,14 @@ pub fn slide(seq: &mut Sequence, clip: ClipId, delta: Tick, ctx: &mut EditCtx) -
     }
     if let Some(n) = &next {
         d = d.min(n.duration - ctx.min_duration);
-        d = d.max(-Tick((head(ctx, n).0 as f64 / n.speed.abs()).floor() as i64));
+        if n.reverse {
+            // a reversed neighbour grows leftwards by pulling later media behind its source Out
+            if let Some(m) = media_len(ctx, n) {
+                d = d.max(-Tick(((m - n.source_out()).0 as f64 / n.speed.abs()).floor() as i64));
+            }
+        } else {
+            d = d.max(-Tick((head(ctx, n).0 as f64 / n.speed.abs()).floor() as i64));
+        }
     } else {
         d = d.min(neighbours(tr, clip).1 - it.end());
     }
@@ -819,12 +829,17 @@ pub fn slide(seq: &mut Sequence, clip: ClipId, delta: Tick, ctx: &mut EditCtx) -
     if let Some(p) = prev {
         let pi = t.item_mut(p.id).ok_or(EditError::NoItem(p.id))?;
         pi.duration += d;
+        if p.reverse {
+            pi.source_in -= src_of(d, p.speed);
+        }
     }
     if let Some(n) = next {
         let ni = t.item_mut(n.id).ok_or(EditError::NoItem(n.id))?;
         ni.start += d;
         ni.duration -= d;
-        ni.source_in += src_of(d, n.speed);
+        if !n.reverse {
+            ni.source_in += src_of(d, n.speed);
+        }
     }
     let me = t.item_mut(clip).ok_or(EditError::NoItem(clip))?;
     me.start += d;
