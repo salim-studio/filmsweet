@@ -56,7 +56,7 @@ fn stdout_failed(e: std::io::Error) {
     if STDOUT_GONE.swap(true, Ordering::Relaxed) || e.kind() == std::io::ErrorKind::BrokenPipe {
         return;
     }
-    eprintln!("filmcraft-cli: can't write to stdout: {e}");
+    diag(format_args!("filmcraft-cli: can't write to stdout: {e}"));
     STDOUT_ERROR.store(true, Ordering::Relaxed);
 }
 
@@ -115,13 +115,23 @@ EXIT STATUS
   0 success · 1 a command failed · 2 usage error
 ";
 
+/// Writes one diagnostic line to `w`, dropping any write error. `eprintln!` panics (exit 101) when stderr's
+/// reader is gone, which would turn a usage error, a failure or a finished export into a crash.
+fn write_diag(w: &mut dyn std::io::Write, msg: std::fmt::Arguments) {
+    let _ = writeln!(w, "{msg}");
+}
+
+fn diag(msg: std::fmt::Arguments) {
+    write_diag(&mut std::io::stderr(), msg);
+}
+
 fn usage(msg: impl std::fmt::Display) -> ! {
-    eprintln!("filmcraft-cli: {msg}\nRun `filmcraft-cli help` for usage.");
+    diag(format_args!("filmcraft-cli: {msg}\nRun `filmcraft-cli help` for usage."));
     std::process::exit(2)
 }
 
 fn fail(msg: impl std::fmt::Display) -> ! {
-    eprintln!("filmcraft-cli: {msg}");
+    diag(format_args!("filmcraft-cli: {msg}"));
     std::process::exit(1)
 }
 
@@ -399,7 +409,7 @@ async fn cli() {
             match r {
                 Ok(v) => {
                     print(&a, &v);
-                    eprintln!("exported {} in {:.1}s", written_paths(&v, out).join(", "), t0.elapsed().as_secs_f64());
+                    diag(format_args!("exported {} in {:.1}s", written_paths(&v, out).join(", "), t0.elapsed().as_secs_f64()));
                 }
                 Err(e) => fail(format!("export: {e}")),
             }
@@ -418,7 +428,7 @@ async fn cli() {
             let dt = t0.elapsed();
             let png = filmcraft_automation::png_rgba(img.w as u32, img.h as u32, img.over_black_rgba8(), 0).unwrap_or_else(|e| fail(e));
             std::fs::write(out, png).unwrap_or_else(|e| fail(format!("{out}: {e}")));
-            eprintln!("rendered {}x{} in {:.1} ms → {out}", img.w, img.h, dt.as_secs_f64() * 1000.0);
+            diag(format_args!("rendered {}x{} in {:.1} ms → {out}", img.w, img.h, dt.as_secs_f64() * 1000.0));
         }
         "mcp" => {
             let server = match a.opt("--bridge") {
@@ -465,6 +475,23 @@ mod format_tests {
         let expected = cfg!(any(target_os = "macos", target_os = "windows"))
             || (cfg!(target_os = "linux") && matches!(hardware, filmcraft_platform::Availability::Available(_)));
         assert_eq!(filmcraft_platform::registered(), expected, "{hardware:?}");
+    }
+
+    #[test]
+    fn a_failing_diagnostic_stream_does_not_panic() {
+        struct Closed;
+        impl std::io::Write for Closed {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+        }
+        super::write_diag(&mut Closed, format_args!("exported {}", "a.wav"));
+        let mut ok = Vec::new();
+        super::write_diag(&mut ok, format_args!("hi"));
+        assert_eq!(ok, b"hi\n");
     }
 
     #[test]
