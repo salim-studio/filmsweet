@@ -57,3 +57,28 @@ range validation and undo; the UI owns the drag gesture. See `source_drag_ui` an
 Source range handles use transient gesture previews and the engine's integer-frame
 `source_monitor::adjust_range`; release dispatches one mark edit. Monitor command routing
 keeps Source navigation, markers and marked-range playback separate from Program.
+
+## Pane layout controls
+
+Dock transactions and pointer targets use `craft-ui::docking`; bounded split geometry and
+keyboard-accessible resize handles use `craft-ui::layout`. FilmCraft adapts its existing saved
+dock tree and panel identities to the shared model. Panel tabs or their header grip can move
+between tab groups, split at an edge, reorder, or float when released with Cmd/Ctrl. Floating
+panels move by their empty header and resize from the bottom-right corner. Timeline sequence
+tabs retain their sequence-opening, closing and horizontal reorder behavior; the header grip
+moves the Timeline panel. Workspace saves retain floating groups alongside the legacy layout
+JSON, and workspaces without floating data still load. Automation IDs and workspace commands
+remain the integration boundary.
+
+Tools and dock tabs expose their actual egui widget IDs, paint keyboard focus, and support
+Tab/Shift-Tab traversal and Space/Enter activation. Control-injected keys can reach focused
+widgets in a background window. The optional `--control-input-only` native launch mode isolates
+automation from native widget/menu input; `ui.inspect` reports native and effective focus
+separately. Focus and input-ownership regressions cover document/playhead preservation.
+
+Compact monitor layouts separate the current and duration timecodes from zoom, resolution and
+settings. Source video/audio drag choices retain their existing placement behavior. Transport
+buttons use `craft-ui::layout::fit_toolbar`; commands beyond the available width remain available
+through More, including their selected state and Source/Program routing. A scrolling fallback
+retains all commands if even More cannot fit. `monitor_geometry` checks the painted readouts,
+control bounds, overflow actions and Source drag payloads across monitor widths and themes.

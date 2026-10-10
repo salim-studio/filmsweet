@@ -670,6 +670,7 @@
 	Extract (')	Extraer (')
 	Export Frame: use Export mode (M6)	Exportar fotograma: usa el modo Exportar (M6)
 	Button Editor	Editor de botones
+	More transport controls	Más controles de reproducción
 	Multi-Camera Record on	Grabación multicámara activada
 	Multi-Camera Record off	Grabación multicámara desactivada
 	{first} - Merged	{first} - Combinado
@@ -3512,3 +3513,8 @@
 	Composite on the GPU when available	Componer en la GPU cuando esté disponible
 	Text to Speech	Texto a voz
 	Edit Narration	Editar narración
+
+	Dock Panel	Acoplar panel
+	Undock Panel	Desacoplar panel
+	Docking Action	Acción de acoplamiento
+	Resize floating panel	Cambiar tamaño del panel flotante

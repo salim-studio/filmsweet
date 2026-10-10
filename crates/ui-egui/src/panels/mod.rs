@@ -224,54 +224,64 @@ pub fn panel_menu_popup(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     let mut close = false;
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(190.0);
-            // the Timeline's tabs are its open sequences: Close Panel closes the active one and
-            // keeps the panel (Premiere's wording and behaviour)
-            if p == PanelKind::Timeline && app.session.state.active_sequence.is_some() {
-                let r = ui.button(tl!("Close Panel"));
-                app.auto.add("panel.menu.Timeline.close", r.rect, "Close Panel");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.close", serde_json::json!({}));
-                    close = true;
-                }
-                let r = ui.add_enabled(app.session.state.open_sequences.len() > 1, egui::Button::new(tl!("Close Other Timeline Panels")));
-                app.auto.add("panel.menu.Timeline.closeOthers", r.rect, "Close Other Timeline Panels");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.closeOthers", serde_json::json!({}));
-                    close = true;
-                }
-            } else if ui.button(tl!("Close Panel")).clicked() {
-                app.ui.dock.close(p);
-                close = true;
-            }
-            if ui.button(tl!("Maximize Frame")).clicked() {
-                app.ui.dock = crate::dock::DockNode::Tabs { panels: vec![p], active: 0 };
-                close = true;
-            }
-            if ui.button(tl!("Restore Workspace")).clicked() {
-                let w = app.ui.workspace.clone();
-                app.set_workspace(&w);
-                close = true;
-            }
-            if p == PanelKind::Timeline {
-                ui.separator();
-                let r = ui.add_enabled(app.session.state.active_sequence.is_some(), egui::Button::new(tl!("Reveal Sequence in Project")));
-                app.auto.add("panel.menu.Timeline.revealSequence", r.rect, "Reveal Sequence in Project");
-                if r.clicked() {
-                    let _ = app.session.execute("sequence.revealInProject", serde_json::json!({}));
-                    close = true;
-                }
-                ui.checkbox(&mut app.ui.timeline.show_thumbnails, tl!("Video Thumbnails"));
-                ui.checkbox(&mut app.ui.timeline.show_waveforms, tl!("Audio Waveforms"));
-            }
-            if p == PanelKind::Project {
-                ui.separator();
-                close |= project::panel_menu(app, ui);
-            }
-            if p == PanelKind::MediaBrowser {
-                ui.separator();
-                close |= media_browser::panel_menu(app, ui);
-            }
+            let scroll =
+                egui::ScrollArea::vertical().id_salt("panel-menu-scroll").max_height((ui.ctx().content_rect().height() - 16.0).max(0.0)).show(ui, |ui| {
+                    ui.set_min_width(190.0);
+                    // the Timeline's tabs are its open sequences: Close Panel closes the active one and
+                    // keeps the panel (Premiere's wording and behaviour)
+                    if p == PanelKind::Timeline && app.session.state.active_sequence.is_some() {
+                        let r = ui.button(tl!("Close Panel"));
+                        app.auto.add("panel.menu.Timeline.close", r.rect, "Close Panel");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.close", serde_json::json!({}));
+                            close = true;
+                        }
+                        let r = ui.add_enabled(app.session.state.open_sequences.len() > 1, egui::Button::new(tl!("Close Other Timeline Panels")));
+                        app.auto.add("panel.menu.Timeline.closeOthers", r.rect, "Close Other Timeline Panels");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.closeOthers", serde_json::json!({}));
+                            close = true;
+                        }
+                    } else if ui.button(tl!("Close Panel")).clicked() {
+                        let _ = crate::menus::invoke(app, ui.ctx(), "window.closePanel", serde_json::json!({"panel": p.id()}));
+                        close = true;
+                    }
+                    let undock = ui.button(tl!("Undock Panel"));
+                    app.auto.add_response(&format!("panel.menu.{}.undock", p.id()), &undock, "Undock Panel");
+                    if undock.clicked() {
+                        let _ = crate::menus::invoke(app, ui.ctx(), "window.floatPanel", serde_json::json!({"panel": p.id()}));
+                        close = true;
+                    }
+                    if ui.button(tl!("Maximize Frame")).clicked() {
+                        app.ui.keys.maximized = if app.ui.keys.maximized == Some(p) { None } else { Some(p) };
+                        close = true;
+                    }
+                    if ui.button(tl!("Restore Workspace")).clicked() {
+                        let w = app.ui.workspace.clone();
+                        app.set_workspace(&w);
+                        close = true;
+                    }
+                    if p == PanelKind::Timeline {
+                        ui.separator();
+                        let r = ui.add_enabled(app.session.state.active_sequence.is_some(), egui::Button::new(tl!("Reveal Sequence in Project")));
+                        app.auto.add("panel.menu.Timeline.revealSequence", r.rect, "Reveal Sequence in Project");
+                        if r.clicked() {
+                            let _ = app.session.execute("sequence.revealInProject", serde_json::json!({}));
+                            close = true;
+                        }
+                        ui.checkbox(&mut app.ui.timeline.show_thumbnails, tl!("Video Thumbnails"));
+                        ui.checkbox(&mut app.ui.timeline.show_waveforms, tl!("Audio Waveforms"));
+                    }
+                    if p == PanelKind::Project {
+                        ui.separator();
+                        close |= project::panel_menu(app, ui);
+                    }
+                    if p == PanelKind::MediaBrowser {
+                        ui.separator();
+                        close |= media_browser::panel_menu(app, ui);
+                    }
+                });
+            app.auto.add("panel.menu.scroll", scroll.inner_rect, "Panel menu");
         });
     });
     // A click elsewhere or Escape closes the menu. The click that opened it is over the tab, not
