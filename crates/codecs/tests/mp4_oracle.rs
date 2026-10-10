@@ -148,7 +148,7 @@ fn cropped_pictures_match_ffmpeg() {
             &["-flags", "unaligned", "-i", path.to_str().unwrap(), "-map", "0:v:0", "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"],
         );
         let frame_bytes = (w * h) as usize + 2 * cw * ch;
-        if name.contains("clap") && raw.len() % frame_bytes != 0 {
+        if name.contains("clap") && !raw.len().is_multiple_of(frame_bytes) {
             // ffmpeg before 7.1 ignores `clap` and decodes the whole picture
             eprintln!("SKIPPED ({name}): this ffmpeg does not apply the clean aperture");
             continue;
