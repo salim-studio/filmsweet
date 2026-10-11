@@ -118,8 +118,9 @@ pub struct HostHooks {
     pub pick_open_project: Option<Box<dyn FnMut() -> Option<String>>>,
     /// Save dialog with a filter: (filter name, extensions, suggested file name) → path.
     pub pick_save_as: Option<Box<dyn FnMut(&str, &[&str], &str) -> Option<String>>>,
-    /// The active keyboard shortcuts changed: update native menu key equivalents.
-    pub shortcuts_changed: Option<Box<dyn FnMut(&[menus::MenuItem])>>,
+    /// The menu tree changed (labels, shortcuts, enablement, checkmarks): update the native menu
+    /// bar. Called from the frame loop only when something differs from the last call.
+    pub menu_changed: Option<Box<dyn FnMut(&[menus::MenuItem])>>,
     /// The user's preferred languages (locale tags, most preferred first) for Interface Language ▸
     /// System Language. Without it, System Language is English.
     pub system_languages: Option<Box<dyn Fn() -> Vec<String>>>,
@@ -322,8 +323,10 @@ pub struct FilmcraftApp {
     pub fps: f32,
     last_time: f64,
     bindings: Vec<menus::KeyBinding>,
-    /// Shortcut-set revision `bindings` (and the native menu) were built from.
+    /// Shortcut-set revision `bindings` were built from.
     bindings_rev: u64,
+    /// The menu tree last sent to `hooks.menu_changed` (the native menu bar).
+    menu_sent: Vec<menus::MenuItem>,
     /// Keyboard Shortcuts dialog state.
     pub shortcut_editor: panels::shortcuts_dialog::EditorState,
     pub toast: Option<(String, f64)>,
@@ -544,6 +547,7 @@ impl FilmcraftApp {
             last_time: 0.0,
             bindings: Vec::new(),
             bindings_rev: 0,
+            menu_sent: Vec::new(),
             shortcut_editor: Default::default(),
             toast: None,
             tl: Default::default(),
@@ -676,10 +680,6 @@ impl FilmcraftApp {
                 self.ui.language = language;
             }
             i18n::set_current(self.ui.language);
-            let items = menus::menu_items(self);
-            if let Some(hook) = self.hooks.shortcuts_changed.as_mut() {
-                hook(&items);
-            }
         }
         self.frames.set_cache_budget(p.memory.frame_cache_mb as usize * (1 << 20));
         self.ui.play_after_render = p.timeline.play_after_rendering;
@@ -1358,16 +1358,29 @@ impl FilmcraftApp {
 
     // ---------------------------------------------------------------- input
 
+    /// Sends the menu tree to the native menu bar when it changed, so its items show the same
+    /// labels, shortcuts and enablement as the in-window menus (Undo with nothing to undo is
+    /// disabled). Without a native menu bar this does nothing.
+    fn sync_native_menu(&mut self) {
+        if self.hooks.menu_changed.is_none() {
+            return;
+        }
+        let items = menus::menu_items(self);
+        if items == self.menu_sent {
+            return;
+        }
+        if let Some(hook) = self.hooks.menu_changed.as_mut() {
+            hook(&items);
+        }
+        self.menu_sent = items;
+    }
+
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let workspaces = (dock::names(&self.workspaces), self.ui.workspace.clone());
         if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces {
             self.menu_workspaces = workspaces;
             self.bindings = menus::bindings(self);
             self.bindings_rev = self.session.shortcuts.revision;
-            let items = menus::menu_items(self);
-            if let Some(hook) = self.hooks.shortcuts_changed.as_mut() {
-                hook(&items);
-            }
         }
         if ctx.egui_wants_keyboard_input() || self.dialog == Some(Dialog::Shortcuts) {
             return;
@@ -1652,6 +1665,7 @@ impl FilmcraftApp {
             self.command_inbox = Some(rx);
         }
         self.handle_shortcuts(&ctx);
+        self.sync_native_menu();
         self.advance_playback(&ctx);
         self.advance_source_playback(&ctx);
         self.scrub_audio(&ctx);
@@ -2251,5 +2265,45 @@ mod screen_px_tests {
             let p = screen_px_to_ui((10, 20), ppp, egui::pos2(0.0, 0.0));
             assert!(p.x.is_finite() && p.y.is_finite());
         }
+    }
+}
+
+#[cfg(test)]
+mod native_menu_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn enabled(items: &[menus::MenuItem], id: &str) -> Option<bool> {
+        items.iter().find(|it| it.id == id).map(|it| it.enabled)
+    }
+
+    /// The native menu bar (macOS) gets the menu tree whenever it changes, so Edit ▸ Undo and Redo
+    /// follow the history instead of staying enabled (#902).
+    #[test]
+    fn native_menu_follows_undo_and_redo_availability() {
+        let sent: Rc<RefCell<Vec<Vec<menus::MenuItem>>>> = Rc::default();
+        let mut app = FilmcraftApp::new(Session::default());
+        let sink = sent.clone();
+        app.hooks.menu_changed = Some(Box::new(move |items: &[menus::MenuItem]| sink.borrow_mut().push(items.to_vec())));
+
+        app.sync_native_menu();
+        let last = |sent: &Rc<RefCell<Vec<Vec<menus::MenuItem>>>>, id: &str| sent.borrow().last().and_then(|items| enabled(items, id));
+        assert_eq!(last(&sent, "edit.undo"), Some(false), "nothing to undo in an empty project");
+        assert_eq!(last(&sent, "edit.redo"), Some(false), "nothing to redo in an empty project");
+        assert_eq!(last(&sent, "file.newProject"), Some(true));
+
+        app.sync_native_menu();
+        assert_eq!(sent.borrow().len(), 1, "an unchanged menu is not sent again");
+
+        app.session.execute("file.newSequence", json!({"width":16,"height":16})).unwrap();
+        app.sync_native_menu();
+        assert_eq!(last(&sent, "edit.undo"), Some(true), "an edit can be undone");
+        assert_eq!(last(&sent, "edit.redo"), Some(false));
+
+        app.session.execute("edit.undo", json!({})).unwrap();
+        app.sync_native_menu();
+        assert_eq!(last(&sent, "edit.undo"), Some(false));
+        assert_eq!(last(&sent, "edit.redo"), Some(true), "the undone edit can be redone");
     }
 }
