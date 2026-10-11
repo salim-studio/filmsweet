@@ -2236,6 +2236,13 @@ fn build() -> Vec<CommandSpec> {
                 };
                 let sin = p.get("sourceIn").and_then(Value::as_i64).map(Tick).or(mi).unwrap_or_default();
                 let dur = p.get("duration").and_then(Value::as_i64).map(Tick).unwrap_or_else(|| mo.unwrap_or(full) - sin);
+                // The clip goes on the frame grid: its start and its end (`time + duration`) each snap
+                // to the nearest frame, so a sub-frame `time` never pushes the end past the one asked
+                // for and the sequence never ends between frames (#1101).
+                let rate = s.sequence_rate();
+                let end = rate.snap_nearest(at + dur);
+                let at = rate.snap_nearest(at);
+                let dur = end - at;
                 let ids = place_item(s, item, TimeRange::new(sin, dur), at, v, a, bool_p(p, "insert").unwrap_or(false), "Place Clip", None)?;
                 Ok(json!({"clips": ids.iter().map(|c| c.0).collect::<Vec<_>>()}))
             }
@@ -3770,12 +3777,14 @@ pub fn inspect_sequence(s: &Session, id: ItemId, q: &filmcraft_project::Sequence
             "transitions": t.transitions.iter().map(|x| json!({"id": x.id.0, "effect": x.effect.effect, "start": x.start.0, "duration": x.duration.0, "from": x.from.map(|c| c.0), "to": x.to.map(|c| c.0), "reverse": x.reverse, "align": filmcraft_edit::transitions::bounds(t, x).map(|b| filmcraft_edit::transitions::alignment(x, b.1, rate.frame_duration()).id()), "params": x.effect.params.iter().map(|(k, v)| (k.clone(), serde_json::to_value(&v.value).unwrap_or_default())).collect::<serde_json::Map<_, _>>()})).collect::<Vec<_>>(),
         })
     };
+    // the frames export renders, a partial last frame included
+    let (f0, f1) = filmcraft_export::frame_span(rate, TimeRange::new(Tick::ZERO, q.duration()));
     json!({
         "id": id.0,
         "name": s.project.item(id).map(|i| i.name.clone()),
         "settings": q.settings,
         "duration": q.duration().0,
-        "durationFrames": rate.frame_at(q.duration()),
+        "durationFrames": f1 - f0,
         "playhead": s.state.playheads.get(&id).map(|t| t.0),
         "in": q.mark_in.map(|t| t.0),
         "out": q.mark_out.map(|t| t.0),
