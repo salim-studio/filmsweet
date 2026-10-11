@@ -124,6 +124,17 @@ The playhead has drag priority above the range band and trim handles, including 
 selection. Drag it to scrub; the unoccupied upper ruler can also scrub. Drag the gray band away
 from the playhead to translate the marked range.
 
+## Zoom the time ruler
+
+Under each monitor's time ruler is a zoom scroll bar like the Timeline's. Its thumb is the part of
+the clip or sequence the ruler shows: drag a handle at either end to zoom in or out, drag the
+middle to scroll, or press beside the thumb to move it there. A thumb filling the bar shows the
+whole duration; the ruler zooms in as far as five frames. The playhead, markers, In/Out and ticks
+follow the part shown, and clicking or scrubbing the ruler sets a time within it; what lies
+outside it is not drawn. Each monitor keeps its own range in its view state (`time_zoom`: start
+and end as fractions of the duration, `null` for all of it). Automation ids: `<monitor>.zoomBar`
+(the thumb) and `<monitor>.zoomBar.track`.
+
 ## Export Frame
 
 The camera button in either monitor opens Export Frame. Drag its white header to move the dialog.
