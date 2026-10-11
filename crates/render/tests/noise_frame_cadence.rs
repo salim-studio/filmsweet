@@ -1,6 +1,9 @@
 use filmcraft_project::{ParamValue, find_effect};
-use filmcraft_render::{Image, effects::{FxCtx, apply}};
-use filmcraft_time::{FrameRate, Tick};
+use filmcraft_render::{
+    Image,
+    effects::{FxCtx, apply},
+};
+use filmcraft_time::FrameRate;
 
 fn render_noise(effect_id: &str, rate: FrameRate, frame: i64, amount: f64) -> Vec<f32> {
     let mut image = Image::filled(16, 16, [0.5, 0.5, 0.5, 1.0]);
@@ -34,6 +37,6 @@ fn both_noise_variants_change_on_every_sequence_frame() {
         }
         // Floating-point second-to-30Hz conversion also repeated frames 122/123 at 30 fps.
         assert_ne!(render_noise(effect_id, FrameRate::FPS_30, 122, 100.0), render_noise(effect_id, FrameRate::FPS_30, 123, 100.0));
-        assert_eq!(render_noise(effect_id, FrameRate::FPS_60, 0, 0.0), vec![0.5, 0.5, 0.5, 1.0].repeat(16 * 16));
+        assert_eq!(render_noise(effect_id, FrameRate::FPS_60, 0, 0.0), [0.5, 0.5, 0.5, 1.0].repeat(16 * 16));
     }
 }
