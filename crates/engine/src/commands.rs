@@ -2360,9 +2360,14 @@ fn build() -> Vec<CommandSpec> {
             "Move Clips",
             [],
             None,
-            r#"{"moves":[{"clip":id,"track":id|"V2","time":ticks}],"insert":bool,"linked":bool?,"copy":bool?}"#,
+            r#"{"moves":[{"clip":id,"track":id|"V2"|"new" (after the last of its kind),"time":ticks}],"insert":bool,"linked":bool?,"copy":bool?}"#,
             has_seq,
-            move_clips
+            |s, p| {
+                if crate::sequence_tools::move_wants_new_track(p) {
+                    return crate::sequence_tools::move_to_new_tracks(s, p);
+                }
+                move_clips(s, p)
+            }
         ),
         cmd!(
             "timeline.trim",
