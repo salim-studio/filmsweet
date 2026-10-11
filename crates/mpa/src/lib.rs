@@ -163,7 +163,7 @@ pub struct Frame {
 }
 
 /// Subband samples of one frame: `[channel][time slot][subband]`, up to 36 time slots.
-type Subbands = [[[f32; 32]; 36]; 2];
+type Subbands = [[[f32; tables::SUBBANDS]; 36]; 2];
 
 /// A Layer I / Layer II decoder. It keeps the synthesis filter state between frames, so frames
 /// must be fed in order; call [`Decoder::reset`] before decoding from another position.
@@ -314,9 +314,11 @@ fn layer2(r: &mut BitReader, h: &Header, out: &mut Subbands) -> Result<()> {
     let nch = h.channels();
     let per_channel = h.bitrate_kbps / nch as u32;
     let table = AllocTable::select(h.version != Version::Mpeg1, h.sample_rate, per_channel);
-    let sblimit = table.sblimit();
+    // at most 32 for every table (a compile-time check in `tables`); the clamp keeps every
+    // `[sb]` below in bounds even so
+    let sblimit = table.sblimit().min(tables::SUBBANDS);
     let bound = if nch == 1 { sblimit } else { h.bound().min(sblimit) };
-    let mut steps = [[0u16; 32]; 2];
+    let mut steps = [[0u16; tables::SUBBANDS]; 2];
     for sb in 0..sblimit {
         let row = table.row(sb);
         let nbal = row.len().trailing_zeros();
@@ -331,7 +333,7 @@ fn layer2(r: &mut BitReader, h: &Header, out: &mut Subbands) -> Result<()> {
             steps[1][sb] = s;
         }
     }
-    let mut scfsi = [[0u32; 32]; 2];
+    let mut scfsi = [[0u32; tables::SUBBANDS]; 2];
     for sb in 0..sblimit {
         for ch in 0..nch {
             if steps[ch][sb] != 0 {
@@ -340,7 +342,7 @@ fn layer2(r: &mut BitReader, h: &Header, out: &mut Subbands) -> Result<()> {
         }
     }
     // the scalefactor for each third of the frame (4 granules each)
-    let mut scf = [[[0f32; 3]; 32]; 2];
+    let mut scf = [[[0f32; 3]; tables::SUBBANDS]; 2];
     for sb in 0..sblimit {
         for ch in 0..nch {
             if steps[ch][sb] == 0 {

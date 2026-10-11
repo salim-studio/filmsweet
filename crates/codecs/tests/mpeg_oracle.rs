@@ -536,24 +536,41 @@ fn mono_mp2_at_ffmpegs_default_bit_rate() {
     assert_eq!(std::fs::read(&f).unwrap()[2] >> 4, 14, "384 kbit/s");
     let worst = check_audio(&ff, &make(&ff, "ts_mpeg2_mono_mp2.ts"), 2e-4);
     println!("ts_mpeg2_mono_mp2.ts: max error {worst}");
-    // Matroska: ffmpeg trims the 481-sample encoder delay; we trim `CodecDelay` rounded to the
-    // millisecond (#790), so allow a lag of a sample or two there
-    for (name, max_lag) in [("audio_mono.mp2", 0i64), ("mkv_mono_mp2.mkv", 2)] {
+    // Matroska stores the encoder's 481-sample priming as `CodecDelay`. Whether ffmpeg's CLI trims
+    // it depends on its version (9.x does; 2023-24 builds keep the priming samples), and until
+    // #790 we trim it rounded to the millisecond. So for .mkv ffmpeg's decode is searched at
+    // lags within a sample or two of 0 (trimmed) and of `CodecDelay` (kept). The plain .mp2 file
+    // has no such ambiguity and must line up exactly.
+    for name in ["audio_mono.mp2", "mkv_mono_mp2.mkv"] {
         let f = make(&ff, name);
-        let src = filmcraft_codecs::open_bytes(name, bytes(&f)).unwrap();
+        let file = bytes(&f);
+        let src = filmcraft_codecs::open_bytes(name, file.clone()).unwrap();
         let a = src.info().audio().cloned().unwrap();
         assert_eq!((a.sample_rate, a.channels), (48_000, 1), "{name}");
         let want = ffmpeg_audio_f32(&ff, &f, &[]);
-        let n = want.len() - 4;
-        let worst = (-max_lag..=max_lag)
+        let (delay, lags): (usize, Vec<i64>) = match name.ends_with(".mkv") {
+            true => {
+                let mkv = filmcraft_matroska::open(file).unwrap();
+                let ns = mkv.tracks.first().map_or(0, |t| t.codec_delay_ns);
+                let delay = ((ns * 48_000 + 500_000_000) / 1_000_000_000) as usize;
+                assert!(delay > 0, "{name}: no CodecDelay");
+                (delay, (-2..=2).chain(delay as i64 - 2..=delay as i64 + 2).collect())
+            }
+            false => (0, vec![0]),
+        };
+        // ours from sample 2 on, against ffmpeg's from sample 2 + lag (inside both decodes)
+        let n = want.len() - delay - 6;
+        let buf = src.audio(0, n, 48_000).unwrap();
+        let (worst, lag) = lags
+            .into_iter()
             .map(|lag| {
-                let buf = src.audio(2 + lag, n, 48_000).unwrap();
-                want[2..].iter().zip(&buf.channels[0]).map(|(a, b)| (a - b).abs()).fold(0f32, f32::max)
+                let err = (2..n - 2).map(|i| (want[(i as i64 + lag) as usize] - buf.channels[0][i]).abs()).fold(0f32, f32::max);
+                (err, lag)
             })
-            .fold(f32::INFINITY, f32::min);
+            .fold((f32::INFINITY, 0), |m, x| if x.0 < m.0 { x } else { m });
         let peak = want.iter().fold(0f32, |m, x| m.max(x.abs()));
-        println!("{name}: max error {worst}, peak {peak}");
-        assert!(peak > 0.1 && worst <= 2e-4, "{name}: peak {peak}, max error {worst}");
+        println!("{name}: max error {worst} at lag {lag} (CodecDelay {delay}), peak {peak}");
+        assert!(peak > 0.1 && worst <= 2e-4, "{name}: peak {peak}, max error {worst} at lag {lag}");
     }
 }
 

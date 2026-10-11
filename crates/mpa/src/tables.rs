@@ -107,6 +107,19 @@ const LSF_LOW: [u16; 16] = [0, 3, 5, 7, 9, 15, 31, 63, 127, 255, 511, 1023, 2047
 /// 13818-3 B.1 subbands 11-29.
 const LSF_TOP: [u16; 4] = [0, 3, 5, 9];
 
+/// Subbands of the polyphase filter bank: the size of the decoder's per-subband arrays.
+pub(crate) const SUBBANDS: usize = 32;
+
+// Every table's `sblimit` fits the per-subband arrays, so `sb < sblimit` indexes them in bounds.
+const _: () = {
+    let tables = [AllocTable::A, AllocTable::B, AllocTable::C, AllocTable::D, AllocTable::Lsf];
+    let mut i = 0;
+    while i < tables.len() {
+        assert!(tables[i].sblimit() <= SUBBANDS);
+        i += 1;
+    }
+};
+
 /// A Layer II bit allocation table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AllocTable {
@@ -145,8 +158,8 @@ impl AllocTable {
         }
     }
 
-    /// Subbands with an allocation (`sblimit`).
-    pub(crate) fn sblimit(self) -> usize {
+    /// Subbands with an allocation (`sblimit`): at most [`SUBBANDS`] (checked at compile time).
+    pub(crate) const fn sblimit(self) -> usize {
         match self {
             Self::A => 27,
             Self::B | Self::Lsf => 30,
@@ -155,7 +168,8 @@ impl AllocTable {
         }
     }
 
-    /// The quantization steps per allocation value for subband `sb`; its length is 2^nbal.
+    /// The quantization steps per allocation value for subband `sb`; its length is 2^nbal. A match,
+    /// not an index: any `sb` gets a row (subbands past `sblimit` get the table's last one).
     pub(crate) fn row(self, sb: usize) -> &'static [u16] {
         match self {
             Self::A | Self::B => match sb {
