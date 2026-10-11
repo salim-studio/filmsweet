@@ -48,6 +48,7 @@ pub mod panels;
 pub mod perf;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod play_ahead;
+mod rtl;
 pub mod scrub;
 pub mod source_playback;
 pub mod state;
