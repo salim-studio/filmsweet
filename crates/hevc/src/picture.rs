@@ -249,6 +249,38 @@ impl Frame {
         }
     }
 
+    /// The w-sample runs at x0 of the h lines from y0 of plane `c` (0 = luma, 1 = Cb, 2 = Cr) into
+    /// `rows` (h = `rows.len()`), lines outside the picture replicated from its top / bottom edge
+    /// (8-228, 8-229): the reference window of a prediction block without copying it. False (and
+    /// `rows` partly filled) when the runs are not inside the picture horizontally.
+    pub fn window_rows<'f, S: Sample>(&'f self, c: usize, x0: i32, y0: i32, w: usize, rows: &mut [&'f [S]]) -> bool {
+        let (pw, ph, sh) = if c == 0 { (self.width, self.height, self.log2_ctb) } else { (self.cwidth, self.cheight, self.log2_ctb - 1) };
+        let Some(x) = usize::try_from(x0).ok().filter(|&x| x.saturating_add(w) <= pw) else { return false };
+        let mask = (1usize << sh) - 1;
+        let max_y = ph as i32 - 1;
+        let mut cur: Option<(usize, &'f [S])> = None;
+        for (r, slot) in rows.iter_mut().enumerate() {
+            let yy = y0.saturating_add(r as i32).min(max_y).max(0) as usize;
+            let plane = match cur {
+                Some((i, p)) if i == yy >> sh => p,
+                _ => {
+                    let Some(row) = self.row::<S>(yy >> sh) else { return false };
+                    let p: &'f [S] = match c {
+                        0 => &row.y,
+                        1 => &row.cb,
+                        _ => &row.cr,
+                    };
+                    cur = Some((yy >> sh, p));
+                    p
+                }
+            };
+            let off = (yy & mask) * pw + x;
+            let Some(run) = plane.get(off..off + w) else { return false };
+            *slot = run;
+        }
+        true
+    }
+
     /// Copy the w x h block at (x0, y0) of plane `c` (0 = luma, 1 = Cb, 2 = Cr) into `dst`
     /// (stride `ds`), samples outside the picture replicated from its edges (8-228, 8-229).
     #[allow(clippy::too_many_arguments)]
@@ -456,10 +488,24 @@ fn copy_line<S: Sample>(line: &[S], x0: i32, out: &mut [i16]) {
             }
         }
     } else {
-        let max = line.len() as i32 - 1;
-        for (c, o) in out.iter_mut().enumerate() {
-            *o = line[(x0 + c as i32).clamp(0, max) as usize].to_i16();
+        // the window crosses the left and / or right picture edge: the edge samples repeated
+        // outside, the samples inside copied as a run
+        let (Some(&first), Some(&last)) = (line.first(), line.last()) else { return };
+        let n = line.len() as i64;
+        let (x0, w) = (x0 as i64, w as i64);
+        // out[i] is inside the line for i in lo..hi
+        let lo = (-x0).clamp(0, w) as usize;
+        let hi = (n - x0).clamp(0, w) as usize;
+        let (left, rest) = out.split_at_mut(lo);
+        left.fill(first.to_i16());
+        let (mid, right) = rest.split_at_mut(hi.saturating_sub(lo));
+        let start = (x0 + lo as i64).max(0) as usize;
+        if let Some(src) = line.get(start..start + mid.len()) {
+            for (o, &s) in mid.iter_mut().zip(src) {
+                *o = s.to_i16();
+            }
         }
+        right.fill(last.to_i16());
     }
 }
 
@@ -508,6 +554,24 @@ mod tests {
             assert_eq!(got(&pu), want_c(&cb), "cb bd {bd}");
             assert_eq!(got(&pv), want_c(&cr), "cr bd {bd}");
             assert_eq!(py.as_u8().is_some(), bd == 8);
+        }
+    }
+
+    /// Window lines crossing the left and / or right picture edge repeat the edge samples, as the
+    /// per-sample clamp of 8-228 does.
+    #[test]
+    fn edge_replicated_lines_match_the_clamped_reads() {
+        let line: Vec<u8> = (0..23).map(|i| (i * 11 % 256) as u8).collect();
+        for n in [1usize, 2, 23] {
+            let line = &line[..n];
+            for w in [1usize, 5, 7, 11, 15, 19, 23, 39, 71] {
+                for x0 in -80i32..80 {
+                    let mut out = vec![-1i16; w];
+                    copy_line(line, x0, &mut out);
+                    let want: Vec<i16> = (0..w as i32).map(|i| line[(x0 + i).clamp(0, n as i32 - 1) as usize] as i16).collect();
+                    assert_eq!(out, want, "n {n} w {w} x0 {x0}");
+                }
+            }
         }
     }
 

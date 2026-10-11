@@ -18,18 +18,48 @@ impl Default for McScratch {
     }
 }
 
-/// `out[j] = (sum_k f[k] * src[j + k * step]) >> shift` for `W` outputs: taps outer, outputs
-/// inner, so each tap is one vector multiply-add across the row (exact integer sums).
+/// A sample the interpolation filters read: reference samples (`u8` / `u16`) or 16-bit window
+/// and first-pass values.
+trait Px: Copy {
+    fn w32(self) -> i32;
+    fn w16(self) -> i16;
+}
+
+impl Px for i16 {
+    #[inline(always)]
+    fn w32(self) -> i32 {
+        self as i32
+    }
+    #[inline(always)]
+    fn w16(self) -> i16 {
+        self
+    }
+}
+
+impl<S: Sample> Px for S {
+    #[inline(always)]
+    fn w32(self) -> i32 {
+        self.to_i32()
+    }
+    #[inline(always)]
+    fn w16(self) -> i16 {
+        self.to_i16()
+    }
+}
+
+/// `out[j] = (sum_k f[k] * taps[k][j]) >> shift` for `W` outputs: taps outer, outputs inner, so
+/// each tap is one vector multiply-add across the row (exact integer sums). `taps[k]` starts at
+/// the samples under filter tap k: the row shifted by k (horizontal) or the k-th row (vertical).
 #[inline(always)]
-fn filt_w<const T: usize, const W: usize>(src: &[i16], step: usize, f: &[i8; T], shift: u32, out: &mut [i16]) {
+fn filt_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T], shift: u32, out: &mut [i16]) {
     let mut acc = [0i32; W];
     for k in 0..T {
         let c = f[k] as i32;
-        let Some(p) = src.get(k * step..).and_then(|s| s.first_chunk::<W>()) else {
+        let Some(p) = taps[k].first_chunk::<W>() else {
             return;
         };
         for j in 0..W {
-            acc[j] += c * p[j] as i32;
+            acc[j] += c * p[j].w32();
         }
     }
     let Some(o) = out.first_chunk_mut::<W>() else {
@@ -45,15 +75,15 @@ fn filt_w<const T: usize, const W: usize>(src: &[i16], step: usize, f: &[i8; T],
 /// luma or chroma filter, 8.5.3.3.3.1 / 8.5.3.3.3.2), so it fits in an `i16`, and wrapping sums
 /// are exact whenever the final value fits. Twice the lanes of [`filt_w`] per vector.
 #[inline(always)]
-fn filt16_w<const T: usize, const W: usize>(src: &[i16], step: usize, f: &[i8; T], out: &mut [i16]) {
+fn filt16_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T], out: &mut [i16]) {
     let mut acc = [0i16; W];
     for k in 0..T {
         let c = f[k] as i16;
-        let Some(p) = src.get(k * step..).and_then(|s| s.first_chunk::<W>()) else {
+        let Some(p) = taps[k].first_chunk::<W>() else {
             return;
         };
         for j in 0..W {
-            acc[j] = acc[j].wrapping_add(c.wrapping_mul(p[j]));
+            acc[j] = acc[j].wrapping_add(c.wrapping_mul(p[j].w16()));
         }
     }
     if let Some(o) = out.first_chunk_mut::<W>() {
@@ -64,45 +94,59 @@ fn filt16_w<const T: usize, const W: usize>(src: &[i16], step: usize, f: &[i8; T
 /// [`filt_w`] for a run of `w` outputs (prediction block widths are fixed sizes); in 16-bit lanes
 /// ([`filt16_w`]) when `narrow` (a first pass over 8-bit samples).
 #[inline(always)]
-fn filt<const T: usize>(src: &[i16], step: usize, f: &[i8; T], shift: u32, out: &mut [i16], w: usize, narrow: bool) {
+fn filt<P: Px, const T: usize>(taps: [&[P]; T], f: &[i8; T], shift: u32, out: &mut [i16], w: usize, narrow: bool) {
     if narrow {
         match w {
-            4 => return filt16_w::<T, 4>(src, step, f, out),
-            8 => return filt16_w::<T, 8>(src, step, f, out),
-            12 => return filt16_w::<T, 12>(src, step, f, out),
-            16 => return filt16_w::<T, 16>(src, step, f, out),
-            24 => return filt16_w::<T, 24>(src, step, f, out),
-            32 => return filt16_w::<T, 32>(src, step, f, out),
-            48 => return filt16_w::<T, 48>(src, step, f, out),
-            64 => return filt16_w::<T, 64>(src, step, f, out),
+            4 => return filt16_w::<P, T, 4>(taps, f, out),
+            8 => return filt16_w::<P, T, 8>(taps, f, out),
+            12 => return filt16_w::<P, T, 12>(taps, f, out),
+            16 => return filt16_w::<P, T, 16>(taps, f, out),
+            24 => return filt16_w::<P, T, 24>(taps, f, out),
+            32 => return filt16_w::<P, T, 32>(taps, f, out),
+            48 => return filt16_w::<P, T, 48>(taps, f, out),
+            64 => return filt16_w::<P, T, 64>(taps, f, out),
             _ => {}
         }
     }
     match w {
-        2 => filt_w::<T, 2>(src, step, f, shift, out),
-        4 => filt_w::<T, 4>(src, step, f, shift, out),
-        6 => filt_w::<T, 6>(src, step, f, shift, out),
-        8 => filt_w::<T, 8>(src, step, f, shift, out),
-        12 => filt_w::<T, 12>(src, step, f, shift, out),
-        16 => filt_w::<T, 16>(src, step, f, shift, out),
-        24 => filt_w::<T, 24>(src, step, f, shift, out),
-        32 => filt_w::<T, 32>(src, step, f, shift, out),
-        48 => filt_w::<T, 48>(src, step, f, shift, out),
-        64 => filt_w::<T, 64>(src, step, f, shift, out),
+        2 => filt_w::<P, T, 2>(taps, f, shift, out),
+        4 => filt_w::<P, T, 4>(taps, f, shift, out),
+        6 => filt_w::<P, T, 6>(taps, f, shift, out),
+        8 => filt_w::<P, T, 8>(taps, f, shift, out),
+        12 => filt_w::<P, T, 12>(taps, f, shift, out),
+        16 => filt_w::<P, T, 16>(taps, f, shift, out),
+        24 => filt_w::<P, T, 24>(taps, f, shift, out),
+        32 => filt_w::<P, T, 32>(taps, f, shift, out),
+        48 => filt_w::<P, T, 48>(taps, f, shift, out),
+        64 => filt_w::<P, T, 64>(taps, f, shift, out),
         _ => {
-            for (j, o) in out[..w].iter_mut().enumerate() {
-                let s: i32 = (0..T).map(|k| f[k] as i32 * src[j + k * step] as i32).sum();
+            for (j, o) in out.iter_mut().take(w).enumerate() {
+                let s: i32 = (0..T).map(|k| f[k] as i32 * taps[k].get(j).map_or(0, |p| p.w32())).sum();
                 *o = (s >> shift) as i16;
             }
         }
     }
 }
 
-/// Separable sub-sample interpolation of a w x h block from `win` (stride WIN, the block's
-/// top-left sample at (m, m) for a T-tap filter with m = T / 2 - 1).
+/// The taps of a horizontal filter along `row`: the row shifted by 0..T samples.
+#[inline(always)]
+fn h_taps<P, const T: usize>(row: &[P]) -> [&[P]; T] {
+    std::array::from_fn(|k| row.get(k..).unwrap_or(&[]))
+}
+
+/// The taps of a vertical filter: rows `r..r + T` from sample `x` on.
+#[inline(always)]
+fn v_taps<'a, P, const T: usize>(rows: &[&'a [P]], r: usize, x: usize) -> [&'a [P]; T] {
+    std::array::from_fn(|k| rows.get(r + k).and_then(|row| row.get(x..)).unwrap_or(&[]))
+}
+
+/// Separable sub-sample interpolation of a w x h block from the window `rows` (h + T - 1 rows of
+/// at least w + T - 1 samples; the block's top-left sample at (m, m) for a T-tap filter with
+/// m = T / 2 - 1). The window rows are the reference picture's own lines when the window lies
+/// inside it horizontally, or lines of an edge-replicated copy.
 #[allow(clippy::too_many_arguments)]
-fn interpolate<const T: usize>(
-    win: &[i16],
+fn interpolate<P: Px, const T: usize>(
+    rows: &[&[P]],
     tmp: &mut [i16],
     fx: usize,
     fy: usize,
@@ -117,28 +161,71 @@ fn interpolate<const T: usize>(
     let m = T / 2 - 1;
     // 8-bit samples: first passes in 16-bit lanes (see filt16_w)
     let narrow = shift1 == 0 && shift3 == 6;
+    let out_rows = out.chunks_mut(w).take(h);
     if fx == 0 && fy == 0 {
-        for r in 0..h {
-            for (o, &s) in out[r * w..r * w + w].iter_mut().zip(&win[(r + m) * WIN + m..]) {
-                *o = s << shift3;
+        for (r, o) in out_rows.enumerate() {
+            let Some(src) = rows.get(r + m).and_then(|row| row.get(m..)) else { return };
+            for (o, &s) in o.iter_mut().zip(src) {
+                *o = s.w16() << shift3;
             }
         }
     } else if fy == 0 {
-        for r in 0..h {
-            filt(&win[(r + m) * WIN..], 1, hf, shift1, &mut out[r * w..], w, narrow);
+        for (r, o) in out_rows.enumerate() {
+            let Some(row) = rows.get(r + m) else { return };
+            filt(h_taps(row), hf, shift1, o, w, narrow);
         }
     } else if fx == 0 {
-        for r in 0..h {
-            filt(&win[r * WIN + m..], WIN, vf, shift1, &mut out[r * w..], w, narrow);
+        for (r, o) in out_rows.enumerate() {
+            filt(v_taps(rows, r, m), vf, shift1, o, w, narrow);
         }
     } else {
-        for r in 0..h + T - 1 {
-            filt(&win[r * WIN..], 1, hf, shift1, &mut tmp[r * WIN..], w, narrow);
+        for (row, t) in rows.iter().take(h + T - 1).zip(tmp.chunks_mut(WIN)) {
+            filt(h_taps(row), hf, shift1, t, w, narrow);
         }
-        for r in 0..h {
-            filt(&tmp[r * WIN..], WIN, vf, 6, &mut out[r * w..], w, false);
+        let mut trows: [&[i16]; WIN] = [&[]; WIN];
+        for (t, row) in trows.iter_mut().zip(tmp.chunks(WIN)).take(h + T - 1) {
+            *t = row;
+        }
+        for (r, o) in out_rows.enumerate() {
+            filt(v_taps(&trows, r, 0), vf, 6, o, w, false);
         }
     }
+}
+
+/// Prediction samples of a w x h block of plane `c` whose filter window (`T`-tap filters) starts
+/// at (x0, y0): read straight from the reference lines when the window is inside the picture
+/// horizontally, else from an edge-replicated copy.
+#[allow(clippy::too_many_arguments)]
+fn predict_block<S: Sample, const T: usize>(
+    f: &Frame,
+    c: usize,
+    (x0, y0): (i32, i32),
+    (fx, fy): (usize, usize),
+    filters: (&[i8; T], &[i8; T]),
+    (w, h): (usize, usize),
+    (shift1, shift3): (u32, u32),
+    out: &mut [i16],
+    sc: &mut McScratch,
+) {
+    let (ww, wh) = (w + T - 1, h + T - 1);
+    let McScratch { win, tmp } = sc;
+    let mut rows: [&[S]; WIN] = [&[]; WIN];
+    if let Some(rows) = rows.get_mut(..wh)
+        && f.window_rows(c, x0, y0, ww, rows)
+    {
+        interpolate::<S, T>(rows, tmp, fx, fy, filters.0, filters.1, w, h, shift1, shift3, out);
+        return;
+    }
+    if c == 0 {
+        f.luma_window::<S>(x0, y0, ww, wh, win, WIN);
+    } else {
+        f.chroma_window::<S>(c - 1, x0, y0, ww, wh, win, WIN);
+    }
+    let mut wrows: [&[i16]; WIN] = [&[]; WIN];
+    for (r, row) in wrows.iter_mut().zip(win.chunks(WIN)).take(wh) {
+        *r = row;
+    }
+    interpolate::<i16, T>(&wrows[..wh.min(WIN)], tmp, fx, fy, filters.0, filters.1, w, h, shift1, shift3, out);
 }
 
 /// Luma prediction samples (14-bit intermediate precision) of a w x h block at (x, y) displaced by the
@@ -151,8 +238,7 @@ pub fn mc_luma<S: Sample>(f: &Frame, x: i32, y: i32, mv: [i16; 2], w: usize, h: 
     let yi = y + (mv[1] as i32 >> 2);
     let shift1 = bd.min(12) - 8;
     let shift3 = 14 - bd;
-    f.luma_window::<S>(xi - 3, yi - 3, w + 7, h + 7, &mut sc.win, WIN);
-    interpolate::<8>(&sc.win, &mut sc.tmp, fx, fy, &LUMA_FILTER[fx], &LUMA_FILTER[fy], w, h, shift1, shift3, out);
+    predict_block::<S, 8>(f, 0, (xi - 3, yi - 3), (fx, fy), (&LUMA_FILTER[fx], &LUMA_FILTER[fy]), (w, h), (shift1, shift3), out, sc);
 }
 
 /// Chroma prediction samples of a w x h chroma block at chroma position (x, y) with a 1/8-sample
@@ -165,8 +251,7 @@ pub fn mc_chroma<S: Sample>(f: &Frame, c: usize, x: i32, y: i32, mv: [i16; 2], w
     let yi = y + (mv[1] as i32 >> 3);
     let shift1 = bd.min(12) - 8;
     let shift3 = 14 - bd;
-    f.chroma_window::<S>(c, xi - 1, yi - 1, w + 3, h + 3, &mut sc.win, WIN);
-    interpolate::<4>(&sc.win, &mut sc.tmp, fx, fy, &CHROMA_FILTER[fx], &CHROMA_FILTER[fy], w, h, shift1, shift3, out);
+    predict_block::<S, 4>(f, c + 1, (xi - 1, yi - 1), (fx, fy), (&CHROMA_FILTER[fx], &CHROMA_FILTER[fy]), (w, h), (shift1, shift3), out, sc);
 }
 
 /// Calls `$f::<_, W>(args)` with `W` the prediction block width `$w` as a constant (block widths are
@@ -339,8 +424,9 @@ mod tests {
         let mut rng = Rng(0x2545_f491_4f6c_dd1d);
         fn check<const T: usize>(f: &[i8; T], src: &[i16], step: usize, w: usize) {
             let (mut a, mut b) = ([0i16; 64], [0i16; 64]);
-            filt(src, step, f, 0, &mut a, w, true);
-            filt(src, step, f, 0, &mut b, w, false);
+            let taps: [&[i16]; T] = std::array::from_fn(|k| &src[k * step..]);
+            filt(taps, f, 0, &mut a, w, true);
+            filt(taps, f, 0, &mut b, w, false);
             assert_eq!(a[..w], b[..w], "filter {f:?} step {step} w {w}");
         }
         for &w in &WIDTHS {
@@ -380,6 +466,59 @@ mod tests {
         let c: Vec<u16> = (0..w * h / 4).map(|_| rng.range(0, max) as u16).collect();
         let c2: Vec<u16> = (0..w * h / 4).map(|_| rng.range(0, max) as u16).collect();
         Frame::from_planes(1, 0, &like, &y, &c, &c2)
+    }
+
+    /// Interpolation from the reference lines in place gives the same prediction samples as from
+    /// an edge-replicated copy of the window, for every fractional position, block size and bit
+    /// depth, inside the picture and next to its edges (where in-place reads are used for windows
+    /// that cross only the top or bottom edge).
+    #[test]
+    fn in_place_window_matches_the_copied_window() {
+        fn check<S: Sample>(rng: &mut Rng, bd: u32) {
+            let mut sc = McScratch::default();
+            let f = frame(rng, 96, 64, bd);
+            let (mut in_place, mut copied) = (0, 0);
+            for _ in 0..2000 {
+                let c = rng.range(0, 2) as usize;
+                let (w, h) = ([4usize, 8, 12, 16, 24, 32][rng.range(0, 5) as usize], [4usize, 8, 16, 32][rng.range(0, 3) as usize]);
+                let (w, h) = if c == 0 { (w, h) } else { (w / 2, h / 2) };
+                let (x, y) = (rng.range(-12, 100), rng.range(-12, 70));
+                let mv = [rng.range(-64, 64) as i16, rng.range(-64, 64) as i16];
+                let mut a = vec![0i16; w * h];
+                let mut b = vec![0i16; w * h];
+                let (t, frac, unit) = if c == 0 { (8usize, 3, 2) } else { (4, 7, 3) };
+                let (fx, fy) = ((mv[0] & frac) as usize, (mv[1] & frac) as usize);
+                let (x0, y0) = (x + (mv[0] as i32 >> unit) - (t as i32 / 2 - 1), y + (mv[1] as i32 >> unit) - (t as i32 / 2 - 1));
+                let (shift1, shift3) = (bd - 8, 14 - bd);
+                let mut rows: Vec<&[S]> = vec![&[]; h + t - 1];
+                if f.window_rows(c, x0, y0, w + t - 1, &mut rows) {
+                    in_place += 1;
+                } else {
+                    copied += 1;
+                }
+                // reference: the copied window
+                let mut win = vec![0i16; WIN * WIN];
+                let mut tmp = vec![0i16; WIN * WIN];
+                if c == 0 {
+                    f.luma_window::<S>(x0, y0, w + t - 1, h + t - 1, &mut win, WIN);
+                } else {
+                    f.chroma_window::<S>(c - 1, x0, y0, w + t - 1, h + t - 1, &mut win, WIN);
+                }
+                let wrows: Vec<&[i16]> = win.chunks(WIN).take(h + t - 1).collect();
+                if c == 0 {
+                    mc_luma::<S>(&f, x, y, mv, w, h, &mut a, &mut sc);
+                    interpolate::<i16, 8>(&wrows, &mut tmp, fx, fy, &LUMA_FILTER[fx], &LUMA_FILTER[fy], w, h, shift1, shift3, &mut b);
+                } else {
+                    mc_chroma::<S>(&f, c - 1, x, y, mv, w, h, &mut a, &mut sc);
+                    interpolate::<i16, 4>(&wrows, &mut tmp, fx, fy, &CHROMA_FILTER[fx], &CHROMA_FILTER[fy], w, h, shift1, shift3, &mut b);
+                }
+                assert_eq!(a, b, "plane {c} bd {bd} at ({x}, {y}) mv {mv:?} {w}x{h}");
+            }
+            assert!(in_place > 500 && copied > 100, "{in_place} in place, {copied} copied");
+        }
+        let mut rng = Rng(0x5851_f42d_4c95_7f2d);
+        check::<u8>(&mut rng, 8);
+        check::<u16>(&mut rng, 10);
     }
 
     /// The full-sample uni-prediction shortcut (`Frame::copy_block`) gives what interpolation and
