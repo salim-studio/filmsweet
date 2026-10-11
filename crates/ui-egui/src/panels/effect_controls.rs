@@ -690,32 +690,43 @@ pub(crate) fn param_row(
                 actions.push(("playhead.set".into(), json!({"time": tl.0})));
             }
             resp.context_menu(|ui| {
-                ui.label(egui::RichText::new(tl!("Temporal Interpolation")).color(t.text_dim));
-                for (label, key) in [
-                    (tl!("Linear"), "linear"),
-                    (tl!("Bezier"), "bezier"),
-                    (tl!("Auto Bezier"), "autoBezier"),
-                    (tl!("Continuous Bezier"), "continuousBezier"),
-                    (tl!("Hold"), "hold"),
-                    (tl!("Ease In"), "easeIn"),
-                    (tl!("Ease Out"), "easeOut"),
-                ] {
-                    if ui.button(label).clicked() {
-                        actions.push((
-                            "effects.setInterpolation".into(),
-                            with_mask(json!({"clip": clip.0, "effect": eff_json, "param": pd.id, "mediaTime": k.time.0, "interpolation": key})),
-                        ));
-                        ui.close();
-                    }
-                }
-                ui.separator();
-                if ui.button(tl!("Clear")).clicked() {
-                    actions
-                        .push(("effects.deleteKeyframe".into(), with_mask(json!({"clip": clip.0, "effect": eff_json, "param": pd.id, "mediaTime": k.time.0}))));
-                    ui.close();
-                }
+                keyframe_menu(app, ui, KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time }, actions);
             });
         }
+    }
+}
+
+/// Shared by the lane diamonds and graph points: commands use media time and preserve the mask.
+fn keyframe_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui, target: KeyframeRef, actions: &mut Vec<(String, Value)>) {
+    let mut params = json!({"clip": target.clip, "effect": target.effect, "param": target.param, "mediaTime": target.time.0});
+    if let Some(mask) = target.mask {
+        params["mask"] = json!(mask);
+    }
+    ui.label(egui::RichText::new(tl!("Temporal Interpolation")).color(app.tokens.text_dim));
+    for (label, key) in [
+        (tl!("Linear"), "linear"),
+        (tl!("Bezier"), "bezier"),
+        (tl!("Auto Bezier"), "autoBezier"),
+        (tl!("Continuous Bezier"), "continuousBezier"),
+        (tl!("Hold"), "hold"),
+        (tl!("Ease In"), "easeIn"),
+        (tl!("Ease Out"), "easeOut"),
+    ] {
+        let response = ui.button(label);
+        app.auto.add(&format!("effectControls.keyframeMenu.{key}"), response.rect, label);
+        if response.clicked() {
+            let mut params = params.clone();
+            params["interpolation"] = json!(key);
+            actions.push(("effects.setInterpolation".into(), params));
+            ui.close();
+        }
+    }
+    ui.separator();
+    let response = ui.button(tl!("Clear"));
+    app.auto.add("effectControls.keyframeMenu.clear", response.rect, "Clear");
+    if response.clicked() {
+        actions.push(("effects.deleteKeyframe".into(), params));
+        ui.close();
     }
 }
 
@@ -1117,7 +1128,10 @@ pub(crate) fn graph_rows(
             let dy: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
             let c = pos2(x_of(f), y_of(v) + dy);
             let r = Rect::from_center_size(c, vec2(10.0, 10.0));
-            let resp = ui.interact(r.expand(2.0), id, Sense::drag());
+            let resp = ui.interact(r.expand(2.0), id, Sense::click_and_drag());
+            resp.context_menu(|ui| {
+                keyframe_menu(app, ui, KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time }, actions);
+            });
             let auto_id = match (comps.len(), ci) {
                 (1, _) => format!("effectControls.{}.graph.keyframe.{}", pd.id, k.time.0),
                 (_, 0) => format!("effectControls.{}.graph.keyframe.{}.x", pd.id, k.time.0),
@@ -1138,11 +1152,11 @@ pub(crate) fn graph_rows(
                 p.line_segment([c, hp], Stroke::new(1.0, t.plot_handle_dim));
                 p.circle_filled(hp, 3.5, t.keyframe_handle);
                 let hr = ui.interact(Rect::from_center_size(hp, vec2(10.0, 10.0)), hid.with("h"), Sense::drag());
-                if hr.dragged() {
+                if hr.dragged_by(egui::PointerButton::Primary) {
                     let nx = graph_drag_offset(ui, &hr, vec2(hdx, 0.0)).x;
                     ui.data_mut(|d| d.insert_temp(hid, nx));
                 }
-                if hr.drag_stopped() {
+                if hr.drag_stopped_by(egui::PointerButton::Primary) {
                     ui.data_mut(|d| d.remove::<f32>(hid));
                     let ni = ((infl * seg + hdx * side) / seg.max(1.0)).clamp(0.01, 1.0);
                     let key = if side > 0.0 { "outInfluence" } else { "inInfluence" };
@@ -1152,13 +1166,13 @@ pub(crate) fn graph_rows(
                     ));
                 }
             }
-            p.circle_filled(c, 4.5, if resp.dragged() { t.hot_text } else { t.plot_handle });
-            if resp.dragged() {
+            p.circle_filled(c, 4.5, if resp.dragged_by(egui::PointerButton::Primary) { t.hot_text } else { t.plot_handle });
+            if resp.dragged_by(egui::PointerButton::Primary) {
                 let ny = graph_drag_offset(ui, &resp, vec2(0.0, dy)).y;
                 ui.data_mut(|d| d.insert_temp(id, ny));
                 p.text(c + vec2(8.0, -10.0), Align2::LEFT_BOTTOM, format!("{:.dec$}", v_of(c.y)), Tokens::ui(10.5), t.hot_text);
             }
-            if resp.drag_stopped() {
+            if resp.drag_stopped_by(egui::PointerButton::Primary) {
                 ui.data_mut(|d| d.remove::<f32>(id));
                 let nv = v_of(c.y);
                 let nv = if let ParamKind::Float { min, max, .. } = pd.kind { nv.clamp(min, max) } else { nv };
