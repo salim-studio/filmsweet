@@ -581,7 +581,9 @@ pub fn draw_group_chrome(
     t: &Tokens,
     reg: &mut crate::automation::Registry,
 ) -> Vec<DockAction> {
-    draw_group_chrome_details(ui, g, focused, seqs, t, reg).actions
+    let chrome = draw_group_chrome_details(ui, g, seqs, t, reg);
+    paint_group_focus(ui, g, focused, t);
+    chrome.actions
 }
 
 #[derive(Default)]
@@ -590,14 +592,7 @@ pub struct Chrome {
     pub tabs: Vec<(PanelKind, Rect)>,
 }
 
-pub fn draw_group_chrome_details(
-    ui: &mut egui::Ui,
-    g: &Group,
-    focused: PanelKind,
-    seqs: &SeqTabs,
-    t: &Tokens,
-    reg: &mut crate::automation::Registry,
-) -> Chrome {
+pub fn draw_group_chrome_details(ui: &mut egui::Ui, g: &Group, seqs: &SeqTabs, t: &Tokens, reg: &mut crate::automation::Registry) -> Chrome {
     let mut actions = Vec::new();
     let mut tab_rects: Vec<(PanelKind, Rect)> = Vec::new();
     let painter = ui.painter().clone();
@@ -852,10 +847,6 @@ pub fn draw_group_chrome_details(
             ui.ctx().data_mut(|d| d.remove::<bool>(list_id));
         }
     }
-    // focus outline
-    if active_panel == Some(focused) {
-        painter.rect_stroke(g.rect, 0.0, Stroke::new(1.0, t.focus), StrokeKind::Inside);
-    }
     // clicking anywhere in the panel focuses it
     if let Some(p) = active_panel
         && ui.rect_contains_pointer(g.rect)
@@ -864,6 +855,13 @@ pub fn draw_group_chrome_details(
         actions.push(DockAction::Focus(p));
     }
     Chrome { actions, tabs: tab_rects }
+}
+
+/// Paint once after the group's contents so child backgrounds cannot hide its focus (#1075).
+pub(crate) fn paint_group_focus(ui: &egui::Ui, group: &Group, focused: PanelKind, tokens: &Tokens) {
+    if group.panels.get(group.active).copied() == Some(focused) {
+        ui.painter().rect_stroke(group.rect, 0.0, Stroke::new(1.0, tokens.focus), StrokeKind::Inside);
+    }
 }
 
 fn paint_widget_focus(painter: &egui::Painter, response: &egui::Response, tokens: &Tokens) {
