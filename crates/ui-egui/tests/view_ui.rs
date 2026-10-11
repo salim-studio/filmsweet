@@ -112,6 +112,15 @@ fn first_media_item(v: &Value) -> Option<u64> {
     }
 }
 
+fn item_duration(v: &Value, item: u64) -> Option<f64> {
+    match v {
+        Value::Object(m) if m.get("item").and_then(Value::as_u64) == Some(item) && m.contains_key("duration") => m["duration"].as_f64(),
+        Value::Object(m) => m.values().find_map(|v| item_duration(v, item)),
+        Value::Array(a) => a.iter().find_map(|v| item_duration(v, item)),
+        _ => None,
+    }
+}
+
 #[test]
 fn view_menu_resolutions_and_display_modes() {
     let mut d = Driver::demo();
@@ -283,6 +292,55 @@ fn time_zoom_bar_zooms_and_scrolls_the_monitor_ruler() {
     d.ok("ui.set", json!({"program": {"time_zoom": [0.9, 0.1]}}));
     d.frames(2);
     assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5);
+}
+
+/// While a monitor plays, its zoomed ruler pages to keep the playhead in view, keeping its width,
+/// as the Timeline follows the playhead; stopped, or with auto-scrolling off, it stays put.
+#[test]
+fn zoomed_monitor_ruler_follows_the_playhead_while_playing() {
+    let mut d = Driver::demo();
+    let duration = num(&d.exec("sequence.inspect", json!({}))["duration"]);
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.0, 0.25]}}));
+    // a playhead moved past the range while stopped leaves it alone
+    d.exec("playhead.set", json!({"time": (duration * 0.6) as i64}));
+    d.frames(2);
+    assert_eq!(d.program()["time_zoom"], json!([0.0, 0.25]));
+    // playing, the range pages forward: the playhead near its left edge
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    let z = d.program()["time_zoom"].clone();
+    let f = num(&d.exec("sequence.inspect", json!({}))["playhead"]) / duration;
+    let (s, e) = (num(&z[0]), num(&z[1]));
+    assert!(s <= f && f <= e && (e - s - 0.25).abs() < 1e-9, "playhead at {f} in {z}");
+    assert!((f - s - 0.25 * 0.05).abs() < 0.01, "paged to near the left edge: {f} in {z}");
+    // and back when the playhead is before it
+    d.exec("playhead.set", json!({"time": (duration * 0.1) as i64}));
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    let z = d.program()["time_zoom"].clone();
+    assert!(num(&z[0]) < 0.1 && num(&z[1]) > 0.1, "{z}");
+
+    // with auto-scrolling off the range stays put
+    d.exec("prefs.set", json!({"key": "timeline.autoScroll", "value": "noScroll"}));
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.0, 0.25]}}));
+    d.exec("playhead.set", json!({"time": (duration * 0.6) as i64}));
+    d.menu("playback.toggle");
+    d.menu("playback.toggle");
+    assert_eq!(d.program()["time_zoom"], json!([0.0, 0.25]));
+    d.exec("prefs.set", json!({"key": "timeline.autoScroll", "value": "pageScroll"}));
+
+    // the Source monitor follows its own playback
+    let project = d.exec("project.inspect", json!({}));
+    let item = first_media_item(&project).expect("media item");
+    let source_duration = item_duration(&project, item).expect("media duration");
+    d.exec("source.open", json!({"item": item}));
+    d.ok("ui.set", json!({"source": {"time_zoom": [0.0, 0.25]}}));
+    d.exec("source.setPlayhead", json!({"time": (source_duration * 0.6) as i64}));
+    d.ok("ui.menu.invoke", json!({"id": "playback.toggle", "params": {"monitor": "source"}}));
+    d.frames(2);
+    d.ok("ui.menu.invoke", json!({"id": "playback.toggle", "params": {"monitor": "source"}}));
+    let z = d.ok("ui.inspect", json!({}))["ui"]["source"]["time_zoom"].clone();
+    assert!(num(&z[0]) > 0.5 && (num(&z[1]) - num(&z[0]) - 0.25).abs() < 1e-9, "{z}");
 }
 
 #[test]

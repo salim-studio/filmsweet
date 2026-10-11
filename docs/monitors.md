@@ -131,7 +131,10 @@ the clip or sequence the ruler shows: drag a handle at either end to zoom in or 
 middle to scroll, or press beside the thumb to move it there. A thumb filling the bar shows the
 whole duration; the ruler zooms in as far as five frames. The playhead, markers, In/Out and ticks
 follow the part shown, and clicking or scrubbing the ruler sets a time within it; what lies
-outside it is not drawn. Each monitor keeps its own range in its view state (`time_zoom`: start
+outside it is not drawn. While the monitor plays, a zoomed ruler follows the playhead as the
+Timeline does (Settings ▸ Timeline ▸ Timeline Playback Auto-Scrolling): it pages when the playhead
+runs off the right edge or jumps before the left one, or keeps the playhead in the middle with
+smooth scrolling, and keeps its width; scrubbing and clicking never move it. Each monitor keeps its own range in its view state (`time_zoom`: start
 and end as fractions of the duration, `null` for all of it). Automation ids: `<monitor>.zoomBar`
 (the thumb) and `<monitor>.zoomBar.track`.
 
