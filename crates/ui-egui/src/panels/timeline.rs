@@ -58,6 +58,8 @@ pub struct TlState {
     /// display gain: scanning the whole source per clip per frame cost more than drawing.
     peak_max: HashMap<PeakKey, (usize, f32)>,
     zoom_anchor: Option<(f64, f32)>,
+    /// The zoom (points a second) the video thumbnails are laid out at while the view is zooming (#1094).
+    thumb_pps: Option<f64>,
 }
 
 impl TlState {
@@ -291,6 +293,12 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         let k = 1.0 - (-dt * 20.0).exp();
         let zooming = (v.pps - v.target_pps).abs() / v.target_pps > 0.001;
+        // video thumbnails keep the layout of the zoom a gesture or animation started at (#1094)
+        if zooming || matches!(app.tl.drag, Some(Drag::ZoomBar { mode: 1 | 2, .. })) {
+            app.tl.thumb_pps = Some(app.tl.thumb_pps.unwrap_or(v.pps));
+        } else {
+            app.tl.thumb_pps = None;
+        }
         v.pps += (v.target_pps - v.pps) * k;
         if let Some((anchor_t, anchor_x)) = app.tl.zoom_anchor.filter(|_| zooming) {
             v.scroll = (anchor_t - (anchor_x - content.min.x) as f64 / v.pps).max(0.0);
@@ -696,6 +704,31 @@ pub fn thumbnail_tiles(mode: ThumbnailMode, x0: f32, x1: f32, tile_w: f32, visib
     tiles.into_iter().filter(|(x, _)| shown(*x)).collect()
 }
 
+/// [`thumbnail_tiles`] while the view zooms (#1094): Continuous tiles are laid out at the zoom
+/// the gesture started at (`frozen` points a second) and stretched to where their frames are at
+/// the live zoom `pps`, so every tile keeps its frame (cached) instead of asking for a new one at
+/// each zoom step. Returns each tile's left edge, width and offset into the clip.
+#[allow(clippy::too_many_arguments)]
+pub fn zoomed_thumbnail_tiles(
+    mode: ThumbnailMode,
+    x0: f32,
+    x1: f32,
+    tile_w: f32,
+    visible: (f32, f32),
+    dur: Tick,
+    frame: Tick,
+    pps: f64,
+    frozen: Option<f64>,
+) -> Vec<(f32, f32, Tick)> {
+    let r = match frozen {
+        Some(f) if mode == ThumbnailMode::Continuous && f.is_finite() && f > 0.0 && pps.is_finite() && pps > 0.0 && f != pps => (pps / f) as f32,
+        _ => return thumbnail_tiles(mode, x0, x1, tile_w, visible, dur, frame).into_iter().map(|(x, t)| (x, tile_w, t)).collect(),
+    };
+    let laid_out = |x: f32| x0 + (x - x0) / r;
+    let tiles = thumbnail_tiles(mode, x0, laid_out(x1), tile_w, (laid_out(visible.0), laid_out(visible.1)), dur, frame);
+    tiles.into_iter().map(|(x, t)| (x0 + (x - x0) * r, tile_w * r, t)).collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_clip(
     app: &mut FilmcraftApp,
@@ -738,7 +771,8 @@ fn draw_clip(
             let cp = p.with_clip_rect(th.intersect(p.clip_rect()));
             let visible = (cp.clip_rect().min.x, cp.clip_rect().max.x);
             let mode = app.ui.timeline.thumbnail_mode;
-            for (x, offset) in thumbnail_tiles(mode, th.min.x, th.max.x, tw, visible, it.duration, rate.frame_duration()) {
+            let (pps, frozen) = (app.ui.timeline.pps, app.tl.thumb_pps);
+            for (x, w, offset) in zoomed_thumbnail_tiles(mode, th.min.x, th.max.x, tw, visible, it.duration, rate.frame_duration(), pps, frozen) {
                 let mt = rate.snap(it.source_time_at(it.start + offset));
                 // a multi-camera clip shows its angle's clip
                 let (thumb_item, mt) = app
@@ -752,7 +786,7 @@ fn draw_clip(
                     })
                     .unwrap_or((it.item, mt));
                 if let Some((tex, _)) = app.thumbnail(ctx, thumb_item, mt, 160) {
-                    let r = Rect::from_min_size(pos2(x, th.min.y), vec2(tw, th.height()));
+                    let r = Rect::from_min_size(pos2(x, th.min.y), vec2(w, th.height()));
                     cp.image(tex, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 }
             }
@@ -2910,6 +2944,28 @@ mod thumbnail_tiles_tests {
 
     const S: Tick = Tick(TICKS_PER_SECOND);
     const FRAME: Tick = Tick(TICKS_PER_SECOND / 25);
+
+    #[test]
+    fn zooming_keeps_the_frames_shown_before_the_zoom() {
+        // a 10 s clip 1000 pt wide at 20 pt a second, the panel showing x 0..800
+        let dur = Tick(10 * S.0);
+        let before = thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 1000.0, 80.0, (0.0, 800.0), dur, FRAME);
+        // halfway through zooming in to 40 pt a second: the clip is 2000 pt wide
+        let zoomed = zoomed_thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, Some(20.0));
+        let offsets: Vec<Tick> = zoomed.iter().map(|t| t.2).collect();
+        let kept: Vec<Tick> = before.iter().take(5).map(|t| t.1).collect();
+        assert_eq!(offsets, kept);
+        // each frame stretched over the clip time it showed
+        let placed: Vec<(f32, f32)> = zoomed.iter().map(|t| (t.0, t.1)).collect();
+        assert_eq!(placed, [(0.0, 160.0), (160.0, 160.0), (320.0, 160.0), (480.0, 160.0), (640.0, 160.0)]);
+        // once the zoom settles the tiles are laid out at the new zoom
+        let settled = thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME);
+        let expect: Vec<(f32, f32, Tick)> = settled.iter().map(|&(x, t)| (x, 80.0, t)).collect();
+        assert_eq!(zoomed_thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, None), expect);
+        // Head and tail frames do not depend on the zoom
+        let head = zoomed_thumbnail_tiles(ThumbnailMode::Head, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, Some(20.0));
+        assert_eq!(head, [(0.0, 80.0, Tick::ZERO)]);
+    }
 
     #[test]
     fn continuous_thumbnails_tile_the_visible_part_of_the_clip() {
