@@ -39,10 +39,11 @@ pub enum PanelKind {
     Progress,
     ReferenceMonitor,
     Timecode,
+    ProjectNotes,
 }
 
 impl PanelKind {
-    pub const ALL: [PanelKind; 27] = [
+    pub const ALL: [PanelKind; 28] = [
         PanelKind::Project,
         PanelKind::MediaBrowser,
         PanelKind::Libraries,
@@ -70,6 +71,7 @@ impl PanelKind {
         PanelKind::Progress,
         PanelKind::ReferenceMonitor,
         PanelKind::Timecode,
+        PanelKind::ProjectNotes,
     ];
     pub fn title(self) -> &'static str {
         match self {
@@ -100,6 +102,7 @@ impl PanelKind {
             PanelKind::Progress => "Progress",
             PanelKind::ReferenceMonitor => "Reference Monitor",
             PanelKind::Timecode => "Timecode",
+            PanelKind::ProjectNotes => "Project Notes",
         }
     }
     pub fn id(self) -> String {
@@ -437,7 +440,11 @@ impl DockNode {
         if crate::dock_shared::encode(self, &[]).is_err() {
             return;
         }
-        let anchor = [near, PanelKind::Project, PanelKind::Program].into_iter().find(|panel| self.contains(*panel));
+        let anchor = [near, PanelKind::Project, PanelKind::Program].into_iter().find(|panel| self.contains(*panel)).or_else(|| {
+            let mut panels = Vec::new();
+            self.panels(&mut panels);
+            panels.first().copied()
+        });
         crate::dock_shared::apply_tree(self, craft_ui::docking::Action::Open { panel: p, anchor });
     }
 }
@@ -900,5 +907,26 @@ mod tests {
         let s = serde_json::to_string(&d).unwrap();
         let back: DockNode = serde_json::from_str(&s).unwrap();
         assert_eq!(back, d);
+    }
+
+    /// #284: with Project and Program closed (or every panel closed) a panel still opens.
+    #[test]
+    fn open_near_falls_back_to_the_first_group() {
+        let mut d = workspace("Editing");
+        let mut all = Vec::new();
+        d.panels(&mut all);
+        for p in all {
+            d.close(p);
+        }
+        assert_eq!(d, DockNode::Tabs { panels: vec![], active: 0 });
+        d.open_near(PanelKind::Program, PanelKind::Project);
+        assert!(d.is_visible(PanelKind::Program));
+        d.restore_timeline();
+        assert!(d.is_visible(PanelKind::Timeline));
+        // a tree without Project or Program: the panel joins the first group
+        let mut d = hsplit(SplitSize::Ratio(0.5), tabs(&[PanelKind::Effects], 0), tabs(&[PanelKind::Markers], 0));
+        d.open_near(PanelKind::Info, PanelKind::Source);
+        assert!(d.is_visible(PanelKind::Info));
+        assert_eq!(d, hsplit(SplitSize::Ratio(0.5), tabs(&[PanelKind::Effects, PanelKind::Info], 1), tabs(&[PanelKind::Markers], 0)));
     }
 }

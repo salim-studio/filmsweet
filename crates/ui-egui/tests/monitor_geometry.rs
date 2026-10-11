@@ -123,6 +123,51 @@ fn compact_transport_buttons_stay_inside_monitor() {
 }
 
 #[test]
+fn transport_editor_keeps_its_own_space_and_customizes_compact_controls() {
+    for width in [720.0, 500.0, 300.0, 250.0, 90.0] {
+        let mut h = harness(width, ThemeKind::Light, Which::Program);
+        let editor = element(&h, "program.transport.editor");
+        for e in &h.state().auto.elements {
+            if e.id.starts_with("program.transport.") && e.id != "program.transport.editor" {
+                assert!(!overlaps(editor, element(&h, &e.id)), "{width}: editor overlaps {}", e.id);
+            }
+        }
+        click(&mut h, "program.transport.editor");
+        let id = "program.transport.editor.playback.toggle";
+        let target = element(&h, id);
+        if width == 90.0
+            && let Ok(directory) = std::env::var("CRAFT_UI_VISUAL_DIR")
+        {
+            std::fs::create_dir_all(&directory).unwrap();
+            h.render().unwrap().save(format!("{directory}/film-program-editor-90.png")).unwrap();
+        }
+        click(&mut h, id);
+        assert!(
+            h.state().ui.program.transport_hidden.iter().any(|command| command == "playback.toggle"),
+            "width={width} editor={editor:?} checkbox={target:?} hidden={:?}",
+            h.state().ui.program.transport_hidden
+        );
+        if width == 90.0 {
+            let scroll = element(&h, "program.transport.editor.scroll");
+            let reset_before = element(&h, "program.transport.editor.reset");
+            h.event(Event::PointerMoved(scroll.center()));
+            h.event(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -1200.0),
+                modifiers: Modifiers::NONE,
+                phase: egui::TouchPhase::Move,
+            });
+            h.run_steps(5);
+            let reset = element(&h, "program.transport.editor.reset");
+            assert!(reset.top() < reset_before.top(), "real wheel moves clipped editor controls");
+            assert!(scroll.contains(reset.center()), "Reset is visible after scrolling: {reset:?}, {scroll:?}");
+            click(&mut h, "program.transport.editor.reset");
+            assert_eq!(h.state().ui.program.transport_hidden, vec!["playback.loop".to_string()]);
+        }
+    }
+}
+
+#[test]
 fn compact_transport_more_runs_the_existing_proxy_command() {
     let mut h = harness(250.0, ThemeKind::Light, Which::Program);
     let before = h.state().session.media.use_proxies();
