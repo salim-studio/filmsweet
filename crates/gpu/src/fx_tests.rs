@@ -350,7 +350,7 @@ fn gpu_extract_zero_softness_has_no_fractional_edge() {
         let e = effect("extract", &[("black", fl(90.0)), ("white", fl(160.0)), ("invert", ParamValue::Bool(invert))]);
         let op = FxOp::eval(&e, &cx(Tick::ZERO, 1.0), w as usize, h as usize).unwrap();
         let (_, _, gpu) = c.effect_image(&frame, &LayerFx { size: (w, h), decimation: 1, ops: vec![op] }).unwrap();
-        for (src, out) in px.chunks_exact(4).zip(gpu.chunks_exact(4)) {
+        for (src, out) in px.as_chunks::<4>().0.iter().zip(gpu.as_chunks::<4>().0.iter()) {
             assert_eq!(out[3], src[3], "Extract must preserve alpha");
             assert!(out[0] == 0.0 || out[0] == out[3], "zero softness produced a fractional edge: {out:?}");
             assert_eq!(out[0], out[1]);
@@ -358,7 +358,7 @@ fn gpu_extract_zero_softness_has_no_fractional_edge() {
         }
         masks.push(gpu);
     }
-    for ((normal, inverted), src) in masks[0].chunks_exact(4).zip(masks[1].chunks_exact(4)).zip(px.chunks_exact(4)) {
+    for ((normal, inverted), src) in masks[0].as_chunks::<4>().0.iter().zip(masks[1].as_chunks::<4>().0.iter()).zip(px.as_chunks::<4>().0.iter()) {
         assert_eq!(normal[0] + inverted[0], src[3], "inversion must complement the premultiplied mask");
     }
 }
