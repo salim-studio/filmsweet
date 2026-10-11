@@ -322,8 +322,21 @@ fn freeform_view_places_and_stacks_cards() {
     assert!(d.has(&format!("project.stack.{}", items[0])), "×2 badge");
     // Freeform View Options… from the panel menu
     d.click("panel.menu.Project");
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
+    let item_rect = d.rect("project.menu.freeformOptions");
+    let ctx = d.harness.ctx.clone();
+    let at = egui::pos2(item_rect[0] + item_rect[2] / 2.0, item_rect[1] + item_rect[3] / 2.0);
+    assert!(ctx.content_rect().contains(at), "bottom menu action must be reachable: {item_rect:?}");
+    d.snapshot("project-freeform-menu", None);
     d.click("project.menu.freeformOptions");
-    assert!(d.has("projectDialog.snap"));
+    let app = d.app();
+    let diagnostic = format!(
+        "dialog={:?}, controls={:?}",
+        app.ui.project_panel.dialog,
+        app.auto.elements.iter().filter(|element| element.id.starts_with("projectDialog.")).map(|element| (&element.id, element.rect)).collect::<Vec<_>>()
+    );
+    assert!(d.has("projectDialog.snap"), "{diagnostic}");
     d.click("projectDialog.snap");
     d.click("projectDialog.ok");
     assert!(d.app().session.prefs.project_panel.freeform.snap);
@@ -358,6 +371,8 @@ fn metadata_display_dialog_and_view_presets() {
     ] {
         assert!(d.has(id), "{id}");
     }
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
     d.click("project.menu.metadataDisplay");
     d.frames(4);
     assert!(matches!(d.app().ui.project_panel.dialog, Some(filmcraft_ui_egui::panels::project::ProjectDialog::MetadataDisplay { .. })));
@@ -570,6 +585,29 @@ fn new_bin_asks_for_its_name() {
     assert!(d.app().ui.project_panel.rename.is_none());
 }
 
+#[test]
+fn new_bin_then_clear_removes_the_bin() {
+    // leftover Project item selection must not keep Clear from removing the new bin
+    let mut d = project_driver();
+    d.exec("project.view.set", json!({"view": "list"}));
+    d.click("project.button.new-item");
+    d.wait_for("project.newItem.file.newColorMatte");
+    d.click("project.newItem.file.newColorMatte");
+    d.click("colorMatte.ok");
+    let items0 = d.app().session.project.items.len();
+    let bins0 = d.app().session.project.root.children.len();
+    assert!(!d.app().session.state.project_selection.is_empty());
+    d.click("project.button.file.newBin");
+    d.frames(2);
+    let bin = d.app().ui.project_panel.selected_bin.expect("the new bin is selected");
+    assert!(d.app().session.state.project_selection.is_empty(), "New Bin clears leftover item selection");
+    d.click("project.button.project.delete");
+    d.frames(2);
+    assert!(d.app().session.project.root.find_bin(filmcraft_project::BinId(bin)).is_none(), "Clear removes the new bin");
+    assert_eq!(d.app().session.project.root.children.len(), bins0);
+    assert_eq!(d.app().session.project.items.len(), items0, "clips already in the project stay");
+}
+
 // ------------------------------------------------------------------------------------ Media Browser
 
 fn media_dir(tag: &str) -> std::path::PathBuf {
@@ -666,6 +704,8 @@ fn media_browser_navigation_import_and_columns() {
     assert!(d.label("mediaBrowser.count").starts_with("2 of 2"));
     d.snapshot("media-browser-list", Some("panel.MediaBrowser"));
     d.click("panel.menu.MediaBrowser");
+    d.ok("ui.scroll", json!({"id": "panel.menu.scroll", "dy": -1200}));
+    d.frames(4);
     d.click("mediaBrowser.menu.import");
     assert_eq!(d.app().session.project.items.len(), 2);
     // Shift+O opens the selection in the Source monitor (already imported: no duplicate)
