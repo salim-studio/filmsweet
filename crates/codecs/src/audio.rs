@@ -875,7 +875,7 @@ fn decode_mpeg_layer12(bytes: &[u8]) -> Option<(u8, u32, Vec<Vec<f32>>)> {
         // ID3v2: 10-byte header, a syncsafe size, and a 10-byte footer when flagged
         [b'I', b'D', b'3', _, _, flags, s0, s1, s2, s3, ..] => {
             let size = [*s0, *s1, *s2, *s3].iter().fold(0usize, |a, &b| (a << 7) | (b & 0x7F) as usize);
-            10 + size + if flags & 0x10 != 0 { 10 } else { 0 }
+            size.saturating_add(if flags & 0x10 != 0 { 20 } else { 10 })
         }
         _ => 0,
     };
@@ -974,6 +974,8 @@ mod mpeg_layer12_tests {
             assert!(decode_mpeg_layer12(&file[..n]).is_none(), "{n}");
         }
         assert!(decode_mpeg_layer12(&[&mono[..], &[0x12; 50]].concat()).is_none());
+        // an ID3v2 tag claiming the largest size (with a footer) points past the end
+        assert!(decode_mpeg_layer12(&[&b"ID3\x04\0\x10\x7F\x7F\x7F\x7F"[..], &mono].concat()).is_none());
     }
 }
 
