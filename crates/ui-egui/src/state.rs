@@ -197,6 +197,9 @@ pub struct TimelineView {
     /// Follow playhead during playback (page scroll).
     pub follow: bool,
     pub fit_pending: bool,
+    /// The playhead the view last saw: a jump while stopped (Home, End, edit points) scrolls to it.
+    #[serde(skip)]
+    pub seen_playhead: Option<(filmcraft_project::ItemId, f64)>,
     /// The zoom a fit gave an empty sequence (which fits its 1 s minimum): the first clip to arrive
     /// fits again, unless the zoom was changed in between.
     #[serde(skip)]
@@ -232,6 +235,7 @@ impl Default for TimelineView {
             show_waveforms: true,
             follow: true,
             fit_pending: true,
+            seen_playhead: None,
             fit_empty: None,
             track_lanes: Default::default(),
         }

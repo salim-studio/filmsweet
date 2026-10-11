@@ -2804,8 +2804,8 @@
 	Ignore Audio	Ignorar audio
 	Ignore Video	Ignorar video
 	Apply a cut at each detected cut point	Aplicar un corte en cada punto de corte detectado
-	Create a subclip for each detected cut point	Crear un subclip para cada punto de corte detectado
-	Generate clip markers at each detected cut point	Generar marcadores de clip en cada punto de corte detectado
+	Create a bin of subclips from each detected cut point	Crear una bandeja de subclips a partir de cada punto de corte detectado
+	Create a clip marker at each detected cut point	Crear un marcador de clip en cada punto de corte detectado
 	Sensitivity:	Sensibilidad:
 	Normalize Mix Track to:	Normalizar pista de mezcla a:
 	Disabled clips	Clips desactivados
@@ -3489,6 +3489,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	Haz clic para seleccionar, o haz clic en un espacio vacío y arrastra para seleccionar con un marco. Usa Mayús, Alt y Ctrl para otras opciones.
 	Click to zoom in; Alt-click to zoom out.	Haz clic para acercar; Alt+clic para alejar.
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	Arrastrar: mover · Alt+clic: suave/esquina · Ctrl+clic: eliminar
+	Drag inward to round the corners	Arrastrar hacia dentro para redondear las esquinas
 	Include Alpha Channel	Incluir canal alfa
 	Sequence Settings	Ajustes de secuencia
 	Color Management	Gestión del color
@@ -3562,3 +3563,9 @@
 	Edit Project Notes	Editar notas del proyecto
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	Notas de este proyecto: tareas pendientes, instrucciones, números de fotograma… Se guardan con el proyecto.
 	Use Effect Shutter Angle	Usar el ángulo de obturación del efecto
+	Safe graphics mode: {mode}	Modo gráfico seguro: {mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	Un inicio anterior falló con los gráficos predeterminados. Actualizar el controlador gráfico suele solucionarlo.
+	Use Default Graphics	Usar gráficos predeterminados
+	The default graphics are used from the next start.	Los gráficos predeterminados se usarán a partir del próximo inicio.
+	DirectX 12 only	Solo DirectX 12
+	software rendering	renderizado por software

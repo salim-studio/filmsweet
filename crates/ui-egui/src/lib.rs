@@ -39,6 +39,7 @@ pub mod dock;
 mod dock_shared;
 mod dock_ui;
 pub mod frames;
+pub mod graphics_notice;
 pub mod header;
 pub mod i18n;
 pub mod icons;
@@ -82,6 +83,10 @@ pub trait AudioOut {
     }
     /// Frames played since `start` (the playback master clock), if the device reports it.
     fn played_frames(&self) -> Option<u64>;
+    /// Called every frame while playing, before `played_frames`: restart a stream the device
+    /// dropped (a driver error, an unplugged device), keeping the clock and `fill`. A stream that
+    /// cannot be restarted reports `played_frames() == None`.
+    fn recover(&mut self) {}
     /// Hosts and devices that can be chosen in Settings ▸ Audio Hardware.
     fn devices(&self) -> AudioDevices {
         AudioDevices::default()
@@ -302,6 +307,9 @@ pub struct FilmcraftApp {
     styled: bool,
     /// A panic in the UI pass, shown in an error window until dismissed (see [`crash`]).
     pub ui_error: Option<String>,
+    /// The window runs in a fallback graphics mode (set by the desktop host): a notice with a
+    /// button back to the default mode (see [`graphics_notice`]).
+    pub graphics_notice: Option<graphics_notice::GraphicsNotice>,
     /// Fault injection for robustness tests: the next UI pass panics.
     #[doc(hidden)]
     pub panic_next_frame: bool,
@@ -546,6 +554,7 @@ impl FilmcraftApp {
             bindings_rev: 0,
             shortcut_editor: Default::default(),
             toast: None,
+            graphics_notice: None,
             tl: Default::default(),
             command_inbox: None,
             v_down: false,
@@ -1036,6 +1045,11 @@ impl FilmcraftApp {
             self.playback.anchor_time = now;
         }
         let rate = self.session.sequence_rate();
+        if self.playback.audio_clock
+            && let Some(audio) = self.audio.as_mut()
+        {
+            audio.recover();
+        }
         let reading = if self.playback.audio_clock { self.audio.as_ref().and_then(|a| a.played_frames().map(|f| (f, a.sample_rate()))) } else { None };
         if self.playback.audio_clock && reading.is_none() {
             // A device error relinquishes its clock immediately. Resume from the displayed
@@ -1372,6 +1386,12 @@ impl FilmcraftApp {
         if ctx.egui_wants_keyboard_input() || self.dialog == Some(Dialog::Shortcuts) {
             return;
         }
+        // A focused text field takes every unmodified key, including the ones our shortest
+        // shortcuts use, so an input method can compose there (Vietnamese Telex, Korean, …; #243).
+        // `egui_wants_keyboard_input` above is not enough: it is read before this pass lays the UI
+        // out, so it still reports the previous pass, and it is true for any focused widget, which
+        // would leave the editor without its single-key tool shortcuts while a slider has focus.
+        let text_focused = ctx.text_edit_focused();
         // Esc cancels a dynamic trim in progress
         if self.session.trim_play.dynamic.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             let _ = self.session.execute("trim.cancelDynamic", json!({}));
@@ -1414,6 +1434,13 @@ impl FilmcraftApp {
             let mut candidates: Vec<&menus::KeyBinding> = panel.chain(app_wide).collect();
             candidates.sort_by_key(|b| std::cmp::Reverse(menus::specificity(b.0)));
             for (m, k, id, _) in candidates {
+                // With a text field focused, an unmodified key belongs to the field (and to the input
+                // method composing in it), not to a tool shortcut: `J`, `Z`, `R`, `A`… are the keys
+                // Vietnamese Telex combines into diacritics (#243). Chords with a modifier stay:
+                // Ctrl+S and friends are not something a text field or an IME consumes.
+                if lets_text_field_keep(*m, text_focused) {
+                    continue;
+                }
                 if i.consume_key(*m, *k) {
                     fire.push(id.clone());
                 }
@@ -1935,6 +1962,10 @@ impl eframe::App for FilmcraftApp {
             self.playback.playing = false;
         }
         self.error_window(ui.ctx());
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| graphics_notice::show(self, ui.ctx()))).is_err() {
+            // a broken notice must not take the session down: drop it
+            self.graphics_notice = None;
+        }
         let ctx = ui.ctx().clone();
         self.last_ui_time = ctx.input(|i| i.time);
         if !self.synthetic.is_empty() {
@@ -2115,8 +2146,14 @@ mod gpu_fallback_tests {
     #[test]
     fn plan_side_covers_output_and_every_layer() {
         let frame = |w: u32, h: u32| std::sync::Arc::new(filmcraft_frame::VideoFrame::rgba_f32(w, h, vec![0.0; (w * h * 4) as usize]));
-        let layer =
-            |w, h| PlanLayer { frame: frame(w, h), matrix: filmcraft_geom::Affine::IDENTITY, opacity: 1.0, blend: filmcraft_render::Blend::Normal, fx: None };
+        let layer = |w, h| PlanLayer {
+            frame: frame(w, h),
+            matrix: filmcraft_geom::Affine::IDENTITY,
+            opacity: 1.0,
+            blend: filmcraft_render::Blend::Normal,
+            fx: None,
+            input: None,
+        };
         // a 4K source in an HD sequence still needs a 3840-wide texture on the GPU
         let p = FramePlan::Layers { width: 1920, height: 1080, layers: vec![layer(64, 64), layer(3840, 2160)] };
         assert_eq!(super::plan_side(&p), 3840);
@@ -2223,6 +2260,106 @@ mod audio_recovery_tests {
         assert_eq!(app.session.playhead(), displayed);
         assert!(app.ui.status.contains("Audio output failed"));
         app.stop();
+    }
+
+    /// A stream the device dropped, which `recover` restarts on the same clock.
+    struct Restartable {
+        reading: Option<u64>,
+    }
+
+    impl AudioOut for Restartable {
+        fn start(&mut self, _: Box<dyn FnMut(&mut [f32], usize) + Send>) -> Result<u32, String> {
+            Ok(48000)
+        }
+        fn stop(&mut self) {}
+        fn sample_rate(&self) -> u32 {
+            48000
+        }
+        fn played_frames(&self) -> Option<u64> {
+            self.reading
+        }
+        fn recover(&mut self) {
+            self.reading = self.reading.or(Some(48_000));
+        }
+    }
+
+    #[test]
+    fn a_restarted_stream_keeps_the_device_clock_and_the_sound() {
+        let mut session = Session::default();
+        session.execute("file.openDemoProject", json!({})).unwrap();
+        let ctx = egui::Context::default();
+        let mut app = FilmcraftApp::new(session);
+        app.audio = Some(Box::new(Restartable { reading: None }));
+        app.playback.playing = true;
+        app.playback.audio_clock = true;
+        app.playback.anchor_tick = Tick::ZERO;
+        app.playback.anchor_time = 0.0;
+        app.playback.audio_seen = (0, 10.0);
+        let mut output = ctx.run_ui(egui::RawInput { time: Some(10.0), ..Default::default() }, |ui| app.advance_playback(ui.ctx()));
+        output.textures_delta.clear();
+        assert!(app.playback.audio_clock, "the restarted stream is still the master clock");
+        assert!(!app.ui.status.contains("Audio output failed"));
+        // 48 000 frames played at 48 kHz: one second in, on a frame boundary
+        let (shown, second) = (app.session.playhead(), Tick::from_seconds_f64(1.0));
+        assert!(
+            shown <= second && shown + app.session.sequence_rate().frame_duration() > second,
+            "the playhead follows the frames the device played: {shown:?}"
+        );
+        app.stop();
+    }
+}
+
+/// Whether a shortcut chord must be left alone because a text field is focused.
+///
+/// A focused text field owns every unmodified key: an input method composes there from plain
+/// letters (Vietnamese Telex builds `á` from `a` + `s`, `ả` from `a` + `r`, `ạ` from `a` + `j`),
+/// and our single-key tool shortcuts would swallow them before the field sees them (#243). Chords
+/// with a modifier are not what a text field or an IME consumes, so they keep working.
+fn lets_text_field_keep(modifiers: egui::Modifiers, text_focused: bool) -> bool {
+    text_focused && menus::specificity(modifiers) == 0
+}
+
+#[cfg(test)]
+mod text_focus_shortcut_tests {
+    use super::lets_text_field_keep;
+    use egui::{Key, Modifiers};
+
+    /// Vietnamese Telex composes diacritics from unmodified letters (`a` + `s` → `á`, `a` + `r` →
+    /// `ả`, `a` + `j` → `ạ`), and the editor binds `J`, `Z`, `R`, `A`, `C`, `T`, `K`, `L`, `B`, `N`,
+    /// `P`, `V`, `Y`, `U`, `H` as single-key tool shortcuts. While a text field is focused those
+    /// keys must reach the field, or no diacritic can ever be typed (#243).
+    #[test]
+    fn an_unmodified_key_reaches_a_focused_text_field() {
+        assert!(lets_text_field_keep(Modifiers::NONE, true), "the IME needs the plain letter keys");
+    }
+
+    /// Without a text field the editor keeps its single-key tool shortcuts.
+    #[test]
+    fn an_unmodified_key_still_fires_without_a_text_field() {
+        assert!(!lets_text_field_keep(Modifiers::NONE, false));
+    }
+
+    /// A modifier chord is not what a text field or an IME consumes, so it keeps firing either way.
+    #[test]
+    fn a_modified_chord_still_fires_while_text_is_focused() {
+        for m in [Modifiers::COMMAND, Modifiers::CTRL, Modifiers::SHIFT, Modifiers::ALT, Modifiers::COMMAND | Modifiers::SHIFT] {
+            assert!(!lets_text_field_keep(m, true), "{m:?} is not an IME key");
+        }
+    }
+
+    /// The keys a Vietnamese Telex IME needs must be exactly the ones we now hand to the field.
+    #[test]
+    fn the_telex_trigger_keys_are_left_to_the_field() {
+        // s=acute, f=grave, r=hook above, x=tilde, j=dot below, w=horn, z=remove diacritic
+        for key in [Key::S, Key::F, Key::R, Key::X, Key::J, Key::W, Key::Z] {
+            assert!(lets_text_field_keep(Modifiers::NONE, true), "{key:?} must reach the IME");
+        }
+        // The letters the editor binds as tools are the ones Telex composes with, so they must be
+        // left to the field too: `A` (Track Select Forward), `R` (Rate Stretch), `J` (Shuttle Left),
+        // `Z` (Zoom), `C` (Razor), `T` (Type).
+        for key in [Key::A, Key::R, Key::J, Key::Z, Key::C, Key::T] {
+            assert!(lets_text_field_keep(Modifiers::NONE, true), "{key:?} is a Telex key the tools stole");
+        }
     }
 }
 
