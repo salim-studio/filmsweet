@@ -22,6 +22,10 @@ macro_rules! uic {
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
+    uic!("window.dockAction", "Docking Action", [], None),
+    uic!("window.dockPanel", "Dock Panel", [], None),
+    uic!("window.floatPanel", "Undock Panel", [], None),
+    uic!("window.closePanel", "Close Panel", [], None),
     uic!("app.language.english", "English", ["Edit", "Language"], None),
     uic!("app.language.japanese", "日本語", ["Edit", "Language"], None),
     uic!("app.language.spanish", "Español", ["Edit", "Language"], None),
@@ -233,6 +237,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if id == "perf.stats" {
         // the engine's counters plus playback, frame workers and UI timings
         return Ok(crate::perf::stats(app));
+    }
+    if let Some(result) = crate::dock_ui::route(app, ctx, id, &params) {
+        return result;
     }
     if let Some(rest) = id.strip_prefix("window.panel.") {
         let p = PanelKind::from_name(rest).ok_or_else(|| format!("unknown panel `{rest}`"))?;
@@ -614,6 +621,11 @@ pub struct MenuItem {
 }
 
 pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
+
+/// Labels only the native macOS app menu shows, with no command in the menu tree behind them: the
+/// Settings submenu and the predefined Hide, Hide Others and Quit items. They are translated through
+/// the catalogs like menu labels (`apps/filmcraft/src/native_menu.rs`).
+pub const NATIVE_APP_MENU: [&str; 4] = ["Settings", "Hide FilmCraft", "Hide Others", "Quit FilmCraft"];
 
 pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
     let mut v = menu_items_for(&app.session);

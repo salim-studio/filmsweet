@@ -80,7 +80,7 @@ fn main() -> eframe::Result {
     let logger = logging::install();
     // lossy, so a value that is not Unicode is reported like any other bad port instead of ignored
     let env_port = std::env::var_os("FILMCRAFT_CONTROL_PORT").map(|p| p.to_string_lossy().into_owned());
-    let Launch { control_port, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, std::env::args().skip(1)) {
+    let Launch { control_port, control_input_only, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, std::env::args().skip(1)) {
         Ok(Cli::Run(l)) => l,
         Ok(Cli::Help) => {
             tell(args::USAGE, false);
@@ -272,7 +272,7 @@ fn main() -> eframe::Result {
             }
             if let Some(port) = control_port {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
-                app = app.with_control(rx);
+                app = if control_input_only { app.with_control_input_only(rx) } else { app.with_control(rx) };
             }
             Ok(Box::new(app))
         }),
@@ -319,6 +319,7 @@ fn open_path(path: &str, reveal: bool) -> Result<(), String> {
         }
         c
     } else {
+        // Linux file managers have no select-file flag: open the parent folder instead.
         let mut c = std::process::Command::new("xdg-open");
         let p = std::path::Path::new(path);
         c.arg(if reveal { p.parent().unwrap_or(p) } else { p });
