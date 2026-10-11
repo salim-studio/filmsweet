@@ -12,7 +12,7 @@
 //!   compositor derives its pixel scale from the frame it gets, so effects and Motion render the
 //!   same picture at lower resolution. Export asks for [`MediaPool::full_res_provider`].
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -29,6 +29,17 @@ use crate::Services;
 pub struct OfflineStatus {
     pub reason: OfflineReason,
     pub path: String,
+    pub error: String,
+}
+
+/// An offline item an export or a rendered frame drew the slate for (#1054). `status` is the
+/// word `media.status` uses: `missing`, `offline` (made offline) or `unreadable`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct OfflineMedia {
+    pub item: u64,
+    pub name: String,
+    pub path: String,
+    pub status: &'static str,
     pub error: String,
 }
 
@@ -316,12 +327,12 @@ impl MediaPool {
 
     /// A render-side provider bound to a project snapshot (proxies when enabled).
     pub fn provider(self: &Arc<Self>, project: Arc<Project>, services: Arc<dyn Services>) -> PoolProvider {
-        PoolProvider { pool: self.clone(), project, services, full_res: false }
+        PoolProvider { pool: self.clone(), project, services, full_res: false, used: None }
     }
 
     /// A provider that always reads full-resolution media (export).
     pub fn full_res_provider(self: &Arc<Self>, project: Arc<Project>, services: Arc<dyn Services>) -> PoolProvider {
-        PoolProvider { pool: self.clone(), project, services, full_res: true }
+        PoolProvider { pool: self.clone(), project, services, full_res: true, used: None }
     }
 }
 
@@ -332,10 +343,45 @@ pub struct PoolProvider {
     pub services: Arc<dyn Services>,
     /// Ignore proxies (export always renders full resolution).
     pub full_res: bool,
+    /// Items asked for so far, when recording ([`PoolProvider::recording`]).
+    used: Option<Mutex<BTreeSet<ItemId>>>,
+}
+
+impl PoolProvider {
+    /// This provider, remembering the items it is asked for so [`PoolProvider::offline_used`] can
+    /// tell which of them rendered offline.
+    pub fn recording(mut self) -> Self {
+        self.used = Some(Mutex::new(BTreeSet::new()));
+        self
+    }
+
+    /// The offline items among those asked for since [`PoolProvider::recording`], once each, in
+    /// item order (subclips count as their media). Empty when not recording.
+    pub fn offline_used(&self) -> Vec<OfflineMedia> {
+        let Some(used) = &self.used else { return Vec::new() };
+        let used = used.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let media: BTreeSet<ItemId> = used.into_iter().filter_map(|i| self.project.resolve_media(i).map(|(id, _, _)| id)).collect();
+        media
+            .into_iter()
+            .filter_map(|id| {
+                let st = self.pool.offline_status(id)?;
+                let status = match st.reason {
+                    OfflineReason::Missing => "missing",
+                    OfflineReason::MadeOffline => "offline",
+                    OfflineReason::Unreadable => "unreadable",
+                };
+                let name = self.project.item(id).map(|i| i.name.clone()).unwrap_or_default();
+                Some(OfflineMedia { item: id.0, name, path: st.path, status, error: st.error })
+            })
+            .collect()
+    }
 }
 
 impl filmcraft_render::SourceProvider for PoolProvider {
     fn source(&self, item: ItemId) -> Option<SharedSource> {
+        if let Some(used) = &self.used {
+            used.lock().unwrap_or_else(|e| e.into_inner()).insert(item);
+        }
         if self.full_res { self.pool.full_res_source(&self.project, item, &*self.services) } else { self.pool.source_for(&self.project, item, &*self.services) }
     }
 }

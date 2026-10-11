@@ -94,7 +94,7 @@ fn captions(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let r = Rect::from_center_size(c + vec2(0.0, 26.0 + i as f32 * 34.0), vec2(200.0, 26.0));
             let resp = ui.interact(r, egui::Id::new(id), Sense::click());
             ui.painter().rect_filled(r, 13.0, if i == 0 { if resp.hovered() { t.accent_hover } else { t.accent } } else { t.field_bg });
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, label, Tokens::semibold(12.0), Color32::WHITE);
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, label, Tokens::semibold(12.0), if i == 0 { Color32::WHITE } else { t.text });
             app.auto.add(id, r, label);
             if resp.clicked() {
                 actions.push((cmd.into(), json!({})));
@@ -422,8 +422,10 @@ fn style_strip(app: &mut FilmcraftApp, ui: &mut egui::Ui, r: Rect, track_idx: us
             // names starting with '.' are macOS-private system faces (UI/fallback fonts, some without a space glyph)
             for (f, _) in filmcraft_text::families().into_iter().filter(|(f, _)| !f.starts_with('.')) {
                 let resp = ui.selectable_label(f.eq_ignore_ascii_case(&st.font), &f);
-                if ui.is_rect_visible(resp.rect) {
-                    app.auto.add(&format!("text.captions.style.font.option.{f}"), resp.rect, &f);
+                // An edge row may be only partly visible; automation must click its visible portion.
+                let visible = resp.rect.intersect(ui.clip_rect());
+                if visible.is_positive() {
+                    app.auto.add(&format!("text.captions.style.font.option.{f}"), visible, &f);
                 }
                 if resp.clicked() {
                     actions.push(("captions.setStyle".into(), json!({"track": tr.id.0, "font": f})));

@@ -239,6 +239,15 @@ pub(crate) fn time_p(s: &Session, p: &Value, prefix: &str) -> Option<Tick> {
     None
 }
 
+/// Sequence time from params. Times before 0 are unreachable in the GUI and cut off on export.
+pub(crate) fn sequence_time_p(s: &Session, p: &Value, prefix: &str, cmd: &str) -> Result<Option<Tick>> {
+    let Some(t) = time_p(s, p, prefix) else { return Ok(None) };
+    if t < Tick::ZERO {
+        return Err(bad(cmd, "time must not be negative"));
+    }
+    Ok(Some(t))
+}
+
 pub(crate) fn clip_p(p: &Value, k: &str) -> Option<ClipId> {
     u64_p(p, k).map(ClipId)
 }
@@ -397,18 +406,73 @@ fn move_clips(s: &mut Session, p: &Value) -> Result<Value> {
 /// most constrained clip (media end or start) still moves, and no linked partner slips further.
 pub(crate) fn slip_together(q: &mut filmcraft_project::Sequence, ctx: &mut edit::EditCtx<'_>, deltas: &[(ClipId, Tick)]) -> Result<()> {
     let mut scale = 1.0_f64;
+    let mut any = false;
     for (c, d) in deltas {
         if d.0 == 0 {
             continue;
         }
-        let x = edit::slip(&mut q.clone(), *c, *d, ctx)?;
-        scale = scale.min(x.0.abs() as f64 / d.0.abs() as f64);
+        match edit::slip(&mut q.clone(), *c, *d, ctx) {
+            Err(edit::EditError::Locked) => continue,
+            Err(e) => return Err(e.into()),
+            Ok(x) => {
+                any = true;
+                scale = scale.min(x.0.abs() as f64 / d.0.abs() as f64);
+            }
+        }
+    }
+    if !any && deltas.iter().any(|(_, d)| d.0 != 0) {
+        return Err(edit::EditError::Locked.into());
     }
     for (c, d) in deltas {
         let dd = if scale < 1.0 { Tick((d.0 as f64 * scale).round() as i64) } else { *d };
-        edit::slip(q, *c, dd, ctx)?;
+        match edit::slip(q, *c, dd, ctx) {
+            Err(edit::EditError::Locked) => continue,
+            Err(e) => return Err(e.into()),
+            Ok(_) => {}
+        }
     }
     Ok(())
+}
+
+/// Adjacent roll pairs that follow `left`/`right` when linked selection is on: the given cut, plus
+/// through-edits between the same pieces' linked partners at that same time (Premiere linked
+/// selection). Split edits (audio cut at another time) and unlinked clips are not added.
+pub fn linked_roll_pairs(seq: &filmcraft_project::Sequence, left: ClipId, right: ClipId, follow_links: bool) -> Vec<(ClipId, ClipId)> {
+    let mut pairs = vec![(left, right)];
+    if !follow_links {
+        return pairs;
+    }
+    let Some((_, l)) = seq.find_item(left) else {
+        return pairs;
+    };
+    let Some((_, r)) = seq.find_item(right) else {
+        return pairs;
+    };
+    let cut = l.end();
+    let left_link = l.link;
+    let right_link = r.link;
+    if left_link.is_none() && right_link.is_none() {
+        return pairs;
+    }
+    for tr in seq.all_tracks() {
+        if tr.locked {
+            continue;
+        }
+        for w in tr.items.windows(2) {
+            if w[0].id == left && w[1].id == right {
+                continue;
+            }
+            if w[0].end() != w[1].start || w[0].end() != cut {
+                continue;
+            }
+            let left_ok = left_link.is_some_and(|g| w[0].link == Some(g));
+            let right_ok = right_link.is_some_and(|g| w[1].link == Some(g));
+            if left_ok && right_ok {
+                pairs.push((w[0].id, w[1].id));
+            }
+        }
+    }
+    pairs
 }
 
 /// Expand a clip selection with linked partners (when linked selection is on).
@@ -432,11 +496,21 @@ pub fn with_links(s: &Session, clips: &[ClipId]) -> Vec<ClipId> {
 /// clamped by each one's media and neighbours.
 fn clamp_trim_linked(q: &filmcraft_project::Sequence, clips: &[ClipId], edge: Edge, mode: TrimMode, delta: Tick, ctx: &edit::EditCtx) -> Result<Tick> {
     let mut d = delta;
+    let mut any = false;
     for c in clips {
-        let x = edit::clamp_trim(q, *c, edge, mode, d, ctx)?;
-        if x.abs() < d.abs() {
-            d = x;
+        match edit::clamp_trim(q, *c, edge, mode, d, ctx) {
+            Err(edit::EditError::Locked) => continue,
+            Err(e) => return Err(e.into()),
+            Ok(x) => {
+                any = true;
+                if x.abs() < d.abs() {
+                    d = x;
+                }
+            }
         }
+    }
+    if !any {
+        return Err(edit::EditError::Locked.into());
     }
     Ok(d)
 }
@@ -681,8 +755,9 @@ pub(crate) fn place_item(
     if s.state.sequences_as_clips && pi.as_sequence().is_some_and(|q| q.multicam.is_none()) {
         return crate::sequence_tools::place_sequence_clips(s, item, range, at, vdest, adest, insert, label);
     }
-    let has_v = pi.has_video() && vdest.is_some();
-    let has_a = pi.has_audio() && adest.is_some();
+    let (video, audio) = s.project.source_streams(item);
+    let has_v = video && vdest.is_some();
+    let has_a = audio && adest.is_some();
     if !has_v && !has_a {
         return Err(EngineError::Other("no destination track for this media (check source patching)".into()));
     }
@@ -724,7 +799,7 @@ pub(crate) fn place_item(
             let mut a = p.make_track_item(item, TrackKind::Audio, aat, arange, rate).ok_or_else(|| bad(label, "bad item"))?;
             // Modify ▸ Audio Channels with several audio clips: one per clip, on the tracks below
             let clips: Vec<Vec<u16>> =
-                p.item(item).and_then(|i| i.as_media()).and_then(|m| m.interpret.audio_channels.as_ref()).map(|m| m.clips.clone()).unwrap_or_default();
+                p.resolve_media(item).and_then(|(_, m, _)| m.interpret.audio_channels.as_ref()).map(|m| m.clips.clone()).unwrap_or_default();
             let streams = p.resolve_media(item).map_or(1, |(_, m, _)| m.info.audio_streams.len());
             let specs = audio_placement_specs(&clips, streams);
             let first = p.sequence(seq_id).and_then(|q| q.audio_tracks.iter().position(|t| t.id == adest)).unwrap_or(0);
@@ -1289,7 +1364,7 @@ fn build() -> Vec<CommandSpec> {
             has_seq,
             crate::export_tools::export_media
         ),
-        query!("jobs.list", "List Jobs", "{}", |s, _| Ok(Value::Array(s.jobs.iter().map(crate::Job::to_json).collect()))),
+        query!("jobs.list", "List Jobs", "{}", |s, _| Ok(Value::Array(s.jobs.iter().map(|j| crate::export_tools::job_json(s, j)).collect()))),
         query!("perf.stats", "Performance Statistics", "{}", |s, _| Ok(crate::perf::stats(s))),
         cmd!("jobs.cancel", "Cancel Job", [], None, r#"{"job":id}"#, always, |s, p| {
             let id = u64_p(p, "job").ok_or_else(|| bad("jobs.cancel", "need `job`"))?;
@@ -1462,7 +1537,12 @@ fn build() -> Vec<CommandSpec> {
                         }
                     }
                     for group in &groups {
-                        edit::set_speed_group(q, group, speed, reverse, ripple, ctx)?;
+                        let unlocked: Vec<ClipId> =
+                            group.iter().copied().filter(|c| q.find_item(*c).is_some_and(|(t, _)| q.track(t).is_some_and(|tr| !tr.locked))).collect();
+                        if unlocked.is_empty() {
+                            return Err(edit::EditError::Locked.into());
+                        }
+                        edit::set_speed_group(q, &unlocked, speed, reverse, ripple, ctx)?;
                     }
                     for c in &sel {
                         if let (Some(m), Some((_, it))) = (interp, q.find_item_mut(*c)) {
@@ -1740,7 +1820,7 @@ fn build() -> Vec<CommandSpec> {
             "Apply Audio Transition",
             ["Sequence"],
             Some("Cmd+Shift+D"),
-            r#"{"clip":id?,"effect":str?,"frames":i64?}"#,
+            r#"{"clip":id?,"effect":"constant_power|Constant Power|…"?,"frames":i64?,"edge":"in"|"out"?,"params":{param:value}?,"reverse":bool?}"#,
             has_seq,
             |s, p| apply_transition(s, p, TrackKind::Audio)
         ),
@@ -1999,7 +2079,7 @@ fn build() -> Vec<CommandSpec> {
                     return Ok(v);
                 }
                 let (_seq, ph) = marker_list_mut(s)?;
-                let t = time_p(s, p, "").unwrap_or(ph);
+                let t = sequence_time_p(s, p, "", "markers.add")?.unwrap_or(ph);
                 let name = str_p(p, "name").unwrap_or("").to_string();
                 let comment = str_p(p, "comment").unwrap_or("").to_string();
                 let color = str_p(p, "color").and_then(Label::from_name).unwrap_or(Label::Green);
@@ -2200,9 +2280,10 @@ fn build() -> Vec<CommandSpec> {
                     return Err(bad("timeline.place", "enable video, audio, or both"));
                 }
                 let item = item_p(p, "item").ok_or_else(|| bad("timeline.place", "need `item`"))?;
-                let at = time_p(s, p, "").unwrap_or(s.playhead());
+                let at = sequence_time_p(s, p, "", "timeline.place")?.unwrap_or(s.playhead());
                 let tg = s.targeting();
                 let pi = s.project.item(item).ok_or_else(|| bad("timeline.place", "no such item"))?;
+                let (has_video, has_audio) = s.project.source_streams(item);
                 let is_audio = |t: TrackId| s.active_sequence().is_some_and(|q| q.audio_tracks.iter().any(|x| x.id == t));
                 // `track` is where the picture goes and `audioTrack` where the sound goes. A caller that
                 // names an audio track as `track` asks for the sound alone, on that track.
@@ -2211,21 +2292,21 @@ fn build() -> Vec<CommandSpec> {
                         return Err(bad("timeline.place", "`track` names an audio track and `audioTrack` is given as well: name the sound's track once"));
                     }
                     (_, Some(t)) if !is_audio(t) => return Err(bad("timeline.place", "`audioTrack` names a video track")),
-                    (Some(t), None) if is_audio(t) && !pi.has_audio() => {
+                    (Some(t), None) if is_audio(t) && !has_audio => {
                         return Err(bad("timeline.place", "`track` names an audio track and this item has no sound"));
                     }
                     (Some(t), None) if is_audio(t) => (None, Some(t)),
-                    (Some(_), None) if !pi.has_video() => {
+                    (Some(_), None) if !has_video => {
                         return Err(bad("timeline.place", "`track` names a video track and this item has no picture: name an audio track"));
                     }
                     (v, a) => (v.or(tg.video_dest), a.or(tg.audio_dest)),
                 };
                 let v = v.filter(|_| video);
                 let a = a.filter(|_| audio);
-                if p.get("video").is_some() && video && pi.has_video() && v.is_none() {
+                if p.get("video").is_some() && video && has_video && v.is_none() {
                     return Err(bad("timeline.place", "no video destination: add or enable a video track"));
                 }
-                if p.get("audio").is_some() && audio && pi.has_audio() && a.is_none() {
+                if p.get("audio").is_some() && audio && has_audio && a.is_none() {
                     return Err(bad("timeline.place", "no audio destination: add or enable an audio track"));
                 }
                 let full = full_duration(s, pi);
@@ -2302,6 +2383,9 @@ fn build() -> Vec<CommandSpec> {
                     .unwrap_or_default();
                 let clips = with_links(s, &[c]);
                 let applied = s.edit_sequence(if mode == TrimMode::Ripple { "Ripple Trim" } else { "Trim" }, |q, ctx, st| {
+                    if q.find_item(c).is_some_and(|(t, _)| q.track(t).is_some_and(|tr| tr.locked)) {
+                        return Err(edit::EditError::Locked.into());
+                    }
                     let before = q.find_item(c).map(|(_, i)| i.range());
                     // clamp across all linked partners, then apply the common delta
                     let mut dd = clamp_trim_linked(q, &clips, edge, mode, d, ctx)?;
@@ -2309,6 +2393,10 @@ fn build() -> Vec<CommandSpec> {
                         // the clip and its linked partners ripple as one edit
                         let mut group = vec![c];
                         group.extend(clips.iter().copied().filter(|o| *o != c));
+                        group.retain(|id| q.find_item(*id).is_some_and(|(t, _)| q.track(t).is_some_and(|tr| !tr.locked)));
+                        if group.is_empty() {
+                            return Err(edit::EditError::Locked.into());
+                        }
                         dd = edit::ripple_trim_group(q, &group, edge, dd, ctx)?;
                         if st.ripple_sequence_markers
                             && let Some(r) = before
@@ -2322,7 +2410,11 @@ fn build() -> Vec<CommandSpec> {
                         }
                     } else {
                         for c in &clips {
-                            edit::trim(q, *c, edge, mode, dd, ctx)?;
+                            match edit::trim(q, *c, edge, mode, dd, ctx) {
+                                Err(edit::EditError::Locked) => continue,
+                                Err(e) => return Err(e.into()),
+                                Ok(_) => {}
+                            }
                         }
                     }
                     Ok(dd)
@@ -2412,8 +2504,26 @@ fn build() -> Vec<CommandSpec> {
                 .map(Tick)
                 .or_else(|| p.get("deltaFrames").and_then(Value::as_i64).map(|f| s.sequence_rate().tick_of(f)))
                 .unwrap_or_default();
-            let x = s.edit_sequence("Rolling Edit", |q, ctx, _| Ok(edit::roll(q, l, r, d, ctx)?))?;
-            Ok(json!({"delta": x.0}))
+            let follow = s.state.linked_selection;
+            let (x, n, linked) = s.edit_sequence("Rolling Edit", |q, ctx, _| {
+                let pairs = linked_roll_pairs(q, l, r, follow);
+                let linked = pairs.len() > 1;
+                let mut d = d;
+                for &(pl, pr) in &pairs {
+                    let mut probe = q.clone();
+                    let x = edit::roll(&mut probe, pl, pr, d, ctx)?;
+                    if x.abs() < d.abs() {
+                        d = x;
+                    }
+                }
+                if d != Tick::ZERO {
+                    for &(pl, pr) in &pairs {
+                        edit::roll(q, pl, pr, d, ctx)?;
+                    }
+                }
+                Ok((d, pairs.len(), linked))
+            })?;
+            Ok(json!({"delta": x.0, "pairs": n, "linked": linked}))
         }),
         cmd!("timeline.slip", "Slip", [], None, r#"{"clip":id,"delta":ticks|"deltaFrames":i64}"#, has_seq, |s, p| {
             let c = clip_p(p, "clip").ok_or_else(|| bad("timeline.slip", "need `clip`"))?;
@@ -2441,7 +2551,14 @@ fn build() -> Vec<CommandSpec> {
                 .unwrap_or_default();
             let clips = with_links(s, &[c]);
             // clamp across all linked partners, then slide them by the common delta
-            s.edit_sequence("Slide", |q, ctx, _| Ok(edit::slide_items(q, &clips, d, ctx)?))?;
+            s.edit_sequence("Slide", |q, ctx, _| {
+                let unlocked: Vec<ClipId> =
+                    clips.iter().copied().filter(|id| q.find_item(*id).is_some_and(|(t, _)| q.track(t).is_some_and(|tr| !tr.locked))).collect();
+                if unlocked.is_empty() {
+                    return Err(edit::EditError::Locked.into());
+                }
+                Ok(edit::slide_items(q, &unlocked, d, ctx)?)
+            })?;
             Ok(Value::Null)
         }),
         cmd!("timeline.rateStretch", "Rate Stretch", [], None, r#"{"clip":id,"edge":"in|out","delta":ticks}"#, has_seq, |s, p| {
@@ -2456,8 +2573,19 @@ fn build() -> Vec<CommandSpec> {
             let clips = with_links(s, &[c]);
             let sp = s.edit_sequence("Rate Stretch", |q, ctx, _| {
                 let mut sp = 1.0;
+                let mut any = false;
                 for c in &clips {
-                    sp = edit::rate_stretch(q, *c, edge, d, ctx)?;
+                    match edit::rate_stretch(q, *c, edge, d, ctx) {
+                        Err(edit::EditError::Locked) => continue,
+                        Err(e) => return Err(e.into()),
+                        Ok(s) => {
+                            any = true;
+                            sp = s;
+                        }
+                    }
+                }
+                if !any {
+                    return Err(edit::EditError::Locked.into());
                 }
                 Ok(sp)
             })?;
@@ -2600,7 +2728,7 @@ fn build() -> Vec<CommandSpec> {
             "Set Effect Parameter",
             [],
             None,
-            r##"{"clip":id,"effect":"motion"|index,"param":str,"mask":n?,"value":num|[x,y]|"#rrggbb"|bool|path|"option name" (a choice takes its index or its name),"time":ticks? (where the keyframe goes when the parameter is animated; a parameter that is not animated gets a new static value whatever the time),"keyframe":bool? (true: write a keyframe at `time` and animate the parameter),"merge":bool?,"begin":bool?}"##,
+            r##"{"clip":id,"effect":"motion"|index,"param":str,"mask":n?,"value":num|[x,y]|"#rrggbb"|bool|path|"option name" (a choice takes its index or its name),"time":ticks? (where the keyframe goes when the parameter is animated, kept there even outside the clip; default: the playhead, pinned to the clip; a parameter that is not animated gets a new static value whatever the time),"keyframe":bool? (true: write a keyframe at `time` and animate the parameter),"merge":bool?,"begin":bool?}"##,
             has_seq,
             |s, p| {
                 let c = clip_p(p, "clip").ok_or_else(|| bad("effects.setParam", "need `clip`"))?;
@@ -2608,8 +2736,10 @@ fn build() -> Vec<CommandSpec> {
                 let val = p.get("value").cloned().ok_or_else(|| bad("effects.setParam", "need `value`"))?;
                 let eff = p.get("effect").cloned().unwrap_or(json!("motion"));
                 let keyframe = bool_p(p, "keyframe").unwrap_or(false);
+                // an explicit `time` outside the clip keeps its keyframe there, before the start as after
+                // the end, so a ramp across a cut keeps its slope (#1055); the playhead is pinned to the clip
+                let at = time_p(s, p, "");
                 let ph = s.playhead();
-                let tl = time_p(s, p, "").unwrap_or(ph);
                 let pq = p.clone();
                 // `merge`: a drag of one parameter is one undo step (#201); `begin` starts a new one
                 let merge = bool_p(p, "merge").unwrap_or(false).then(|| format!("setParam:{}:{eff}:{pid}:{}", c.0, p.get("mask").unwrap_or(&Value::Null)));
@@ -2618,7 +2748,7 @@ fn build() -> Vec<CommandSpec> {
                 }
                 let keyframes = s.edit_sequence_as("Change Effect Parameter", merge.as_deref(), |q, _, _| {
                     let (_, it) = q.find_item_mut(c).ok_or(filmcraft_edit::EditError::NoItem(c))?;
-                    let mt = it.source_time_at(tl.clamp(it.start, (it.end() - Tick(1)).max(it.start)));
+                    let mt = it.source_time_at(at.unwrap_or_else(|| ph.clamp(it.start, (it.end() - Tick(1)).max(it.start))));
                     let e = match &eff {
                         Value::Number(n) => it.effects.get_mut(n.as_u64().unwrap_or(0) as usize),
                         Value::String(sid) => it.effects.iter_mut().find(|e| &e.effect == sid),
@@ -2820,20 +2950,48 @@ fn build() -> Vec<CommandSpec> {
             }
             items.sort_by_key(|i| i.0);
             items.dedup();
+            let mut used = std::collections::HashSet::new();
+            for it in s.project.sequences() {
+                if let Some(q) = it.as_sequence() {
+                    for t in q.all_tracks() {
+                        used.extend(t.items.iter().map(|x| x.item));
+                    }
+                }
+            }
+            let mut gone = Vec::new();
+            let mut offlined = Vec::new();
+            for i in items {
+                let keep = used.contains(&i)
+                    && s.project.item(i).and_then(filmcraft_project::ProjectItem::as_media).is_some_and(|m| matches!(m.media, MediaRef::File { .. }));
+                if keep {
+                    offlined.push(i);
+                } else {
+                    gone.push(i);
+                }
+            }
             s.edit("Clear", |pr, st| {
+                for i in &offlined {
+                    if let Some(m) = pr.item_mut(*i).and_then(filmcraft_project::ProjectItem::as_media_mut) {
+                        m.offline = true;
+                    }
+                }
                 for b in &bins {
                     pr.root.remove_bin(*b);
                 }
-                for i in &items {
+                for i in &offlined {
+                    if pr.root.parent_of(*i).is_none() {
+                        pr.root.children.push(filmcraft_project::BinEntry::Item(*i));
+                    }
+                }
+                for i in &gone {
                     pr.items.remove(i);
                     pr.root.remove_item(*i);
                 }
-                // remove track items that referenced deleted media
                 let seq_ids: Vec<ItemId> = pr.sequences().map(|q| q.id).collect();
                 for sid in seq_ids {
                     if let Some(q) = pr.sequence_mut(sid) {
                         for t in q.all_tracks_mut() {
-                            t.items.retain(|x| !items.contains(&x.item));
+                            t.items.retain(|x| !gone.contains(&x.item));
                             filmcraft_edit::remove_orphan_transitions(t);
                         }
                     }
@@ -2841,11 +2999,12 @@ fn build() -> Vec<CommandSpec> {
                 st.project_selection.clear();
                 Ok(())
             })?;
-            for i in &items {
+            for i in gone.iter().chain(&offlined) {
                 s.media.remove(*i);
             }
+            crate::relink::refresh(s);
             s.fix_state();
-            Ok(json!({"items": items.len(), "bins": bins.len()}))
+            Ok(json!({"items": gone.len(), "bins": bins.len(), "offline": offlined.len()}))
         }),
         cmd!("project.moveToBin", "Move to Bin", [], None, r#"{"items":[id|binId]?,"bin":binId|null}"#, always, |s, p| {
             let items: Vec<ItemId> = match p.get("items").and_then(Value::as_array) {
