@@ -58,6 +58,8 @@ pub struct TlState {
     /// display gain: scanning the whole source per clip per frame cost more than drawing.
     peak_max: HashMap<PeakKey, (usize, f32)>,
     zoom_anchor: Option<(f64, f32)>,
+    /// The zoom (points a second) the video thumbnails are laid out at while the view is zooming (#1094).
+    thumb_pps: Option<f64>,
 }
 
 impl TlState {
@@ -151,8 +153,12 @@ pub enum Drag {
     Pan {
         last: Pos2,
     },
+    /// Box selection, shown live: `before` is the selection when the drag began, which Shift or
+    /// Ctrl (`add`) keep; the release commits one `timeline.select`.
     Marquee {
         start: Pos2,
+        before: Vec<ClipId>,
+        add: bool,
     },
     Divider,
     ZoomBar {
@@ -232,6 +238,16 @@ pub fn max_scroll(sequence_seconds: f64, width: f32, pps: f64) -> f64 {
     (timeline_extent(sequence_seconds) - width as f64 / pps).max(0.0)
 }
 
+/// Where the left edge goes so the playhead at `ph` seconds shows in a view `width` points wide
+/// (the page-scroll margin from the left), or `None` when it is in view already.
+pub fn scroll_to_reveal(ph: f64, scroll: f64, pps: f64, width: f64) -> Option<f64> {
+    if !ph.is_finite() || !scroll.is_finite() || !(pps > 0.0 && pps.is_finite()) {
+        return None;
+    }
+    let px = (ph - scroll) * pps;
+    (px < 0.0 || px > width).then(|| (ph - width * 0.05 / pps).max(0.0))
+}
+
 /// Zoom about a time (keeps it under the same screen x).
 pub fn zoom_about(v: &mut TimelineView, factor: f64, anchor_secs: f64, width: f32) {
     let old = v.target_pps;
@@ -287,6 +303,12 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         let k = 1.0 - (-dt * 20.0).exp();
         let zooming = (v.pps - v.target_pps).abs() / v.target_pps > 0.001;
+        // video thumbnails keep the layout of the zoom a gesture or animation started at (#1094)
+        if zooming || matches!(app.tl.drag, Some(Drag::ZoomBar { mode: 1 | 2, .. })) {
+            app.tl.thumb_pps = Some(app.tl.thumb_pps.unwrap_or(v.pps));
+        } else {
+            app.tl.thumb_pps = None;
+        }
         v.pps += (v.target_pps - v.pps) * k;
         if let Some((anchor_t, anchor_x)) = app.tl.zoom_anchor.filter(|_| zooming) {
             v.scroll = (anchor_t - (anchor_x - content.min.x) as f64 / v.pps).max(0.0);
@@ -321,6 +343,22 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         } else if px > w * 0.95 || px < 0.0 {
             v.target_scroll = (ph - w * 0.05 / v.pps).max(0.0);
             v.scroll = v.target_scroll;
+        }
+    }
+    // A jump while stopped (Home, End, edit points, markers) brings the playhead into view.
+    {
+        let v = &mut app.ui.timeline;
+        let ph = app.session.playhead().seconds();
+        // another sequence's tab has its own playhead and keeps its own view
+        let moved = v.seen_playhead.is_some_and(|(id, seen)| id == seq_id && seen != ph);
+        v.seen_playhead = Some((seq_id, ph));
+        if moved
+            && !app.playback.playing
+            && !v.fit_pending
+            && let Some(s) = scroll_to_reveal(ph, v.target_scroll, v.target_pps, content.width() as f64)
+        {
+            v.target_scroll = s;
+            v.scroll = s;
         }
     }
     // The view stays inside the Timeline's extent, however it was moved (wheel, scroll bar, zoom,
@@ -623,6 +661,7 @@ fn empty_state(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // accept drops from the project panel
     if let Some(item) = crate::panels::dragged_project_item(ui)
         && ui.rect_contains_pointer(rect)
+        && ui.input(|i| i.pointer.hover_pos()).is_some_and(|pos| app.timeline_drop_target(ui.ctx(), pos))
         && ui.input(|i| i.pointer.any_released())
     {
         let _ = app.session.execute("file.newSequence", json!({"fromItem": item.0}));
@@ -691,6 +730,31 @@ pub fn thumbnail_tiles(mode: ThumbnailMode, x0: f32, x1: f32, tile_w: f32, visib
     tiles.into_iter().filter(|(x, _)| shown(*x)).collect()
 }
 
+/// [`thumbnail_tiles`] while the view zooms (#1094): Continuous tiles are laid out at the zoom
+/// the gesture started at (`frozen` points a second) and stretched to where their frames are at
+/// the live zoom `pps`, so every tile keeps its frame (cached) instead of asking for a new one at
+/// each zoom step. Returns each tile's left edge, width and offset into the clip.
+#[allow(clippy::too_many_arguments)]
+pub fn zoomed_thumbnail_tiles(
+    mode: ThumbnailMode,
+    x0: f32,
+    x1: f32,
+    tile_w: f32,
+    visible: (f32, f32),
+    dur: Tick,
+    frame: Tick,
+    pps: f64,
+    frozen: Option<f64>,
+) -> Vec<(f32, f32, Tick)> {
+    let r = match frozen {
+        Some(f) if mode == ThumbnailMode::Continuous && f.is_finite() && f > 0.0 && pps.is_finite() && pps > 0.0 && f != pps => (pps / f) as f32,
+        _ => return thumbnail_tiles(mode, x0, x1, tile_w, visible, dur, frame).into_iter().map(|(x, t)| (x, tile_w, t)).collect(),
+    };
+    let laid_out = |x: f32| x0 + (x - x0) / r;
+    let tiles = thumbnail_tiles(mode, x0, laid_out(x1), tile_w, (laid_out(visible.0), laid_out(visible.1)), dur, frame);
+    tiles.into_iter().map(|(x, t)| (x0 + (x - x0) * r, tile_w * r, t)).collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_clip(
     app: &mut FilmcraftApp,
@@ -733,7 +797,8 @@ fn draw_clip(
             let cp = p.with_clip_rect(th.intersect(p.clip_rect()));
             let visible = (cp.clip_rect().min.x, cp.clip_rect().max.x);
             let mode = app.ui.timeline.thumbnail_mode;
-            for (x, offset) in thumbnail_tiles(mode, th.min.x, th.max.x, tw, visible, it.duration, rate.frame_duration()) {
+            let (pps, frozen) = (app.ui.timeline.pps, app.tl.thumb_pps);
+            for (x, w, offset) in zoomed_thumbnail_tiles(mode, th.min.x, th.max.x, tw, visible, it.duration, rate.frame_duration(), pps, frozen) {
                 let mt = rate.snap(it.source_time_at(it.start + offset));
                 // a multi-camera clip shows its angle's clip
                 let (thumb_item, mt) = app
@@ -747,7 +812,7 @@ fn draw_clip(
                     })
                     .unwrap_or((it.item, mt));
                 if let Some((tex, _)) = app.thumbnail(ctx, thumb_item, mt, 160) {
-                    let r = Rect::from_min_size(pos2(x, th.min.y), vec2(tw, th.height()));
+                    let r = Rect::from_min_size(pos2(x, th.min.y), vec2(w, th.height()));
                     cp.image(tex, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 }
             }
@@ -1680,11 +1745,14 @@ fn preview_drag(app: &FilmcraftApp, seq: &Sequence, out: &mut HashMap<ClipId, (T
             }
         }
         Drag::Roll { left, right, delta, .. } => {
-            if let Some((_, l)) = seq.find_item(*left) {
-                moved(l, filmcraft_edit::Edge::Out, *delta);
-            }
-            if let Some((_, r)) = seq.find_item(*right) {
-                moved(r, filmcraft_edit::Edge::In, *delta);
+            let pairs = filmcraft_engine::commands::linked_roll_pairs(seq, *left, *right, app.session.state.linked_selection);
+            for (pl, pr) in pairs {
+                if let Some((_, l)) = seq.find_item(pl) {
+                    moved(l, filmcraft_edit::Edge::Out, *delta);
+                }
+                if let Some((_, r)) = seq.find_item(pr) {
+                    moved(r, filmcraft_edit::Edge::In, *delta);
+                }
             }
         }
         Drag::Slide { clip, delta } => {
@@ -1694,6 +1762,18 @@ fn preview_drag(app: &FilmcraftApp, seq: &Sequence, out: &mut HashMap<ClipId, (T
         }
         _ => {}
     }
+}
+
+/// The clips a marquee rectangle touches, on the tracks it crosses.
+fn marquee_clips(seq: &Sequence, layout: &Layout, r: Rect) -> Vec<ClipId> {
+    let (a, b) = (layout.tick_at(r.min.x), layout.tick_at(r.max.x));
+    layout
+        .rows
+        .iter()
+        .filter(|row| row.rect.intersects(r))
+        .filter_map(|row| seq.track(row.track))
+        .flat_map(|tr| tr.items.iter().filter(|i| i.start < b && i.end() > a).map(|i| i.id))
+        .collect()
 }
 
 fn shift_track(seq: &Sequence, tid: TrackId, delta: i32) -> Option<TrackId> {
@@ -1941,6 +2021,20 @@ pub(crate) fn wheel_input(ctx: &egui::Context) -> WheelInput {
     })
 }
 
+/// Puts the playhead where the pointer is on the ruler: what a press does before any drag (#1090).
+fn scrub_playhead(app: &mut FilmcraftApp, seq: &Sequence, layout: &Layout, p: Pos2, shift: bool) {
+    app.stop();
+    let mut tt = seq.settings.frame_rate.snap_nearest(layout.tick_at(p.x).max(Tick::ZERO));
+    if shift || app.session.prefs.timeline.snap_playhead {
+        tt = snap_playhead(app, seq, layout, tt);
+    }
+    // a press on a marker selects it: the playhead goes exactly onto it (#695)
+    if let Some(m) = marker_at(seq, layout, p) {
+        tt = m.max(Tick::ZERO);
+    }
+    app.session.set_playhead(tt);
+}
+
 fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &Layout, rect: Rect) {
     let ctx = ui.ctx().clone();
     let area = Rect::from_min_max(pos2(layout.content.min.x, layout.ruler.min.y), layout.content.max);
@@ -1959,7 +2053,12 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         && ctx.input(|i| i.pointer.primary_pressed())
         && let Some(p) = ctx.input(|i| i.pointer.press_origin())
     {
-        app.tl.pressed = Some(Pressed { pos: p, tick: layout.tick_at(p.x), grab: grab_at(seq, layout, p, tool, mods, roll_ripple) });
+        let grab = grab_at(seq, layout, p, tool, mods, roll_ripple);
+        // the playhead jumps to a press on the ruler at once, not only once the pointer has moved (#1090)
+        if matches!(grab, Grab::Other(Hit::Ruler)) {
+            scrub_playhead(app, seq, layout, p, mods.shift);
+        }
+        app.tl.pressed = Some(Pressed { pos: p, tick: layout.tick_at(p.x), grab });
     }
 
     // ---- wheel, as in Premiere Pro on macOS (checked in 26.5.2):
@@ -2078,7 +2177,11 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 }
                 None
             }
-            (Tool::TrackSelectForward | Tool::TrackSelectBackward, Grab::Other(Hit::Clip { track, .. } | Hit::Empty { track })) => {
+            // a transition over a cut counts as its track, as the clips under it do
+            (
+                Tool::TrackSelectForward | Tool::TrackSelectBackward,
+                Grab::Other(Hit::Clip { track, .. } | Hit::Transition { track, .. } | Hit::Empty { track }),
+            ) => {
                 let fwd = tool == Tool::TrackSelectForward;
                 let ids: Vec<u64> = seq
                     .all_tracks()
@@ -2088,7 +2191,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     .map(|i| i.id.0)
                     .collect();
                 let _ = app.session.execute("timeline.select", json!({"clips": ids}));
-                None
+                // as in Premiere Pro, a drag with the tool moves what it just selected
+                if resp.drag_started() {
+                    let clips = app.session.state.selection.clone();
+                    (!clips.is_empty()).then_some(Drag::Move { clips, grab_tick: t, start_track: track, offset: Tick::ZERO, track_delta: 0, copy: mods.alt })
+                } else {
+                    None
+                }
             }
             (Tool::Selection | Tool::Ripple | Tool::Rolling, Grab::Edge { clip, edge, track, .. }) if resp.clicked() => {
                 // click an edge = select it as an edit point (trim mode); Shift adds
@@ -2162,7 +2271,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             // the video and audio tracks, #683)
             (_, Grab::Other(hit @ (Hit::Empty { .. } | Hit::None))) if layout.content.contains(p) => {
                 if resp.drag_started() {
-                    Some(Drag::Marquee { start: p })
+                    Some(Drag::Marquee { start: p, before: app.session.state.selection.clone(), add: mods.shift || mods.command })
                 } else {
                     app.session.state.selection.clear();
                     app.session.state.edit_points.clear();
@@ -2182,16 +2291,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         };
         if let Some(d) = started {
             if matches!(d, Drag::Scrub) {
-                app.stop();
-                let mut tt = rate.snap_nearest(layout.tick_at(p.x).max(Tick::ZERO));
-                if mods.shift || app.session.prefs.timeline.snap_playhead {
-                    tt = snap_playhead(app, seq, layout, tt);
-                }
-                // a press on a marker selects it: the playhead goes exactly onto it (#695)
-                if let Some(m) = marker_at(seq, layout, p) {
-                    tt = m.max(Tick::ZERO);
-                }
-                app.session.set_playhead(tt);
+                scrub_playhead(app, seq, layout, p, mods.shift);
             }
             if resp.drag_started() {
                 app.tl.drag = Some(d);
@@ -2277,11 +2377,20 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 Some(Drag::Transition { id, edge, from, start, duration })
             }
             Drag::Volume(v) => Some(Drag::Volume(super::timeline_volume::drag(app, ui, seq, layout, v, p.y))),
-            Drag::Marquee { start } => {
+            Drag::Marquee { start, before, add } => {
                 let r = Rect::from_two_pos(start, p);
                 ui.painter().rect_filled(r, 0.0, Color32::from_white_alpha(18));
                 ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, Color32::from_white_alpha(140)), StrokeKind::Inside);
-                Some(Drag::Marquee { start })
+                // the clips in the box are selected as it grows and shrinks; only the release runs
+                // the command, so the drag is one selection change
+                let mut sel = if add { before.clone() } else { Vec::new() };
+                for c in filmcraft_engine::commands::with_links(&app.session, &marquee_clips(seq, layout, r)) {
+                    if !sel.contains(&c) {
+                        sel.push(c);
+                    }
+                }
+                app.session.state.selection = sel;
+                Some(Drag::Marquee { start, before, add })
             }
             other => Some(other),
         };
@@ -2328,20 +2437,15 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 let moved = seq.all_tracks().find_map(|tr| tr.transitions.iter().find(|x| x.id == id)).is_some_and(|x| (x.start, x.duration) != (start, duration));
                 moved.then(|| app.session.execute("sequence.setTransition", json!({"transition": id.0, "start": start.0, "duration": duration.0})))
             }
-            Drag::Marquee { start } => {
-                if let Some(end) = resp.interact_pointer_pos() {
-                    let r = Rect::from_two_pos(start, end);
-                    let (a, b) = (layout.tick_at(r.min.x), layout.tick_at(r.max.x));
-                    let ids: Vec<u64> = layout
-                        .rows
-                        .iter()
-                        .filter(|row| row.rect.intersects(r))
-                        .filter_map(|row| seq.track(row.track))
-                        .flat_map(|tr| tr.items.iter().filter(|i| i.start < b && i.end() > a).map(|i| i.id.0))
-                        .collect();
-                    Some(app.session.execute("timeline.select", json!({"clips": ids, "add": mods.shift})))
-                } else {
-                    None
+            Drag::Marquee { start, before, add } => {
+                app.session.state.selection = before;
+                // egui ends a drag on Escape: that cancels the box, as in the Project panel
+                match resp.interact_pointer_pos() {
+                    Some(end) if !ctx.input(|i| i.key_pressed(egui::Key::Escape)) => {
+                        let ids: Vec<u64> = marquee_clips(seq, layout, Rect::from_two_pos(start, end)).iter().map(|c| c.0).collect();
+                        Some(app.session.execute("timeline.select", json!({"clips": ids, "add": add})))
+                    }
+                    _ => None,
                 }
             }
             _ => None,
@@ -2514,6 +2618,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     if let Some(item) = crate::panels::dragged_project_item(ui)
         && let Some(p) = ctx.pointer_hover_pos()
         && layout.content.contains(p)
+        && app.timeline_drop_target(ui.ctx(), p)
     {
         let source = crate::panels::dragged_source(ui);
         let row = layout.row_at(p.y).cloned().filter(|r| {
@@ -2574,6 +2679,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     if let Some(template) = crate::panels::dragged_template(ui)
         && let Some(p) = ctx.pointer_hover_pos()
         && layout.content.contains(p)
+        && app.timeline_drop_target(ui.ctx(), p)
     {
         let t = snap(app, seq, layout, rate.snap_nearest(layout.tick_at(p.x).max(Tick::ZERO)), &[]);
         let row = layout.row_at(p.y).cloned().filter(|r| r.kind == TrackKind::Video);
@@ -2595,6 +2701,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     if let Some(effect) = crate::panels::dragged_effect(ui)
         && let Some(p) = ctx.pointer_hover_pos()
         && layout.content.contains(p)
+        && app.timeline_drop_target(ui.ctx(), p)
         && let Hit::Clip { clip, .. } = hit(seq, layout, p)
         && let Some((tid, it)) = seq.find_item(clip)
         && let Some(row) = layout.rows.iter().find(|r| r.track == tid)
@@ -2651,6 +2758,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     // ---- OS file drops imported with "drop imports to the timeline": placed at the drop point, one after another
     if let Some((items, p)) = app.pending_timeline_drop.clone()
         && layout.content.contains(p)
+        && app.timeline_drop_target(ui.ctx(), p)
     {
         app.pending_timeline_drop = None;
         let row = layout.row_at(p.y).cloned().or_else(|| layout.rows.iter().find(|r| r.kind == TrackKind::Video).cloned());
@@ -2679,6 +2787,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     // preview of OS files being dragged over the Timeline: a placeholder where the drop would start
     if let Some((count, p)) = app.file_drag_hover
         && layout.content.contains(p)
+        && app.timeline_drop_target(ui.ctx(), p)
     {
         let row = layout.row_at(p.y).cloned().or_else(|| layout.rows.iter().find(|r| r.kind == TrackKind::Video).cloned());
         if let Some(row) = row {
@@ -2687,6 +2796,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             let r = Rect::from_min_max(pos2(x, row.rect.min.y + 1.0), pos2((x + 120.0).min(layout.content.max.x), row.rect.max.y - 1.0));
             ui.painter().rect_filled(r, 3.0, Color32::from_white_alpha(40));
             ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Inside);
+            app.auto.add("timeline.fileDropPreview", r, "tracks");
             let label = if count == 1 { tl!("1 file").to_string() } else { tlf!("{n} files", n = count) };
             ui.painter().text(r.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, label, Tokens::ui(10.0), Color32::WHITE);
         }
@@ -2817,6 +2927,29 @@ mod trim_preview_tests {
 }
 
 #[cfg(test)]
+mod reveal_tests {
+    use super::scroll_to_reveal;
+
+    #[test]
+    fn home_scrolls_back_to_the_start() {
+        assert_eq!(scroll_to_reveal(0.0, 120.0, 40.0, 800.0), Some(0.0));
+    }
+
+    #[test]
+    fn end_scrolls_forward_to_the_playhead() {
+        let s = scroll_to_reveal(300.0, 0.0, 40.0, 800.0).unwrap();
+        assert!((0.0..=300.0).contains(&s) && (300.0 - s) * 40.0 <= 800.0);
+    }
+
+    #[test]
+    fn a_visible_or_hostile_playhead_leaves_the_view() {
+        assert_eq!(scroll_to_reveal(5.0, 0.0, 40.0, 800.0), None);
+        assert_eq!(scroll_to_reveal(f64::NAN, 0.0, 40.0, 800.0), None);
+        assert_eq!(scroll_to_reveal(5.0, 0.0, 0.0, 800.0), None);
+    }
+}
+
+#[cfg(test)]
 mod waveform_tests {
     use super::waveform_display_gain;
 
@@ -2883,6 +3016,28 @@ mod thumbnail_tiles_tests {
 
     const S: Tick = Tick(TICKS_PER_SECOND);
     const FRAME: Tick = Tick(TICKS_PER_SECOND / 25);
+
+    #[test]
+    fn zooming_keeps_the_frames_shown_before_the_zoom() {
+        // a 10 s clip 1000 pt wide at 20 pt a second, the panel showing x 0..800
+        let dur = Tick(10 * S.0);
+        let before = thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 1000.0, 80.0, (0.0, 800.0), dur, FRAME);
+        // halfway through zooming in to 40 pt a second: the clip is 2000 pt wide
+        let zoomed = zoomed_thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, Some(20.0));
+        let offsets: Vec<Tick> = zoomed.iter().map(|t| t.2).collect();
+        let kept: Vec<Tick> = before.iter().take(5).map(|t| t.1).collect();
+        assert_eq!(offsets, kept);
+        // each frame stretched over the clip time it showed
+        let placed: Vec<(f32, f32)> = zoomed.iter().map(|t| (t.0, t.1)).collect();
+        assert_eq!(placed, [(0.0, 160.0), (160.0, 160.0), (320.0, 160.0), (480.0, 160.0), (640.0, 160.0)]);
+        // once the zoom settles the tiles are laid out at the new zoom
+        let settled = thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME);
+        let expect: Vec<(f32, f32, Tick)> = settled.iter().map(|&(x, t)| (x, 80.0, t)).collect();
+        assert_eq!(zoomed_thumbnail_tiles(ThumbnailMode::Continuous, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, None), expect);
+        // Head and tail frames do not depend on the zoom
+        let head = zoomed_thumbnail_tiles(ThumbnailMode::Head, 0.0, 2000.0, 80.0, (0.0, 800.0), dur, FRAME, 40.0, Some(20.0));
+        assert_eq!(head, [(0.0, 80.0, Tick::ZERO)]);
+    }
 
     #[test]
     fn continuous_thumbnails_tile_the_visible_part_of_the_clip() {
