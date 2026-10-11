@@ -8,10 +8,10 @@
 use crate::dpb::{Dpb, Output, OutputMeta, PocState, RefPicSet, build_ref_lists};
 use crate::error::{Error, Result, ensure, invalid};
 use crate::params::{Layout, Pps, Sps, Vps};
-use crate::picture::{Frame, FrameRef};
+use crate::picture::{Frame, FrameRef, Sample, stores_u8};
 use crate::slice::{NalHeader, SliceHeader, nal_type};
 use crate::slicedec::{F_INTRA, F_SKIP, PicState, SliceDecoder, SliceJob};
-use crate::{ColorInfo, Picture, Plane};
+use crate::{ColorInfo, Picture};
 use filmcraft_bitstream::{annexb_nals, length_prefixed_nals, unescape_rbsp};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -507,7 +507,7 @@ impl Decoder {
     }
 }
 
-/// Decode all slices of one picture and publish its rows.
+/// Decode all slices of one picture and publish its rows, in the picture's sample type.
 #[allow(clippy::too_many_arguments)]
 fn run_job(
     frame: FrameRef,
@@ -519,7 +519,25 @@ fn run_job(
     draft: bool,
     shared: &Shared,
 ) {
-    let mut pic = PicState::new(frame.clone(), sps, pps, layout, scaling);
+    if stores_u8(frame.bit_depth, frame.bit_depth_c) {
+        run_job_as::<u8>(frame, sps, pps, layout, scaling, slices, draft, shared)
+    } else {
+        run_job_as::<u16>(frame, sps, pps, layout, scaling, slices, draft, shared)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_job_as<S: Sample>(
+    frame: FrameRef,
+    sps: Arc<Sps>,
+    pps: Arc<Pps>,
+    layout: Arc<Layout>,
+    scaling: Option<Arc<Vec<Vec<u8>>>>,
+    slices: Vec<SliceJob>,
+    draft: bool,
+    shared: &Shared,
+) {
+    let mut pic = PicState::<S>::new(frame.clone(), sps, pps, layout, scaling);
     pic.draft = draft;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut first_err = None;
@@ -535,13 +553,7 @@ fn run_job(
         Ok(e) => e,
         Err(_) => {
             // make sure readers never block on this frame
-            let gray = Frame::gray(0, frame.poc, &frame);
-            for r in 0..frame.num_rows() {
-                if !frame.is_published(r) {
-                    let row = gray.row(r);
-                    frame.publish(r, crate::picture::FrameRow { y: row.y.clone(), cb: row.cb.clone(), cr: row.cr.clone(), col: row.col.clone() });
-                }
-            }
+            frame.publish_gray();
             Some(Error::Invalid("internal error while decoding a picture".into()))
         }
     };
@@ -583,13 +595,7 @@ fn make_picture(o: &Output<FrameRef>) -> Picture {
     let (cx, cy, cw, ch) = (cx as usize, cy as usize, cw as usize, ch as usize);
     let (ccw, cch) = (cw.div_ceil(2), ch.div_ceil(2));
     let bd = o.meta.bit_depth;
-    let (y, u, v) = if bd <= 8 {
-        let (y, u, v) = o.frame.copy_cropped_u8((cx, cy, cw, ch));
-        (Plane::U8(y), Plane::U8(u), Plane::U8(v))
-    } else {
-        let (y, u, v) = o.frame.copy_cropped((cx, cy, cw, ch));
-        (Plane::U16(y), Plane::U16(u), Plane::U16(v))
-    };
+    let (y, u, v) = o.frame.cropped_planes((cx, cy, cw, ch), bd <= 8);
     Picture {
         width: cw as u32,
         height: ch as u32,
