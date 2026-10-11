@@ -241,6 +241,50 @@ fn wheel_zooms_about_the_pointer_and_the_middle_button_pans() {
     assert!(source["zoom"].is_null() && source["pan"] == json!([0.0, 0.0]), "{source}");
 }
 
+/// The zoom bar under a monitor's time ruler: a handle zooms the ruler in, the middle scrolls it,
+/// the ruler maps clicks and the playhead to the part it shows, and each monitor keeps its own.
+#[test]
+fn time_zoom_bar_zooms_and_scrolls_the_monitor_ruler() {
+    let mut d = Driver::demo();
+    let duration = num(&d.exec("sequence.inspect", json!({}))["duration"]);
+    let track = d.rect("program.zoomBar.track");
+    assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5, "the whole sequence at first");
+    // the right handle dragged to the middle: the ruler shows the first half
+    let y = track[1] + track[3] / 2.0;
+    d.ok("ui.drag", json!({"from": {"x": track[0] + track[2] - 4.0, "y": y}, "to": {"x": track[0] + track[2] / 2.0, "y": y}, "steps": 8}));
+    d.frames(2);
+    let z = d.program()["time_zoom"].clone();
+    assert!(num(&z[0]) == 0.0 && (num(&z[1]) - 0.5).abs() < 0.02, "{z}");
+    let thumb = d.rect("program.zoomBar");
+    assert!((thumb[2] - track[2] * num(&z[1])).abs() < 1.0, "thumb {thumb:?} for {z}");
+
+    // a click halfway along the ruler is halfway through the half shown, and the playhead is drawn there
+    let bar = d.rect("program.scrubBar");
+    d.ok("ui.click", json!({"x": bar[0] + bar[2] / 2.0, "y": bar[1] + bar[3] / 2.0}));
+    d.frames(2);
+    let playhead = num(&d.exec("sequence.inspect", json!({}))["playhead"]);
+    let want = duration * num(&z[1]) / 2.0;
+    assert!((playhead - want).abs() < duration * 0.01, "playhead {playhead} for {want}");
+    let head = d.rect("program.playhead");
+    let at = bar[0] + bar[2] * (playhead / (duration * num(&z[1])));
+    assert!((head[0] + head[2] / 2.0 - at).abs() < 1.0, "playhead drawn at {head:?}, want x {at}");
+
+    // the thumb's middle dragged right scrolls the ruler without zooming; the playhead goes out of view
+    let (x, shift) = (thumb[0] + thumb[2] / 2.0, track[2] * 0.3);
+    d.ok("ui.drag", json!({"from": {"x": x, "y": y}, "to": {"x": x + shift, "y": y}, "steps": 8}));
+    d.frames(2);
+    let z2 = d.program()["time_zoom"].clone();
+    assert!((num(&z2[0]) - 0.3).abs() < 0.02 && (num(&z2[1]) - num(&z2[0]) - num(&z[1])).abs() < 1e-9, "{z2}");
+    assert!(d.try_rect("program.playhead").is_none(), "a playhead off the zoomed ruler is not drawn");
+    let source = d.ok("ui.inspect", json!({}))["ui"]["source"]["time_zoom"].clone();
+    assert!(source.is_null(), "the Source monitor keeps its own range: {source}");
+
+    // an unusable range from ui.set shows all of it
+    d.ok("ui.set", json!({"program": {"time_zoom": [0.9, 0.1]}}));
+    d.frames(2);
+    assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5);
+}
+
 #[test]
 fn magnification_pans_and_guides_from_rulers() {
     let mut d = Driver::demo();
