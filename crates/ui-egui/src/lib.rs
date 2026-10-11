@@ -52,6 +52,7 @@ pub mod scrub;
 pub mod source_playback;
 pub mod state;
 pub mod theme;
+mod theme_favorites;
 pub mod widgets;
 
 use std::collections::HashMap;

@@ -89,8 +89,33 @@ pub fn cycle_appearance(app: &mut FilmcraftApp, ctx: &egui::Context) {
     app.apply_prefs(ctx);
 }
 
+/// Favorite shortcuts use a stable light-then-dark order, independently of insertion order.
+pub fn appearance_context_menu(app: &mut FilmcraftApp, ui: &mut Ui) {
+    if ui.button(tl!("Appearance Settings…")).clicked() {
+        if let Err(error) = open(app, "appearance") {
+            app.ui.status = error;
+        }
+        ui.close();
+    }
+    let favorites = app.session.prefs.appearance.favorite_themes.clone();
+    for options in [settings::LIGHT_THEMES, settings::DARK_THEMES] {
+        let group: Vec<_> = options.iter().filter(|(id, _)| favorites.iter().any(|saved| saved == id)).collect();
+        if !group.is_empty() {
+            ui.separator();
+        }
+        for (id, label) in group {
+            let kind = crate::theme::ThemeKind::from_pref(id);
+            if ui.selectable_label(app.tokens.kind == kind, crate::i18n::t(label)).clicked() {
+                set_theme(app, ui.ctx(), kind);
+                ui.close();
+            }
+        }
+    }
+}
+
 /// Keys the Appearance page draws as the mode selector and theme cards instead of plain fields.
-const APPEARANCE_KEYS: &[&str] = &["appearance.appearanceMode", "appearance.lightTheme", "appearance.darkTheme", "appearance.colorTheme"];
+const APPEARANCE_KEYS: &[&str] =
+    &["appearance.appearanceMode", "appearance.lightTheme", "appearance.darkTheme", "appearance.colorTheme", "appearance.favoriteThemes"];
 
 /// A small FilmCraft editor painted with `t`'s colours: the header with the Import / Edit / Export
 /// tabs, the Source and Program monitors, the Project panel, the tools, the Timeline with video and
@@ -232,11 +257,31 @@ fn theme_card(app: &mut FilmcraftApp, ui: &mut Ui, d: &mut SettingsDraft, key: &
                 theme_preview(ui, &look, width - 20.0);
                 ui.add_space(4.0);
                 for (v, l) in opts {
-                    let r = ui.radio(current == *v, RichText::new(crate::i18n::t(l)).size(12.5));
-                    app.auto.add(&format!("settings.{key}.{v}"), r.rect, l);
-                    if r.clicked() {
-                        put(&mut d.values, key, json!(v));
-                    }
+                    let row = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 24.0));
+                    let hovered = ui.ctx().pointer_hover_pos().is_some_and(|pos| row.contains(pos));
+                    ui.horizontal(|ui| {
+                        let r = ui.radio(current == *v, RichText::new(crate::i18n::t(l)).size(12.5));
+                        app.auto.add(&format!("settings.{key}.{v}"), r.rect, l);
+                        if r.clicked() {
+                            put(&mut d.values, key, json!(v));
+                        }
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let mut favorites: Vec<String> = serde_json::from_value(get(&d.values, "appearance.favoriteThemes").clone()).unwrap_or_default();
+                            let favorite = favorites.iter().any(|id| id == v);
+                            let action = if favorite { tl!("Remove from favorites") } else { tl!("Add to favorites") };
+                            let label = format!("{action}: {}", crate::i18n::t(l));
+                            let r = crate::theme_favorites::star(ui, favorite, favorite || hovered, t.accent, &label);
+                            app.auto.add(&format!("settings.favorite.{v}"), r.rect, &label);
+                            if r.clicked() {
+                                if favorite {
+                                    favorites.retain(|id| id != v);
+                                } else {
+                                    favorites.push((*v).into());
+                                }
+                                put(&mut d.values, "appearance.favoriteThemes", json!(favorites));
+                            }
+                        });
+                    });
                 }
             });
         });
@@ -794,6 +839,40 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
 mod tests {
     use super::*;
     use crate::theme::ThemeKind;
+
+    #[test]
+    fn favorite_theme_star_and_shortcut_select_explicit_family() {
+        use egui_kittest::{Harness, kittest::Queryable};
+        let mut app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        open(&mut app, "appearance").unwrap();
+        let mut h = Harness::builder().with_size(vec2(1400.0, 1000.0)).build_eframe(move |_| app);
+        h.run_steps(4);
+        h.get_by_label("Add to favorites: Dark").click();
+        h.run_steps(3);
+        assert_eq!(*get(&h.state().ui.settings.as_ref().unwrap().values, "appearance.favoriteThemes"), json!(["dark"]));
+        h.get_by_label("OK").click();
+        h.run_steps(3);
+        assert_eq!(h.state().session.prefs.appearance.favorite_themes, vec!["dark"]);
+        let mut app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key": "appearance.favoriteThemes", "value": ["light", "dark"]})).unwrap();
+        let mut h = Harness::builder().with_size(vec2(400.0, 240.0)).build_ui_state(
+            |ui, app| {
+                ui.button("Appearance").context_menu(|ui| appearance_context_menu(app, ui));
+            },
+            app,
+        );
+        h.run_steps(3);
+        h.get_by_label("Appearance").click_secondary();
+        h.run_steps(3);
+        assert!(h.query_by_label("Appearance Settings…").is_some());
+        if let Some(path) = std::env::var_os("FILMCRAFT_FAVORITES_SCREENSHOT") {
+            h.render().unwrap().save(path).unwrap();
+        }
+        h.get_by_label("Light").click();
+        h.run_steps(3);
+        assert_eq!(h.state().session.prefs.appearance.appearance_mode, "light");
+        assert_eq!(h.state().session.prefs.appearance.dark_theme, "darkest");
+    }
 
     /// #457: on a desktop that reports 150%, UI Scale 100% makes a point one physical pixel. It is
     /// applied once, so Ctrl+- still zooms for the session, and Auto gives the system's scale back.
