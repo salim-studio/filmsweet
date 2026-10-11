@@ -231,12 +231,16 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G16. Performance reports on 0.5.0
 
 - **Missing:** steady UI under load. Constant lag after 0.4 → 0.5 (#525), ~100% CPU (#523). AV1
-  software decode is ~4 fps at 1080p single-threaded; 8K is not real time.
+  software decode of a single-tile stream is bound by its serial tile decode (65–80 % of a
+  frame; no row-level frame threading, references are waited for as whole frames); 8K is not
+  real time.
 - **Done:** Render (Effects) In to Out renders only the frames between In and Out, as partial
   previews named by segment hash and relative frames, instead of every segment In/Out touches
-  (#424); Render Audio still renders whole audio segments. VP9 software decode loop-filters a
-  frame as a wavefront over superblock rows on the decoder's pool instead of on one thread,
-  bit-identical, 1.2–1.5× faster with 16 threads (#980).
+  (#424); Render Audio still renders whole audio segments. AV1 software decode runs deblocking,
+  CDEF and loop restoration in parallel 64-row bands, bit-exact (#847; 1080p GOP 1.16–1.30×,
+  low delay 1.28×, 2160p 1.14× at 16 threads). VP9 software decode loop-filters a frame as a
+  wavefront over superblock rows on the decoder's pool instead of on one thread, bit-identical,
+  1.2–1.5× faster with 16 threads (#980).
 - **Estimate:** 30–60 h. Doc: [performance.md](performance.md).
 
 ## G17. Audio device and playback reliability
