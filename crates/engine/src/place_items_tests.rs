@@ -107,3 +107,19 @@ fn hostile_times_never_panic_and_leave_nothing_half_placed() {
     assert!(s.execute("timeline.place", json!({"items": many, "time": 0})).is_err());
     assert!(ends(&s).is_empty());
 }
+
+/// `"track":"new"` with `items` adds one track, and the whole list goes on it, in one undo step.
+#[test]
+fn items_on_a_new_track_share_that_one_track() {
+    let (mut s, items) = three();
+    let tracks = s.active_sequence().unwrap().video_tracks.len();
+    let steps = s.history.undo.len();
+    let list: Vec<u64> = items.iter().map(|i| i.0).collect();
+    s.execute("timeline.place", json!({"items": list, "track": "new", "time": 0})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks.len(), tracks + 1, "one new video track, not one per item");
+    assert_eq!(q.video_tracks[tracks].items.len(), items.len());
+    assert_eq!(s.history.undo.len(), steps + 1);
+    s.undo();
+    assert_eq!(s.active_sequence().unwrap().video_tracks.len(), tracks, "undo removes the track too");
+}
