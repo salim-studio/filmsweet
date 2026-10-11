@@ -1995,6 +1995,20 @@ pub(crate) fn wheel_input(ctx: &egui::Context) -> WheelInput {
     })
 }
 
+/// Puts the playhead where the pointer is on the ruler: what a press does before any drag (#1090).
+fn scrub_playhead(app: &mut FilmcraftApp, seq: &Sequence, layout: &Layout, p: Pos2, shift: bool) {
+    app.stop();
+    let mut tt = seq.settings.frame_rate.snap_nearest(layout.tick_at(p.x).max(Tick::ZERO));
+    if shift || app.session.prefs.timeline.snap_playhead {
+        tt = snap_playhead(app, seq, layout, tt);
+    }
+    // a press on a marker selects it: the playhead goes exactly onto it (#695)
+    if let Some(m) = marker_at(seq, layout, p) {
+        tt = m.max(Tick::ZERO);
+    }
+    app.session.set_playhead(tt);
+}
+
 fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &Layout, rect: Rect) {
     let ctx = ui.ctx().clone();
     let area = Rect::from_min_max(pos2(layout.content.min.x, layout.ruler.min.y), layout.content.max);
@@ -2013,7 +2027,12 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         && ctx.input(|i| i.pointer.primary_pressed())
         && let Some(p) = ctx.input(|i| i.pointer.press_origin())
     {
-        app.tl.pressed = Some(Pressed { pos: p, tick: layout.tick_at(p.x), grab: grab_at(seq, layout, p, tool, mods, roll_ripple) });
+        let grab = grab_at(seq, layout, p, tool, mods, roll_ripple);
+        // the playhead jumps to a press on the ruler at once, not only once the pointer has moved (#1090)
+        if matches!(grab, Grab::Other(Hit::Ruler)) {
+            scrub_playhead(app, seq, layout, p, mods.shift);
+        }
+        app.tl.pressed = Some(Pressed { pos: p, tick: layout.tick_at(p.x), grab });
     }
 
     // ---- wheel, as in Premiere Pro on macOS (checked in 26.5.2):
@@ -2246,16 +2265,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         };
         if let Some(d) = started {
             if matches!(d, Drag::Scrub) {
-                app.stop();
-                let mut tt = rate.snap_nearest(layout.tick_at(p.x).max(Tick::ZERO));
-                if mods.shift || app.session.prefs.timeline.snap_playhead {
-                    tt = snap_playhead(app, seq, layout, tt);
-                }
-                // a press on a marker selects it: the playhead goes exactly onto it (#695)
-                if let Some(m) = marker_at(seq, layout, p) {
-                    tt = m.max(Tick::ZERO);
-                }
-                app.session.set_playhead(tt);
+                scrub_playhead(app, seq, layout, p, mods.shift);
             }
             if resp.drag_started() {
                 app.tl.drag = Some(d);
