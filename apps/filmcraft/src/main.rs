@@ -120,10 +120,11 @@ fn main() -> eframe::Result {
     // OS hardware video decoders (VideoToolbox on macOS) in front of our own; Settings ▸ Playback ▸
     // Hardware decoding switches them off. Unsupported streams and failures use our decoders.
     register_hardware_decoders();
-    // Which graphics backends and adapter the window starts with: the mode after the last one
-    // if the previous start died before its window painted (a driver crash), see graphics.rs.
+    // Which graphics backends and adapter the window starts with: `--graphics`, else the saved
+    // mode, which moves on after starts that died before their window painted (a driver crash),
+    // see graphics.rs.
     let backend_override = eframe::wgpu::Backends::from_env();
-    let mut graphics = graphics::GraphicsStart::begin(data_root.as_deref(), backend_override.is_some());
+    let mut graphics = graphics::GraphicsStart::begin(data_root.as_deref(), backend_override.is_some(), launch.graphics);
     // The GPU export renderer creates its own wgpu instance with every backend; after a start
     // fell back, that would load the driver that failed. Exports then composite on the CPU.
     if graphics.mode() == graphics::Mode::Default {
@@ -149,6 +150,8 @@ fn main() -> eframe::Result {
         }
         break result;
     };
+    // However it ended, this start no longer counts as one that died.
+    graphics.finish();
     // The window could not be created (no usable GPU / graphics driver, no display): say so
     // instead of exiting silently, and keep the reason in the crash log.
     if let Err(e) = &started {
@@ -184,9 +187,14 @@ fn native_options(agent: bool) -> eframe::NativeOptions {
 /// Creates the app once eframe has its window and graphics device; sets `created` when it runs,
 /// and confirms the graphics mode once two frames have painted.
 fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<AtomicBool>) -> eframe::AppCreator<'static> {
-    let Launch { control_port, control_input_only, files, demo, startup_flag, recover, data_dir } = launch;
+    let Launch { control_port, control_input_only, files, demo, startup_flag, recover, data_dir, graphics: _ } = launch;
     Box::new(move |cc| {
         created.store(true, Ordering::Relaxed);
+        // A fallback graphics mode says so in the window, with a button back to the default.
+        let notice = graphics.degraded().then(|| {
+            let start = graphics.clone();
+            filmcraft_ui_egui::graphics_notice::GraphicsNotice::new(graphics.mode().label(), Box::new(move || start.reset_to_default()))
+        });
         let confirmed = AtomicBool::new(false);
         cc.egui_ctx.on_end_pass(
             "graphics-start",
@@ -240,6 +248,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
             }
         }
         let mut app = FilmcraftApp::new(session);
+        app.graphics_notice = notice;
         if recover == Some(false) {
             app.dialog = None;
         }
