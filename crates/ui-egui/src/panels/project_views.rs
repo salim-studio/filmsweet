@@ -156,10 +156,39 @@ pub fn click_modifiers(ui: &egui::Ui) -> egui::Modifiers {
     })
 }
 
+/// The selection after a click on `id`. Shift selects the range from `anchor` to `id` in the
+/// shown `order` (plus the current selection with Ctrl/Cmd too), Ctrl/Cmd toggles `id`, a plain
+/// click selects only `id`. Without a usable anchor Shift acts like a plain click.
+fn click_selection(current: &[ItemId], order: &[ItemId], anchor: Option<ItemId>, id: ItemId, shift: bool, command: bool) -> Vec<ItemId> {
+    if shift {
+        let pos = |x: ItemId| order.iter().position(|o| *o == x);
+        if let (Some(a), Some(b)) = (anchor.and_then(pos), pos(id)) {
+            let mut sel = if command { current.to_vec() } else { Vec::new() };
+            for i in order.get(a.min(b)..=a.max(b)).unwrap_or_default() {
+                if !sel.contains(i) {
+                    sel.push(*i);
+                }
+            }
+            return sel;
+        }
+    } else if command {
+        let mut sel = current.to_vec();
+        match sel.iter().position(|x| *x == id) {
+            Some(p) => {
+                sel.remove(p);
+            }
+            None => sel.push(id),
+        }
+        return sel;
+    }
+    vec![id]
+}
+
 /// Click / double-click / drag / context menu of an item (row, card).
 pub fn item_interactions(
     app: &mut FilmcraftApp,
     ui: &egui::Ui,
+    v: &View,
     resp: &egui::Response,
     id: ItemId,
     kind: &ItemKind,
@@ -169,15 +198,12 @@ pub fn item_interactions(
 ) {
     if resp.clicked() {
         let mods = click_modifiers(ui);
-        let mut sel = app.session.state.project_selection.clone();
-        if mods.command || mods.shift {
-            if let Some(p) = sel.iter().position(|x| *x == id) {
-                sel.remove(p);
-            } else {
-                sel.push(id);
-            }
-        } else {
-            sel = vec![id];
+        let order = if mods.shift { items_in_view(app, v, &app.ui.project_search.to_ascii_lowercase()) } else { Vec::new() };
+        let anchor = app.ui.project_panel.anchor.map(ItemId);
+        let sel = click_selection(&app.session.state.project_selection, &order, anchor, id, mods.shift, mods.command);
+        // a Shift-click keeps the anchor; a plain or Ctrl/Cmd click sets it
+        if !mods.shift {
+            app.ui.project_panel.anchor = Some(id.0);
         }
         app.ui.project_panel.selected_bin = None;
         actions.push(("project.select".into(), json!({"items": sel.iter().map(|i| i.0).collect::<Vec<_>>()})));
@@ -743,7 +769,7 @@ fn list_bin(app: &mut FilmcraftApp, ui: &mut egui::Ui, bin: &Bin, depth: usize, 
         }
         app.auto.add(&format!("{}.item.{}", v.prefix, id.0), r.intersect(ui.clip_rect()), &it.name);
         slow_click_rename(app, ui, &resp, name_r, id, selected);
-        item_interactions(app, ui, &resp, id, &it.kind, actions, true, true);
+        item_interactions(app, ui, v, &resp, id, &it.kind, actions, true, true);
     }
 }
 
@@ -946,7 +972,7 @@ pub fn icon_view(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, v: &View
                     note_hit(ui, v, id, r);
                     let name_r = Rect::from_min_max(pos2(r.min.x, r.min.y + th_h), r.max);
                     slow_click_rename(app, ui, &resp, name_r, id, was_selected);
-                    item_interactions(app, ui, &resp, id, &kind, actions, true, true);
+                    item_interactions(app, ui, v, &resp, id, &kind, actions, true, true);
                 }
             }
         }
@@ -1016,7 +1042,7 @@ pub fn freeform_view(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, v: &
                 ui.painter().text(br.center(), Align2::CENTER_CENTER, format!("×{n}"), Tokens::ui(10.0), Color32::WHITE);
                 app.auto.add(&format!("{}.stack.{s}", v.prefix), br, &format!("Stack of {n}"));
             }
-            item_interactions(app, ui, &resp, ItemId(c.item), &kind, actions, false, false);
+            item_interactions(app, ui, v, &resp, ItemId(c.item), &kind, actions, false, false);
             if resp.dragged() {
                 let total = dragging.filter(|d| d.0 == c.item).map(|d| d.1).unwrap_or_default() + resp.drag_delta();
                 ui.ctx().data_mut(|d| d.insert_temp(drag_key, (c.item, total)));
@@ -1156,7 +1182,7 @@ fn canvas_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui, v: &View, bin: Option<
 
 #[cfg(test)]
 mod clear_tests {
-    use super::clear_params;
+    use super::{clear_params, click_selection};
     use filmcraft_project::ItemId;
     use serde_json::json;
 
@@ -1165,5 +1191,32 @@ mod clear_tests {
         assert_eq!(clear_params(&[], Some(7)), Some(json!({"items": [7]})));
         assert_eq!(clear_params(&[ItemId(3)], Some(7)), Some(json!({})));
         assert_eq!(clear_params(&[], None), None);
+    }
+
+    fn ids(v: &[u64]) -> Vec<ItemId> {
+        v.iter().map(|i| ItemId(*i)).collect()
+    }
+
+    #[test]
+    fn shift_click_selects_the_range_from_the_anchor() {
+        let order = ids(&[1, 2, 3, 4, 5]);
+        let sel = click_selection(&ids(&[2]), &order, Some(ItemId(2)), ItemId(4), true, false);
+        assert_eq!(sel, ids(&[2, 3, 4]));
+        // backwards, and replacing a different selection
+        let sel = click_selection(&ids(&[5]), &order, Some(ItemId(4)), ItemId(2), true, false);
+        assert_eq!(sel, ids(&[2, 3, 4]));
+        // Ctrl/Cmd+Shift extends the selection
+        let sel = click_selection(&ids(&[1]), &order, Some(ItemId(3)), ItemId(4), true, true);
+        assert_eq!(sel, ids(&[1, 3, 4]));
+        // no anchor in the shown items: like a plain click
+        assert_eq!(click_selection(&ids(&[1]), &order, Some(ItemId(9)), ItemId(4), true, false), ids(&[4]));
+    }
+
+    #[test]
+    fn command_click_toggles_and_plain_click_replaces() {
+        let order = ids(&[1, 2, 3]);
+        assert_eq!(click_selection(&ids(&[1]), &order, None, ItemId(3), false, true), ids(&[1, 3]));
+        assert_eq!(click_selection(&ids(&[1, 3]), &order, None, ItemId(3), false, true), ids(&[1]));
+        assert_eq!(click_selection(&ids(&[1, 3]), &order, None, ItemId(2), false, false), ids(&[2]));
     }
 }
