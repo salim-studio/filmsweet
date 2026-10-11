@@ -502,7 +502,9 @@ fn deleting_media_used_on_the_timeline_makes_it_offline() {
     let mut s = Session::default();
     s.execute("file.newProject", json!({"name": "Offline"})).unwrap();
     s.execute("file.newSequence", json!({"name": "Seq", "fps": 25, "video": 1, "audio": 0, "width": 16, "height": 16})).unwrap();
-    let item = s.execute("file.newOfflineFile", json!({"name": "Clip", "seconds": 2, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16})).unwrap()["item"]
+    let item = s
+        .execute("file.newOfflineFile", json!({"name": "Clip", "seconds": 2, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16}))
+        .unwrap()["item"]
         .as_u64()
         .unwrap();
     s.execute("timeline.place", json!({"item": item, "track": "V1", "time": 0})).unwrap();
@@ -512,7 +514,9 @@ fn deleting_media_used_on_the_timeline_makes_it_offline() {
     assert_eq!(r["items"], 0);
     assert!(s.project.item(ItemId(item)).unwrap().as_media().unwrap().offline);
     assert_eq!(s.project.sequences().next().unwrap().as_sequence().unwrap().video_tracks[0].items.len(), clips_before);
-    let unused = s.execute("file.newOfflineFile", json!({"name": "Spare", "seconds": 1, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16})).unwrap()["item"]
+    let unused = s
+        .execute("file.newOfflineFile", json!({"name": "Spare", "seconds": 1, "fps": 25, "video": true, "audio": false, "width": 16, "height": 16}))
+        .unwrap()["item"]
         .as_u64()
         .unwrap();
     let r = s.execute("project.delete", json!({"items": [unused]})).unwrap();
