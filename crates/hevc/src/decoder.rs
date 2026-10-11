@@ -10,7 +10,7 @@ use crate::error::{Error, Result, ensure, invalid};
 use crate::params::{Layout, Pps, Sps, Vps};
 use crate::picture::{Frame, FrameRef, Sample, stores_u8};
 use crate::slice::{NalHeader, SliceHeader, nal_type};
-use crate::slicedec::{F_INTRA, F_SKIP, PicState, SliceDecoder, SliceJob};
+use crate::slicedec::{Blk, F_INTRA, F_SKIP, PicState, SliceDecoder, SliceJob};
 use crate::{ColorInfo, Picture};
 use filmcraft_bitstream::{annexb_nals, length_prefixed_nals, unescape_rbsp};
 use std::collections::VecDeque;
@@ -559,19 +559,26 @@ fn run_job_as<S: Sample>(
     };
     if let Ok(mut s) = shared.stats.lock() {
         s.pictures += 1;
-        for b in &pic.blk {
-            if b.flags & F_INTRA != 0 {
-                s.intra_4x4_blocks += 1;
-            } else if b.flags & F_SKIP != 0 {
-                s.skip_4x4_blocks += 1;
-            } else if b.flags != 0 {
-                s.inter_4x4_blocks += 1;
-            }
-        }
+        let [intra, skip, inter] = block_counts(&pic.blk);
+        s.intra_4x4_blocks += intra;
+        s.skip_4x4_blocks += skip;
+        s.inter_4x4_blocks += inter;
     }
     if let (Some(e), Ok(mut slot)) = (err, shared.error.lock()) {
         slot.get_or_insert(e);
     }
+}
+
+/// Intra, skipped and other inter 4x4 blocks of a picture, branch-free (one pass over every
+/// block): intra blocks have F_INTRA, skipped ones F_SKIP without it, inter ones any other flags.
+fn block_counts(blk: &[Blk]) -> [u64; 3] {
+    let (mut intra, mut skip, mut coded) = (0u64, 0u64, 0u64);
+    for b in blk {
+        intra += (b.flags & F_INTRA != 0) as u64;
+        skip += (b.flags & (F_INTRA | F_SKIP) == F_SKIP) as u64;
+        coded += (b.flags != 0) as u64;
+    }
+    [intra, skip, coded.saturating_sub(intra + skip)]
 }
 
 fn output_meta(sps: &Sps, pts: i64, key: bool, draft: bool) -> OutputMeta {
@@ -618,5 +625,28 @@ fn make_picture(o: &Output<FrameRef>) -> Picture {
         },
         sar: o.meta.sar,
         draft: o.meta.draft,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The branch-free block counts classify every flag combination as the if / else-if chain did.
+    #[test]
+    fn block_counts_match_the_classification_chain() {
+        let blk: Vec<Blk> = (0..=255u8).flat_map(|f| [Blk { flags: f, ..Blk::default() }; 3]).collect();
+        let mut want = [0u64; 3];
+        for b in &blk {
+            if b.flags & F_INTRA != 0 {
+                want[0] += 1;
+            } else if b.flags & F_SKIP != 0 {
+                want[1] += 1;
+            } else if b.flags != 0 {
+                want[2] += 1;
+            }
+        }
+        assert_eq!(block_counts(&blk), want);
+        assert_eq!(block_counts(&[]), [0; 3]);
     }
 }
