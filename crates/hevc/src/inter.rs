@@ -47,15 +47,16 @@ impl<S: Sample> Px for S {
     }
 }
 
-/// `out[j] = (sum_k f[k] * taps[k][j]) >> shift` for `W` outputs: taps outer, outputs inner, so
-/// each tap is one vector multiply-add across the row (exact integer sums). `taps[k]` starts at
-/// the samples under filter tap k: the row shifted by k (horizontal) or the k-th row (vertical).
+/// `out[j] = (sum_k f[k] * tap(k)[j]) >> shift` for `W` outputs: taps outer, outputs inner, so
+/// each tap is one vector multiply-add across the row (exact integer sums). `tap(k)` starts at
+/// the samples under filter tap k: the row shifted by k (horizontal) or the k-th row (vertical);
+/// a function rather than an array of slices so nothing goes through the stack.
 #[inline(always)]
-fn filt_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T], shift: u32, out: &mut [i16]) {
+fn filt_w<'a, P: Px + 'a, const T: usize, const W: usize>(tap: impl Fn(usize) -> Option<&'a [P]>, f: &[i8; T], shift: u32, out: &mut [i16]) {
     let mut acc = [0i32; W];
     for k in 0..T {
         let c = f[k] as i32;
-        let Some(p) = taps[k].first_chunk::<W>() else {
+        let Some(p) = tap(k).and_then(|s| s.first_chunk::<W>()) else {
             return;
         };
         for j in 0..W {
@@ -75,11 +76,11 @@ fn filt_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T], s
 /// luma or chroma filter, 8.5.3.3.3.1 / 8.5.3.3.3.2), so it fits in an `i16`, and wrapping sums
 /// are exact whenever the final value fits. Twice the lanes of [`filt_w`] per vector.
 #[inline(always)]
-fn filt16_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T], out: &mut [i16]) {
+fn filt16_w<'a, P: Px + 'a, const T: usize, const W: usize>(tap: impl Fn(usize) -> Option<&'a [P]>, f: &[i8; T], out: &mut [i16]) {
     let mut acc = [0i16; W];
     for k in 0..T {
         let c = f[k] as i16;
-        let Some(p) = taps[k].first_chunk::<W>() else {
+        let Some(p) = tap(k).and_then(|s| s.first_chunk::<W>()) else {
             return;
         };
         for j in 0..W {
@@ -94,50 +95,50 @@ fn filt16_w<P: Px, const T: usize, const W: usize>(taps: [&[P]; T], f: &[i8; T],
 /// [`filt_w`] for a run of `w` outputs (prediction block widths are fixed sizes); in 16-bit lanes
 /// ([`filt16_w`]) when `narrow` (a first pass over 8-bit samples).
 #[inline(always)]
-fn filt<P: Px, const T: usize>(taps: [&[P]; T], f: &[i8; T], shift: u32, out: &mut [i16], w: usize, narrow: bool) {
+fn filt<'a, P: Px + 'a, const T: usize>(tap: impl Fn(usize) -> Option<&'a [P]> + Copy, f: &[i8; T], shift: u32, out: &mut [i16], w: usize, narrow: bool) {
     if narrow {
         match w {
-            4 => return filt16_w::<P, T, 4>(taps, f, out),
-            8 => return filt16_w::<P, T, 8>(taps, f, out),
-            12 => return filt16_w::<P, T, 12>(taps, f, out),
-            16 => return filt16_w::<P, T, 16>(taps, f, out),
-            24 => return filt16_w::<P, T, 24>(taps, f, out),
-            32 => return filt16_w::<P, T, 32>(taps, f, out),
-            48 => return filt16_w::<P, T, 48>(taps, f, out),
-            64 => return filt16_w::<P, T, 64>(taps, f, out),
+            4 => return filt16_w::<P, T, 4>(tap, f, out),
+            8 => return filt16_w::<P, T, 8>(tap, f, out),
+            12 => return filt16_w::<P, T, 12>(tap, f, out),
+            16 => return filt16_w::<P, T, 16>(tap, f, out),
+            24 => return filt16_w::<P, T, 24>(tap, f, out),
+            32 => return filt16_w::<P, T, 32>(tap, f, out),
+            48 => return filt16_w::<P, T, 48>(tap, f, out),
+            64 => return filt16_w::<P, T, 64>(tap, f, out),
             _ => {}
         }
     }
     match w {
-        2 => filt_w::<P, T, 2>(taps, f, shift, out),
-        4 => filt_w::<P, T, 4>(taps, f, shift, out),
-        6 => filt_w::<P, T, 6>(taps, f, shift, out),
-        8 => filt_w::<P, T, 8>(taps, f, shift, out),
-        12 => filt_w::<P, T, 12>(taps, f, shift, out),
-        16 => filt_w::<P, T, 16>(taps, f, shift, out),
-        24 => filt_w::<P, T, 24>(taps, f, shift, out),
-        32 => filt_w::<P, T, 32>(taps, f, shift, out),
-        48 => filt_w::<P, T, 48>(taps, f, shift, out),
-        64 => filt_w::<P, T, 64>(taps, f, shift, out),
+        2 => filt_w::<P, T, 2>(tap, f, shift, out),
+        4 => filt_w::<P, T, 4>(tap, f, shift, out),
+        6 => filt_w::<P, T, 6>(tap, f, shift, out),
+        8 => filt_w::<P, T, 8>(tap, f, shift, out),
+        12 => filt_w::<P, T, 12>(tap, f, shift, out),
+        16 => filt_w::<P, T, 16>(tap, f, shift, out),
+        24 => filt_w::<P, T, 24>(tap, f, shift, out),
+        32 => filt_w::<P, T, 32>(tap, f, shift, out),
+        48 => filt_w::<P, T, 48>(tap, f, shift, out),
+        64 => filt_w::<P, T, 64>(tap, f, shift, out),
         _ => {
             for (j, o) in out.iter_mut().take(w).enumerate() {
-                let s: i32 = (0..T).map(|k| f[k] as i32 * taps[k].get(j).map_or(0, |p| p.w32())).sum();
+                let s: i32 = (0..T).map(|k| f[k] as i32 * tap(k).and_then(|s| s.get(j)).map_or(0, |p| p.w32())).sum();
                 *o = (s >> shift) as i16;
             }
         }
     }
 }
 
-/// The taps of a horizontal filter along `row`: the row shifted by 0..T samples.
+/// The taps of a horizontal filter along `row`: the row shifted by k samples.
 #[inline(always)]
-fn h_taps<P, const T: usize>(row: &[P]) -> [&[P]; T] {
-    std::array::from_fn(|k| row.get(k..).unwrap_or(&[]))
+fn h_taps<'a, P>(row: &'a [P]) -> impl Fn(usize) -> Option<&'a [P]> + Copy {
+    move |k| row.get(k..)
 }
 
-/// The taps of a vertical filter: rows `r..r + T` from sample `x` on.
+/// The taps of a vertical filter: row `r + k` from sample `x` on.
 #[inline(always)]
-fn v_taps<'a, P, const T: usize>(rows: &[&'a [P]], r: usize, x: usize) -> [&'a [P]; T] {
-    std::array::from_fn(|k| rows.get(r + k).and_then(|row| row.get(x..)).unwrap_or(&[]))
+fn v_taps<'a, P>(rows: &'a [&'a [P]], r: usize, x: usize) -> impl Fn(usize) -> Option<&'a [P]> + Copy {
+    move |k| rows.get(r + k).and_then(|row| row.get(x..))
 }
 
 /// Separable sub-sample interpolation of a w x h block from the window `rows` (h + T - 1 rows of
@@ -468,7 +469,7 @@ mod tests {
         let mut rng = Rng(0x2545_f491_4f6c_dd1d);
         fn check<const T: usize>(f: &[i8; T], src: &[i16], step: usize, w: usize) {
             let (mut a, mut b) = ([0i16; 64], [0i16; 64]);
-            let taps: [&[i16]; T] = std::array::from_fn(|k| &src[k * step..]);
+            let taps = |k: usize| src.get(k * step..);
             filt(taps, f, 0, &mut a, w, true);
             filt(taps, f, 0, &mut b, w, false);
             assert_eq!(a[..w], b[..w], "filter {f:?} step {step} w {w}");
