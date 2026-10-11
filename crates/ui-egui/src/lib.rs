@@ -36,6 +36,8 @@ pub mod control;
 pub mod crash;
 pub mod credits;
 pub mod dock;
+mod dock_shared;
+mod dock_ui;
 pub mod frames;
 pub mod header;
 pub mod i18n;
@@ -265,6 +267,14 @@ pub struct FilmcraftApp {
     /// Named textures (monitors, thumbnails) with the key they show.
     textures: HashMap<String, (FrameKey, TextureHandle)>,
     control_rx: Option<Receiver<ControlRequest>>,
+    /// One explicit panel reveal; consumed by the custom renderer, never repeated per frame.
+    pub(crate) pending_panel_raise: Option<PanelKind>,
+    /// Explicit automation mode: native widget input and native menu commands are excluded.
+    pub(crate) control_input_only: bool,
+    /// Backend focus before synthetic input changes egui's effective focus for this frame.
+    pub(crate) native_window_focused: Option<bool>,
+    /// Modifiers owned by an in-flight control gesture, carried between its input frames.
+    synthetic_modifiers: egui::Modifiers,
     /// Requests waiting for the UI to show an element: (request, give-up time).
     deferred: Vec<(ControlRequest, f64)>,
     last_ui_time: f64,
@@ -502,6 +512,10 @@ impl FilmcraftApp {
             auto: Default::default(),
             textures: HashMap::new(),
             control_rx: None,
+            pending_panel_raise: None,
+            control_input_only: false,
+            native_window_focused: None,
+            synthetic_modifiers: egui::Modifiers::NONE,
             deferred: Vec::new(),
             last_ui_time: 0.0,
             synthetic: Vec::new(),
@@ -548,6 +562,13 @@ impl FilmcraftApp {
     pub fn with_control(mut self, rx: Receiver<ControlRequest>) -> Self {
         self.control_rx = Some(rx);
         self
+    }
+
+    /// Isolate an automation-owned app from native keyboard, pointer, drop and menu input.
+    /// Window close/quit and screenshot delivery remain available.
+    pub fn with_control_input_only(mut self, rx: Receiver<ControlRequest>) -> Self {
+        self.control_input_only = true;
+        self.with_control(rx)
     }
 
     pub fn services(&self) -> Arc<dyn Services> {
@@ -760,9 +781,11 @@ impl FilmcraftApp {
 
     pub fn set_workspace(&mut self, name: &str) {
         self.ui.workspace = name.to_string();
-        // a workspace is shown whole: no frame stays maximized over it
+        let layout = dock::saved_docking(&self.workspaces, name);
+        self.ui.dock = layout.root;
+        self.ui.floating = layout.floating;
+        self.pending_panel_raise = None;
         self.ui.keys.maximized = None;
-        self.ui.dock = dock::saved_layout(&self.workspaces, name);
         if self.workspaces.current != name {
             let mut next = self.workspaces.clone();
             next.current = name.to_string();
@@ -776,10 +799,10 @@ impl FilmcraftApp {
     }
 
     pub fn show_panel(&mut self, p: PanelKind) {
-        if p == PanelKind::Timeline {
+        if p == PanelKind::Timeline && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             self.ui.dock.restore_timeline();
         }
-        if !self.ui.dock.contains(p) {
+        if !self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
             let near = match p {
                 // a side panel beside Properties (or Essential Sound), never over the Program monitor
                 PanelKind::TextToSpeech => [PanelKind::Properties, PanelKind::EssentialSound, PanelKind::EssentialGraphics]
@@ -800,7 +823,7 @@ impl FilmcraftApp {
             };
             self.ui.dock.open_near(p, near);
         }
-        self.ui.dock.activate(p);
+        let _ = self.apply_dock(craft_ui::docking::Action::Activate { panel: p });
         self.ui.focused = p;
     }
 
@@ -1349,6 +1372,12 @@ impl FilmcraftApp {
         if ctx.egui_wants_keyboard_input() || self.dialog == Some(Dialog::Shortcuts) {
             return;
         }
+        // A focused text field takes every unmodified key, including the ones our shortest
+        // shortcuts use, so an input method can compose there (Vietnamese Telex, Korean, …; #243).
+        // `egui_wants_keyboard_input` above is not enough: it is read before this pass lays the UI
+        // out, so it still reports the previous pass, and it is true for any focused widget, which
+        // would leave the editor without its single-key tool shortcuts while a slider has focus.
+        let text_focused = ctx.text_edit_focused();
         // Esc cancels a dynamic trim in progress
         if self.session.trim_play.dynamic.is_some() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             let _ = self.session.execute("trim.cancelDynamic", json!({}));
@@ -1391,6 +1420,13 @@ impl FilmcraftApp {
             let mut candidates: Vec<&menus::KeyBinding> = panel.chain(app_wide).collect();
             candidates.sort_by_key(|b| std::cmp::Reverse(menus::specificity(b.0)));
             for (m, k, id, _) in candidates {
+                // With a text field focused, an unmodified key belongs to the field (and to the input
+                // method composing in it), not to a tool shortcut: `J`, `Z`, `R`, `A`… are the keys
+                // Vietnamese Telex combines into diacritics (#243). Chords with a modifier stay:
+                // Ctrl+S and friends are not something a text field or an IME consumes.
+                if lets_text_field_keep(*m, text_focused) {
+                    continue;
+                }
                 if i.consume_key(*m, *k) {
                     fire.push(id.clone());
                 }
@@ -1602,11 +1638,13 @@ impl FilmcraftApp {
                 filmcraft_engine::Event::OpenSequence(_) => {
                     // show the sequence with its own view (or fitted, the first time)
                     self.timeline_view_of = None;
-                    self.ui.dock.restore_timeline();
-                    self.ui.dock.activate(PanelKind::Timeline);
+                    if !self.ui.floating.iter().any(|group| group.panels.contains(&PanelKind::Timeline)) {
+                        self.ui.dock.restore_timeline();
+                    }
+                    let _ = self.apply_dock(craft_ui::docking::Action::Activate { panel: PanelKind::Timeline });
                 }
                 filmcraft_engine::Event::OpenSource(_) => {
-                    self.ui.dock.activate(PanelKind::Source);
+                    let _ = self.apply_dock(craft_ui::docking::Action::Activate { panel: PanelKind::Source });
                 }
                 filmcraft_engine::Event::RevealInProject(item) => self.reveal_in_project(item),
                 filmcraft_engine::Event::Toast { message, .. } => self.toast = Some((message, ctx.input(|i| i.time))),
@@ -1617,6 +1655,9 @@ impl FilmcraftApp {
         self.handle_drops(&ctx);
         if let Some(rx) = self.command_inbox.take() {
             while let Ok(id) = rx.try_recv() {
+                if self.control_input_only {
+                    continue;
+                }
                 if let Err(e) = menus::invoke(self, &ctx, &id, json!({})) {
                     self.ui.status = e;
                 }
@@ -1760,79 +1801,6 @@ impl FilmcraftApp {
         }
         .to_string()
     }
-
-    fn dock_area(&mut self, ui: &mut egui::Ui, body: egui::Rect) {
-        let t = self.tokens;
-        // Maximize or Restore Frame (` / Shift+`): the maximized panel fills the dock area.
-        let maximized = self.ui.keys.maximized.filter(|p| self.ui.dock.contains(*p));
-        let mut dock = match maximized {
-            Some(p) => dock::DockNode::Tabs { panels: vec![p], active: 0 },
-            None => std::mem::replace(&mut self.ui.dock, dock::DockNode::Tabs { panels: vec![], active: 0 }),
-        };
-        let mut groups = Vec::new();
-        dock::layout(ui, &mut dock, body, &t, "", &mut groups, &mut self.auto);
-        let mut actions = Vec::new();
-        let seqs = dock::SeqTabs {
-            open: self
-                .session
-                .state
-                .open_sequences
-                .iter()
-                .filter_map(|id| {
-                    self.session.project.item(*id).filter(|i| matches!(i.kind, filmcraft_project::ItemKind::Sequence(_))).map(|i| (id.0, i.name.clone()))
-                })
-                .collect(),
-            active: self.session.state.active_sequence.map(|i| i.0),
-        };
-        for g in &groups {
-            actions.extend(dock::draw_group_chrome(ui, g, self.ui.focused, &seqs, &t, &mut self.auto));
-        }
-        if maximized.is_none() {
-            self.ui.dock = dock;
-        }
-        for g in &groups {
-            let Some(p) = g.panels.get(g.active).copied() else { continue };
-            self.auto.add(&format!("panel.{}", p.id()), g.content, p.title());
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(g.content).id_salt(("panel", p.id())));
-            child.set_clip_rect(g.content);
-            panels::show(self, &mut child, p, g.content);
-        }
-        for a in actions {
-            match a {
-                dock::DockAction::Activate(p) => {
-                    self.ui.dock.activate(p);
-                }
-                dock::DockAction::Focus(p) => self.ui.focused = p,
-                dock::DockAction::Close(p) => self.ui.dock.close(p),
-                dock::DockAction::OpenSequence(id) => {
-                    if self.session.state.active_sequence.map(|i| i.0) != Some(id)
-                        && let Err(e) = self.session.execute("sequence.open", json!({"item": id}))
-                    {
-                        self.ui.status = e.to_string();
-                    }
-                }
-                dock::DockAction::CloseSequence(id) => {
-                    if let Err(e) = self.session.execute("sequence.close", json!({"item": id})) {
-                        self.ui.status = e.to_string();
-                    }
-                }
-                dock::DockAction::MoveSequence(id, index) => {
-                    if let Err(e) = self.session.execute("sequence.moveTab", json!({"item": id, "index": index})) {
-                        self.ui.status = e.to_string();
-                    }
-                }
-                dock::DockAction::PanelMenu(p, pos) => {
-                    // (with the frame it opened in: the click that opens it is not a click elsewhere)
-                    let frame = ui.ctx().cumulative_frame_nr();
-                    ui.ctx().data_mut(|d| {
-                        d.insert_temp(egui::Id::new("panel-menu"), (p, pos));
-                        d.insert_temp(egui::Id::new("panel-menu-opened"), frame);
-                    });
-                }
-            }
-        }
-        panels::panel_menu_popup(self, ui);
-    }
 }
 
 impl FilmcraftApp {
@@ -1874,6 +1842,21 @@ impl FilmcraftApp {
 
 impl eframe::App for FilmcraftApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.native_window_focused = Some(raw_input.focused);
+        if self.control_input_only {
+            // Preserve screenshot responses and all viewport lifecycle/geometry metadata.
+            raw_input.events.retain(|event| matches!(event, egui::Event::Screenshot { .. }));
+            raw_input.hovered_files.clear();
+            raw_input.dropped_files.clear();
+        }
+        if self.control_input_only || !self.synthetic.is_empty() {
+            // Native modifiers cannot replace those requested by a control gesture. A queued
+            // reset runs in the frame after release, so clicked() still sees Shift/Alt.
+            raw_input.events.push(egui::Event::ModifiersChanged(self.synthetic_modifiers));
+            // Widget keyboard handling requires effective egui focus. Control input must work
+            // in a background window without activating it or taking the user's OS keyboard.
+            raw_input.focused = true;
+        }
         if !self.synthetic.is_empty() {
             // Pointer events go one per frame so egui sees press → moves → release as a real drag
             // (all in one frame reads as a click); key/text runs go together up to a key release.
@@ -1886,20 +1869,11 @@ impl eframe::App for FilmcraftApp {
                     .position(|e| pointer(e) || matches!(e, egui::Event::Key { pressed: false, .. }))
                     .map_or(self.synthetic.len(), |i| if pointer(&self.synthetic[i]) { i.max(1) } else { i + 1 })
             };
-            // A press's modifiers go down before it and up after its release, as real keys would,
-            // so a drag that egui recognises frames after the press still sees Shift / Ctrl.
-            for e in self.synthetic.drain(..n) {
-                match e {
-                    egui::Event::PointerButton { pressed: true, modifiers, .. } if !modifiers.is_none() => {
-                        raw_input.events.push(egui::Event::ModifiersChanged(modifiers));
-                        raw_input.events.push(e);
-                    }
-                    egui::Event::PointerButton { pressed: false, modifiers, .. } if !modifiers.is_none() => {
-                        raw_input.events.push(e);
-                        raw_input.events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
-                    }
-                    _ => raw_input.events.push(e),
+            for event in self.synthetic.drain(..n) {
+                if let egui::Event::ModifiersChanged(modifiers) = event {
+                    self.synthetic_modifiers = modifiers;
                 }
+                raw_input.events.push(event);
             }
         }
     }
@@ -2262,6 +2236,60 @@ mod audio_recovery_tests {
         assert_eq!(app.session.playhead(), displayed);
         assert!(app.ui.status.contains("Audio output failed"));
         app.stop();
+    }
+}
+
+/// Whether a shortcut chord must be left alone because a text field is focused.
+///
+/// A focused text field owns every unmodified key: an input method composes there from plain
+/// letters (Vietnamese Telex builds `á` from `a` + `s`, `ả` from `a` + `r`, `ạ` from `a` + `j`),
+/// and our single-key tool shortcuts would swallow them before the field sees them (#243). Chords
+/// with a modifier are not what a text field or an IME consumes, so they keep working.
+fn lets_text_field_keep(modifiers: egui::Modifiers, text_focused: bool) -> bool {
+    text_focused && menus::specificity(modifiers) == 0
+}
+
+#[cfg(test)]
+mod text_focus_shortcut_tests {
+    use super::lets_text_field_keep;
+    use egui::{Key, Modifiers};
+
+    /// Vietnamese Telex composes diacritics from unmodified letters (`a` + `s` → `á`, `a` + `r` →
+    /// `ả`, `a` + `j` → `ạ`), and the editor binds `J`, `Z`, `R`, `A`, `C`, `T`, `K`, `L`, `B`, `N`,
+    /// `P`, `V`, `Y`, `U`, `H` as single-key tool shortcuts. While a text field is focused those
+    /// keys must reach the field, or no diacritic can ever be typed (#243).
+    #[test]
+    fn an_unmodified_key_reaches_a_focused_text_field() {
+        assert!(lets_text_field_keep(Modifiers::NONE, true), "the IME needs the plain letter keys");
+    }
+
+    /// Without a text field the editor keeps its single-key tool shortcuts.
+    #[test]
+    fn an_unmodified_key_still_fires_without_a_text_field() {
+        assert!(!lets_text_field_keep(Modifiers::NONE, false));
+    }
+
+    /// A modifier chord is not what a text field or an IME consumes, so it keeps firing either way.
+    #[test]
+    fn a_modified_chord_still_fires_while_text_is_focused() {
+        for m in [Modifiers::COMMAND, Modifiers::CTRL, Modifiers::SHIFT, Modifiers::ALT, Modifiers::COMMAND | Modifiers::SHIFT] {
+            assert!(!lets_text_field_keep(m, true), "{m:?} is not an IME key");
+        }
+    }
+
+    /// The keys a Vietnamese Telex IME needs must be exactly the ones we now hand to the field.
+    #[test]
+    fn the_telex_trigger_keys_are_left_to_the_field() {
+        // s=acute, f=grave, r=hook above, x=tilde, j=dot below, w=horn, z=remove diacritic
+        for key in [Key::S, Key::F, Key::R, Key::X, Key::J, Key::W, Key::Z] {
+            assert!(lets_text_field_keep(Modifiers::NONE, true), "{key:?} must reach the IME");
+        }
+        // The letters the editor binds as tools are the ones Telex composes with, so they must be
+        // left to the field too: `A` (Track Select Forward), `R` (Rate Stretch), `J` (Shuttle Left),
+        // `Z` (Zoom), `C` (Razor), `T` (Type).
+        for key in [Key::A, Key::R, Key::J, Key::Z, Key::C, Key::T] {
+            assert!(lets_text_field_keep(Modifiers::NONE, true), "{key:?} is a Telex key the tools stole");
+        }
     }
 }
 
