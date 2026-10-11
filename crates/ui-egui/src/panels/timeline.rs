@@ -238,6 +238,16 @@ pub fn max_scroll(sequence_seconds: f64, width: f32, pps: f64) -> f64 {
     (timeline_extent(sequence_seconds) - width as f64 / pps).max(0.0)
 }
 
+/// Where the left edge goes so the playhead at `ph` seconds shows in a view `width` points wide
+/// (the page-scroll margin from the left), or `None` when it is in view already.
+pub fn scroll_to_reveal(ph: f64, scroll: f64, pps: f64, width: f64) -> Option<f64> {
+    if !ph.is_finite() || !scroll.is_finite() || !(pps > 0.0 && pps.is_finite()) {
+        return None;
+    }
+    let px = (ph - scroll) * pps;
+    (px < 0.0 || px > width).then(|| (ph - width * 0.05 / pps).max(0.0))
+}
+
 /// Zoom about a time (keeps it under the same screen x).
 pub fn zoom_about(v: &mut TimelineView, factor: f64, anchor_secs: f64, width: f32) {
     let old = v.target_pps;
@@ -333,6 +343,22 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         } else if px > w * 0.95 || px < 0.0 {
             v.target_scroll = (ph - w * 0.05 / v.pps).max(0.0);
             v.scroll = v.target_scroll;
+        }
+    }
+    // A jump while stopped (Home, End, edit points, markers) brings the playhead into view.
+    {
+        let v = &mut app.ui.timeline;
+        let ph = app.session.playhead().seconds();
+        // another sequence's tab has its own playhead and keeps its own view
+        let moved = v.seen_playhead.is_some_and(|(id, seen)| id == seq_id && seen != ph);
+        v.seen_playhead = Some((seq_id, ph));
+        if moved
+            && !app.playback.playing
+            && !v.fit_pending
+            && let Some(s) = scroll_to_reveal(ph, v.target_scroll, v.target_pps, content.width() as f64)
+        {
+            v.target_scroll = s;
+            v.scroll = s;
         }
     }
     // The view stays inside the Timeline's extent, however it was moved (wheel, scroll bar, zoom,
@@ -2897,6 +2923,29 @@ mod trim_preview_tests {
         let (mut out, mut edited) = (HashMap::new(), HashMap::new());
         preview_drag(&app, &seq, &mut out, &mut edited);
         assert!(edited.is_empty() && out.contains_key(&left.id));
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::scroll_to_reveal;
+
+    #[test]
+    fn home_scrolls_back_to_the_start() {
+        assert_eq!(scroll_to_reveal(0.0, 120.0, 40.0, 800.0), Some(0.0));
+    }
+
+    #[test]
+    fn end_scrolls_forward_to_the_playhead() {
+        let s = scroll_to_reveal(300.0, 0.0, 40.0, 800.0).unwrap();
+        assert!((0.0..=300.0).contains(&s) && (300.0 - s) * 40.0 <= 800.0);
+    }
+
+    #[test]
+    fn a_visible_or_hostile_playhead_leaves_the_view() {
+        assert_eq!(scroll_to_reveal(5.0, 0.0, 40.0, 800.0), None);
+        assert_eq!(scroll_to_reveal(f64::NAN, 0.0, 40.0, 800.0), None);
+        assert_eq!(scroll_to_reveal(5.0, 0.0, 0.0, 800.0), None);
     }
 }
 
