@@ -250,14 +250,58 @@ fn wheel_zooms_about_the_pointer_and_the_middle_button_pans() {
     assert!(source["zoom"].is_null() && source["pan"] == json!([0.0, 0.0]), "{source}");
 }
 
+/// The x positions of the tick marks drawn on the time ruler `bar`.
+fn ruler_ticks(d: &Driver, bar: [f64; 4]) -> Vec<f64> {
+    let bottom = (bar[1] + bar[3]) as f32;
+    let (left, right) = (bar[0] as f32 - 1.0, (bar[0] + bar[2]) as f32 + 1.0);
+    let mut xs: Vec<f64> = d
+        .harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::LineSegment { points: [a, b], .. }
+                if a.x == b.x && (b.y - bottom).abs() < 0.01 && [3.5, 8.0].iter().any(|h| (b.y - a.y - h).abs() < 0.01) && (left..=right).contains(&a.x) =>
+            {
+                Some(f64::from(a.x))
+            }
+            _ => None,
+        })
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    xs
+}
+
+/// The frames the ticks `xs` of the ruler `bar` stand for while it shows `zoom` (fractions) of a
+/// sequence `frames` long; and that each is a whole frame.
+fn tick_frames(xs: &[f64], bar: [f64; 4], zoom: (f64, f64), frames: f64) -> Vec<f64> {
+    let f: Vec<f64> = xs.iter().map(|x| (zoom.0 + (x - bar[0]) / bar[2] * (zoom.1 - zoom.0)) * frames).collect();
+    assert!(f.iter().all(|f| (f - f.round()).abs() < 0.05), "ticks off whole frames: {f:?}");
+    f
+}
+
+/// The minor tick step (frames): the commonest gap between neighbouring ticks.
+fn tick_step(frames: &[f64]) -> i64 {
+    let mut counts = std::collections::BTreeMap::new();
+    for w in frames.windows(2) {
+        *counts.entry((w[1] - w[0]).round() as i64).or_insert(0) += 1;
+    }
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(gap, _)| gap).expect("ticks")
+}
+
 /// The zoom bar under a monitor's time ruler: a handle zooms the ruler in, the middle scrolls it,
 /// the ruler maps clicks and the playhead to the part it shows, and each monitor keeps its own.
 #[test]
 fn time_zoom_bar_zooms_and_scrolls_the_monitor_ruler() {
     let mut d = Driver::demo();
-    let duration = num(&d.exec("sequence.inspect", json!({}))["duration"]);
+    let seq = d.exec("sequence.inspect", json!({}));
+    let duration = num(&seq["duration"]);
+    let rate = &seq["settings"]["frame_rate"];
+    let frames = duration * num(&rate["num"]) / num(&rate["den"]) / 254_016_000_000.0;
     let track = d.rect("program.zoomBar.track");
     assert!((d.rect("program.zoomBar")[2] - track[2]).abs() < 0.5, "the whole sequence at first");
+    let bar = d.rect("program.scrubBar");
+    let full = tick_frames(&ruler_ticks(&d, bar), bar, (0.0, 1.0), frames);
     // the right handle dragged to the middle: the ruler shows the first half
     let y = track[1] + track[3] / 2.0;
     d.ok("ui.drag", json!({"from": {"x": track[0] + track[2] - 4.0, "y": y}, "to": {"x": track[0] + track[2] / 2.0, "y": y}, "steps": 8}));
@@ -266,9 +310,18 @@ fn time_zoom_bar_zooms_and_scrolls_the_monitor_ruler() {
     assert!(num(&z[0]) == 0.0 && (num(&z[1]) - 0.5).abs() < 0.02, "{z}");
     let thumb = d.rect("program.zoomBar");
     assert!((thumb[2] - track[2] * num(&z[1])).abs() < 1.0, "thumb {thumb:?} for {z}");
+    // the ticks follow the zoom: still on whole frames, no further apart in time, and spread
+    // further apart on screen than the same step was before
+    let zoomed = tick_frames(&ruler_ticks(&d, bar), bar, (0.0, num(&z[1])), frames);
+    let (full_step, zoomed_step) = (tick_step(&full), tick_step(&zoomed));
+    assert!(zoomed_step <= full_step, "tick steps {full_step} → {zoomed_step} frames");
+    let (before, after) = (full_step as f64 / frames * bar[2], zoomed_step as f64 / (frames * num(&z[1])) * bar[2]);
+    assert!(after >= 12.0 - 0.01, "minor ticks at least 12 pt apart: {after}");
+    if zoomed_step == full_step {
+        assert!(after > before * 1.5, "same step, spread out: {before} → {after} pt");
+    }
 
     // a click halfway along the ruler is halfway through the half shown, and the playhead is drawn there
-    let bar = d.rect("program.scrubBar");
     d.ok("ui.click", json!({"x": bar[0] + bar[2] / 2.0, "y": bar[1] + bar[3] / 2.0}));
     d.frames(2);
     let playhead = num(&d.exec("sequence.inspect", json!({}))["playhead"]);
