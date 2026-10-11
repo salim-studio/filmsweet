@@ -10,6 +10,8 @@ Usage: filmcraft [options] [project.fcproj | media files...]
 Options:
   --control <port>   start the localhost JSON-lines control server
                      (also: FILMCRAFT_CONTROL_PORT)
+  --control-input-only  accept widget input only from the control server
+                     (requires --control or FILMCRAFT_CONTROL_PORT)
   --demo             open the demo project
   --empty            start with an empty project
   --recover          recover the newest unsaved changes without asking
@@ -32,6 +34,7 @@ pub enum Cli {
 #[derive(Debug, PartialEq)]
 pub struct Launch {
     pub control_port: Option<u16>,
+    pub control_input_only: bool,
     /// A project and / or media files to open.
     pub files: Vec<String>,
     pub demo: bool,
@@ -53,7 +56,7 @@ pub struct Launch {
 /// in Latin-1), and `std::env::args` panics on one. A file name that is not is passed on lossily
 /// (its import then reports it missing); `--data-dir` keeps the folder exactly.
 pub fn parse(env_control_port: Option<String>, args: impl IntoIterator<Item = OsString>) -> Result<Cli, String> {
-    let mut l = Launch { control_port: None, files: Vec::new(), demo: true, startup_flag: false, recover: None, data_dir: None };
+    let mut l = Launch { control_port: None, control_input_only: false, files: Vec::new(), demo: true, startup_flag: false, recover: None, data_dir: None };
     let (mut help, mut version) = (false, false);
     let mut args = args.into_iter();
     while let Some(raw) = args.next() {
@@ -67,6 +70,7 @@ pub fn parse(env_control_port: Option<String>, args: impl IntoIterator<Item = Os
                 l.control_port = Some(port.parse().map_err(|_| format!("--control needs a port number, got `{port}`"))?);
             }
             "--demo" => (l.demo, l.startup_flag) = (true, true),
+            "--control-input-only" => l.control_input_only = true,
             "--empty" => (l.demo, l.startup_flag) = (false, true),
             "--recover" => l.recover = Some(true),
             "--no-recover" => l.recover = Some(false),
@@ -89,6 +93,9 @@ pub fn parse(env_control_port: Option<String>, args: impl IntoIterator<Item = Os
         && let Some(port) = env_control_port.as_deref().map(str::trim).filter(|p| !p.is_empty())
     {
         l.control_port = Some(port.parse().map_err(|_| format!("FILMCRAFT_CONTROL_PORT needs a port number, got `{port}`"))?);
+    }
+    if l.control_input_only && l.control_port.is_none() {
+        return Err("--control-input-only requires --control or FILMCRAFT_CONTROL_PORT".into());
     }
     Ok(Cli::Run(l))
 }
@@ -188,7 +195,10 @@ mod tests {
     #[test]
     fn known_options_and_files_parse_as_before() {
         let none = launch(&[]);
-        assert_eq!(none, Launch { control_port: None, files: vec![], demo: true, startup_flag: false, recover: None, data_dir: None });
+        assert_eq!(
+            none,
+            Launch { control_port: None, control_input_only: false, files: vec![], demo: true, startup_flag: false, recover: None, data_dir: None }
+        );
         let l = launch(&["--control", "9876", "--empty", "--no-recover", "--data-dir", "/tmp/fc", "cut.fcproj", "a.mp4"]);
         assert_eq!(l.control_port, Some(9876));
         assert_eq!((l.demo, l.startup_flag, l.recover), (false, true, Some(false)));
@@ -244,5 +254,15 @@ mod tests {
         assert_eq!(project_and_media(&[]), (None, vec![]));
         // nothing to resolve against: kept as given rather than dropped
         assert_eq!(absolute(""), "");
+    }
+
+    #[test]
+    fn isolated_input_is_explicit_and_requires_a_control_server() {
+        assert!(!launch(&["--control", "9876"]).control_input_only);
+        assert!(parse_args(&["--control-input-only"]).is_err());
+        assert!(launch(&["--control-input-only", "--control", "9876"]).control_input_only);
+        assert!(matches!(parse_env(Some("9876"), &["--control-input-only"]), Ok(Cli::Run(Launch { control_input_only: true, control_port: Some(9876), .. }))));
+        assert_eq!(parse_args(&["--control-input-only", "--help"]), Ok(Cli::Help));
+        assert!(USAGE.contains("--control-input-only"));
     }
 }
