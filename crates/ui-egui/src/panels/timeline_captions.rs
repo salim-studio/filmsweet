@@ -148,10 +148,11 @@ pub fn paint(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, area: Re
             }
             if r.width() > 14.0 {
                 let text = filmcraft_project::plain_text(&c.text).replace('\n', " ");
-                p.with_clip_rect(r.shrink2(vec2(4.0, 0.0)).intersect(lane)).text(
-                    pos2(r.min.x + 5.0, r.center().y),
-                    Align2::LEFT_CENTER,
-                    text,
+                // in reading order; Arabic and Hebrew start at the block's right edge
+                crate::rtl::paint_line(
+                    &p.with_clip_rect(r.shrink2(vec2(4.0, 0.0)).intersect(lane)),
+                    Rect::from_min_max(pos2(r.min.x + 5.0, r.min.y), pos2(r.max.x - 5.0, r.max.y)),
+                    &text,
                     Tokens::ui(11.0),
                     if tr.enabled { Color32::WHITE } else { t.text_dim },
                 );
