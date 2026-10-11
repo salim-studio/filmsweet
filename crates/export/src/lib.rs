@@ -15,6 +15,7 @@
 
 use std::io::Write;
 
+mod aac_out;
 mod audio_out;
 mod job;
 mod mxf_out;
@@ -115,6 +116,10 @@ pub enum Format {
     Wav,
     #[serde(rename = "aiff", alias = "Aiff")]
     Aiff,
+    /// AAC Audio: the mix alone, AAC-LC in an MPEG-4 audio file (`.m4a`), or a raw ADTS stream when
+    /// the path ends in `.aac`.
+    #[serde(rename = "aac", alias = "Aac")]
+    Aac,
     /// MXF OP1a (SMPTE ST 378): frame-wrapped DNxHR, ProRes or H.264 ([`MxfVideoCodec`]) + PCM.
     #[serde(rename = "mxf-op1a", alias = "MxfOp1a")]
     MxfOp1a,
@@ -147,6 +152,7 @@ impl Format {
             "gif" | "animatedgif" => Format::Gif,
             "wav" | "waveform" | "waveformaudio" => Format::Wav,
             "aif" | "aiff" | "aifc" => Format::Aiff,
+            "aac" | "aacaudio" | "m4a" | "adts" => Format::Aac,
             _ => return None,
         })
     }
@@ -170,6 +176,7 @@ impl Format {
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aiff",
+            Format::Aac => "aac",
             Format::MxfOp1a => "mxf-op1a",
             Format::MxfOpAtom => "mxf-opatom",
         }
@@ -188,6 +195,7 @@ impl Format {
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aif",
+            Format::Aac => "m4a",
             Format::MxfOp1a | Format::MxfOpAtom => "mxf",
         }
     }
@@ -210,6 +218,7 @@ impl Format {
             Format::Gif => "Animated GIF",
             Format::Wav => "Waveform Audio",
             Format::Aiff => "AIFF",
+            Format::Aac => "AAC Audio",
             Format::MxfOp1a => "MXF OP1a",
             Format::MxfOpAtom => "MXF OP-Atom",
         }
@@ -236,6 +245,10 @@ impl Format {
     pub fn has_builtin_encoder(self) -> bool {
         !matches!(self, Format::Hevc | Format::Av1)
     }
+    /// Sound without picture: Waveform Audio, AIFF and AAC Audio.
+    pub fn is_audio_only(self) -> bool {
+        matches!(self, Format::Wav | Format::Aiff | Format::Aac)
+    }
     /// H.264 or H.265: MPEG-4 (or QuickTime) with AAC audio, set up with the same bitrate controls.
     pub fn is_h26x(self) -> bool {
         matches!(self, Format::H264 | Format::Hevc)
@@ -248,7 +261,7 @@ impl Format {
     pub fn is_mp4_with(self, mux: Multiplexer) -> bool {
         self == Format::Av1 || (self.is_h26x() && mux == Multiplexer::Mp4)
     }
-    pub const ALL: [Format; 19] = [
+    pub const ALL: [Format; 20] = [
         Format::H264,
         Format::Hevc,
         Format::Av1,
@@ -266,6 +279,7 @@ impl Format {
         Format::Gif,
         Format::Wav,
         Format::Aiff,
+        Format::Aac,
         Format::MxfOp1a,
         Format::MxfOpAtom,
     ];
@@ -1739,6 +1753,7 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
     let cancelled = || progress.cancel.load(Ordering::Relaxed);
     let batch = rayon::current_num_threads().clamp(2, 16) as i64;
     let (bytes, nframes) = match settings.format {
+        Format::Aac => aac_out::export(project, seq, settings, range, sources, progress)?,
         Format::Wav | Format::Aiff => {
             let mut a = audio_out::AudioOut::new(project.clone(), seq, settings, range)?;
             let (ch, sr, bits) = (a.channels as u16, a.sr, settings.audio.bits);

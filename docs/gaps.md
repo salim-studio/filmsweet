@@ -165,9 +165,10 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   5.1 core), AVI (#598; listed as an extension but no
   demuxer), WMV / ASF, DV / DVCPRO / DV100, MPEG-4 Part 2, FLAC in MP4 (#603), camera RAW (R3D
   incl. R3D NE, ARRIRAW, Sony RAW / X-OCN, Canon RAW, BRAW, ProRes RAW; #345, #383), JPEG 2000 /
-  JPEG XS MXF, Cinema DNG; stills: PSD, EXR, DPX, Targa, HEIF / HEIC, Radiance HDR, AI / EPS;
-  transparent video (#402); Sony start timecode in `rtmd` (#460); stereo 3D flag (#500); MKV
-  multi-audio (#601).
+  JPEG XS MXF, Cinema DNG; stills: PSD, EXR, HEIF / HEIC, Radiance HDR, AI / EPS, and the rarer
+  DPX layouts (packed 10/12-bit, run-length, Y'CbCr; Targa and DPX stills and sequences import
+  since #821, deeper than 8 bits kept at 8); transparent video (#402); Sony start timecode in
+  `rtmd` (#460); stereo 3D flag (#500); MKV multi-audio (#601).
 - **Estimate:** 120–200 h (camera RAW alone 60–100 h, and some SDKs have licences we cannot use:
   clean-room from public specs only where specs exist). Docs: [codec-parity.md](codec-parity.md),
   [file-format-parity.md](file-format-parity.md).
@@ -191,11 +192,11 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 ## G13. Delivery formats
 
 - **Missing:** AV1 export (software or hardware), MPEG-2 / DVD / Blu-ray, DCP, JPEG 2000 MXF,
-  AS-10 / AS-11, XDCAM HD MXF, P2, compressed (ZIP / PIZ / DWA) OpenEXR, MP3 and AAC-only audio,
-  ProRes 4444 / XQ in the export UI (#342; the encoder has the profiles), interlaced encoding,
-  smart render, HEVC software encoder (HEVC exists only where a hardware encoder does).
+  AS-10 / AS-11, XDCAM HD MXF, P2, compressed (ZIP / PIZ / DWA) OpenEXR, MP3 audio, interlaced
+  encoding, smart render, HEVC software encoder (HEVC exists only where a hardware encoder does).
 - **Have:** PNG, TIFF, BMP, JPEG, Targa and DPX (10-bit) image sequences (#779); OpenEXR
-  sequences (half float, linear, uncompressed; #806).
+  sequences (half float, linear, uncompressed; #806); AAC Audio (audio-only `.m4a`, or ADTS
+  `.aac`; #814); ProRes 4444 / 4444 XQ in the export UI (#342).
 - **Estimate:** 60–110 h. Doc: [file-format-parity.md](file-format-parity.md).
 
 ## G14. Localization: 8 of the 12 key languages missing
@@ -234,11 +235,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 - **Missing:** Warp Stabilizer is 2-D (Premiere's is 3-D subspace), Morph Cut has no face tracking
   (and occlusion edges are soft), Lumetri HDR-aware maths, multicam paging beyond 16 angles,
-  redesigned 26.0 mask tools (rounded corners, constrained lines).
+  redesigned 26.0 mask tools (constrained lines; an on-monitor corner-roundness handle).
 - **Have:** Optical Flow time interpolation synthesises motion-compensated in-between frames (dense
   coarse-to-fine Lucas–Kanade, CPU; #780); Morph Cut morphs the subject along that optical flow
   instead of cross-dissolving (CPU; #805); Transform shutter angle motion blur (#415); Ultra Key
-  Setting applied as a parameter preset (#458).
+  Setting applied as a parameter preset (#458); rectangle and polygon masks round their corners
+  with circular fillets (`masks.add` `cornerRadius`, `masks.roundCorners`, every path keyframe;
+  #813).
 - **Estimate:** 60–110 h.
 
 ## G19. Speech to text off in release builds
