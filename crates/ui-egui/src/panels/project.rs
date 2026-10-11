@@ -625,7 +625,10 @@ fn footer(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, v: &View, action
                     actions.push(("file.newBin".into(), json!({"parent": parent, "panel": pre})));
                 }
                 "project.delete" => match crate::panels::project_views::clear_params(&app.session.state.project_selection, app.ui.project_panel.selected_bin) {
-                    Some(p) => actions.push((id.into(), p)),
+                    Some(p) => {
+                        app.ui.project_panel.rename = None;
+                        actions.push((id.into(), p));
+                    }
                     None => app.ui.status = tl!("Select items to clear").into(),
                 },
                 _ => actions.push((id.into(), json!({}))),
@@ -732,6 +735,7 @@ pub fn panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
             actions.push(("projectPanel.rename".into(), json!({})));
         }
         if item(ui, "delete", tl!("Delete"), clear.is_some(), Some("Backspace")) {
+            app.ui.project_panel.rename = None;
             actions.push(("project.delete".into(), clear.unwrap_or_default()));
         }
         ui.separator();
@@ -979,6 +983,9 @@ pub fn new_bin(app: &mut FilmcraftApp, params: &Value) -> Result<Value, String> 
         app.ui.expanded_bins.push(p);
     }
     let panel = params.get("panel").and_then(Value::as_str).map_or(shown.prefix, str::to_string);
+    // Clicking a bin already clears the item selection so Clear targets the bin (#587). New Bin
+    // must do the same: leftover clips would otherwise steal the trash button and Delete.
+    let _ = app.session.execute("project.select", json!({"items": []}));
     app.ui.project_panel.selected_bin = Some(bin);
     app.ui.project_panel.rename = Some(Rename { item: None, bin: Some(bin), text, panel });
     Ok(r)
