@@ -1,6 +1,6 @@
 //! Fractional sample interpolation (8.5.3.3.3) and weighted sample prediction (8.5.3.3.4).
 
-use crate::picture::Frame;
+use crate::picture::{Frame, Sample};
 use crate::spec_tables::{CHROMA_FILTER, LUMA_FILTER};
 
 /// Max prediction block size + filter margin.
@@ -144,54 +144,54 @@ fn interpolate<const T: usize>(
 /// Luma prediction samples (14-bit intermediate precision) of a w x h block at (x, y) displaced by the
 /// quarter-sample motion vector `mv`, into `out` (stride w).
 #[allow(clippy::too_many_arguments)]
-pub fn mc_luma(f: &Frame, x: i32, y: i32, mv: [i16; 2], w: usize, h: usize, out: &mut [i16], sc: &mut McScratch) {
+pub fn mc_luma<S: Sample>(f: &Frame, x: i32, y: i32, mv: [i16; 2], w: usize, h: usize, out: &mut [i16], sc: &mut McScratch) {
     let bd = f.bit_depth;
     let (fx, fy) = ((mv[0] & 3) as usize, (mv[1] & 3) as usize);
     let xi = x + (mv[0] as i32 >> 2);
     let yi = y + (mv[1] as i32 >> 2);
     let shift1 = bd.min(12) - 8;
     let shift3 = 14 - bd;
-    f.luma_window(xi - 3, yi - 3, w + 7, h + 7, &mut sc.win, WIN);
+    f.luma_window::<S>(xi - 3, yi - 3, w + 7, h + 7, &mut sc.win, WIN);
     interpolate::<8>(&sc.win, &mut sc.tmp, fx, fy, &LUMA_FILTER[fx], &LUMA_FILTER[fy], w, h, shift1, shift3, out);
 }
 
 /// Chroma prediction samples of a w x h chroma block at chroma position (x, y) with a 1/8-sample
 /// vector (4:2:0).
 #[allow(clippy::too_many_arguments)]
-pub fn mc_chroma(f: &Frame, c: usize, x: i32, y: i32, mv: [i16; 2], w: usize, h: usize, out: &mut [i16], sc: &mut McScratch) {
+pub fn mc_chroma<S: Sample>(f: &Frame, c: usize, x: i32, y: i32, mv: [i16; 2], w: usize, h: usize, out: &mut [i16], sc: &mut McScratch) {
     let bd = f.bit_depth_c;
     let (fx, fy) = ((mv[0] & 7) as usize, (mv[1] & 7) as usize);
     let xi = x + (mv[0] as i32 >> 3);
     let yi = y + (mv[1] as i32 >> 3);
     let shift1 = bd.min(12) - 8;
     let shift3 = 14 - bd;
-    f.chroma_window(c, xi - 1, yi - 1, w + 3, h + 3, &mut sc.win, WIN);
+    f.chroma_window::<S>(c, xi - 1, yi - 1, w + 3, h + 3, &mut sc.win, WIN);
     interpolate::<4>(&sc.win, &mut sc.tmp, fx, fy, &CHROMA_FILTER[fx], &CHROMA_FILTER[fy], w, h, shift1, shift3, out);
 }
 
-/// Calls `$f::<W>(args)` with `W` the prediction block width `$w` as a constant (block widths are
+/// Calls `$f::<_, W>(args)` with `W` the prediction block width `$w` as a constant (block widths are
 /// fixed sizes; a constant width lets the row loops vectorise even for 4- and 8-sample rows), or
 /// `$f::<0>` for any other width.
 macro_rules! by_width {
     ($w:expr, $f:ident($($a:expr),*)) => {
         match $w {
-            2 => $f::<2>($($a),*),
-            4 => $f::<4>($($a),*),
-            6 => $f::<6>($($a),*),
-            8 => $f::<8>($($a),*),
-            12 => $f::<12>($($a),*),
-            16 => $f::<16>($($a),*),
-            24 => $f::<24>($($a),*),
-            32 => $f::<32>($($a),*),
-            48 => $f::<48>($($a),*),
-            64 => $f::<64>($($a),*),
-            _ => $f::<0>($($a),*),
+            2 => $f::<_, 2>($($a),*),
+            4 => $f::<_, 4>($($a),*),
+            6 => $f::<_, 6>($($a),*),
+            8 => $f::<_, 8>($($a),*),
+            12 => $f::<_, 12>($($a),*),
+            16 => $f::<_, 16>($($a),*),
+            24 => $f::<_, 24>($($a),*),
+            32 => $f::<_, 32>($($a),*),
+            48 => $f::<_, 48>($($a),*),
+            64 => $f::<_, 64>($($a),*),
+            _ => $f::<_, 0>($($a),*),
         }
     };
 }
 
 /// Default weighted prediction, one list (8-262).
-pub fn put_uni(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u16], ds: usize) {
+pub fn put_uni<S: Sample>(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [S], ds: usize) {
     by_width!(w, put_uni_w(p, w, h, bd, dst, ds))
 }
 
@@ -202,7 +202,7 @@ pub fn put_uni(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u16], ds: usiz
 /// in an `i16` and the sums are exact. SSE2 clips 16-bit lanes in one instruction each, 32-bit lanes
 /// in four.
 #[inline(always)]
-fn put_uni_w<const W: usize>(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u16], ds: usize) {
+fn put_uni_w<S: Sample, const W: usize>(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [S], ds: usize) {
     let w = if W > 0 { W } else { w };
     let shift = 14 - bd;
     let off: i16 = if shift > 0 { 1 << (shift - 1) } else { 0 };
@@ -210,13 +210,13 @@ fn put_uni_w<const W: usize>(p: &[i16], w: usize, h: usize, bd: u32, dst: &mut [
     // Rows as slices and min / max clipping (`clamp` asserts its bounds) so the loop vectorises.
     for (d, s) in dst.chunks_mut(ds).zip(p[..w * h].chunks(w)) {
         for (d, &s) in d[..w].iter_mut().zip(s) {
-            *d = (s.wrapping_add(off) >> shift).max(0).min(max) as u16;
+            *d = S::from_i32((s.wrapping_add(off) >> shift).max(0).min(max) as i32);
         }
     }
 }
 
 /// Default weighted prediction, bi-prediction (8-263).
-pub fn put_bi(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u16], ds: usize) {
+pub fn put_bi<S: Sample>(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, dst: &mut [S], ds: usize) {
     by_width!(w, put_bi_w(p0, p1, w, h, bd, dst, ds))
 }
 
@@ -226,7 +226,7 @@ pub fn put_bi(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u1
 /// `((a >> 1) + (b >> 1) + (a & b & 1) + off / 2) >> (shift - 1)` (the two dropped low bits only
 /// carry when both are set), and `(a >> 1) + (b >> 1)` fits in an `i16` (see [`put_uni_w`]).
 #[inline(always)]
-fn put_bi_w<const W: usize>(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, dst: &mut [u16], ds: usize) {
+fn put_bi_w<S: Sample, const W: usize>(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, dst: &mut [S], ds: usize) {
     let w = if W > 0 { W } else { w };
     let shift = 15 - bd; // >= 3 (bd <= 12)
     let half_off: i16 = 1 << (shift - 2);
@@ -234,31 +234,44 @@ fn put_bi_w<const W: usize>(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32,
     for ((d, a), b) in dst.chunks_mut(ds).zip(p0[..w * h].chunks(w)).zip(p1[..w * h].chunks(w)) {
         for ((d, &a), &b) in d[..w].iter_mut().zip(a).zip(b) {
             let v = (a >> 1).wrapping_add(b >> 1).wrapping_add(a & b & 1).wrapping_add(half_off) >> (shift - 1);
-            *d = v.max(0).min(max) as u16;
+            *d = S::from_i32(v.max(0).min(max) as i32);
         }
     }
 }
 
 /// Explicit weighted prediction, one list (8-265). `o` is the offset already scaled to the bit depth.
-pub fn put_weighted_uni(p: &[i16], w: usize, h: usize, bd: u32, log2wd: u32, wt: i32, o: i32, dst: &mut [u16], ds: usize) {
+pub fn put_weighted_uni<S: Sample>(p: &[i16], w: usize, h: usize, bd: u32, log2wd: u32, wt: i32, o: i32, dst: &mut [S], ds: usize) {
     let max = (1i32 << bd) - 1;
     for r in 0..h {
         for c in 0..w {
             let v = p[r * w + c] as i32 * wt;
             let v = if log2wd >= 1 { ((v + (1 << (log2wd - 1))) >> log2wd) + o } else { v + o };
-            dst[r * ds + c] = v.max(0).min(max) as u16;
+            dst[r * ds + c] = S::from_i32(v.max(0).min(max));
         }
     }
 }
 
 /// Explicit weighted bi-prediction (8-266).
-pub fn put_weighted_bi(p0: &[i16], p1: &[i16], w: usize, h: usize, bd: u32, log2wd: u32, w0: i32, w1: i32, o0: i32, o1: i32, dst: &mut [u16], ds: usize) {
+pub fn put_weighted_bi<S: Sample>(
+    p0: &[i16],
+    p1: &[i16],
+    w: usize,
+    h: usize,
+    bd: u32,
+    log2wd: u32,
+    w0: i32,
+    w1: i32,
+    o0: i32,
+    o1: i32,
+    dst: &mut [S],
+    ds: usize,
+) {
     let max = (1i32 << bd) - 1;
     for r in 0..h {
         for c in 0..w {
             let i = r * w + c;
             let v = (p0[i] as i32 * w0 + p1[i] as i32 * w1 + ((o0 + o1 + 1) << log2wd)) >> (log2wd + 1);
-            dst[r * ds + c] = v.max(0).min(max) as u16;
+            dst[r * ds + c] = S::from_i32(v.max(0).min(max));
         }
     }
 }
@@ -370,35 +383,36 @@ mod tests {
     }
 
     /// The full-sample uni-prediction shortcut (`Frame::copy_block`) gives what interpolation and
-    /// 8-262 give, inside the picture and across every edge.
+    /// 8-262 give, inside the picture and across every edge (8-bit pictures stored as `u8`, 10-bit
+    /// ones as `u16`).
     #[test]
     fn full_sample_copy_matches_interpolation() {
-        let mut rng = Rng(0x0123_4567_89ab_cdef);
-        let mut sc = McScratch::default();
-        for bd in [8u32, 10] {
-            let f = frame(&mut rng, 48, 40, bd);
+        fn check<S: Sample>(rng: &mut Rng, bd: u32) {
+            let mut sc = McScratch::default();
+            let f = frame(rng, 48, 40, bd);
             for _ in 0..300 {
                 let (w, h) = ([4usize, 8, 12, 16, 24, 32][rng.range(0, 5) as usize], [4usize, 8, 16][rng.range(0, 2) as usize]);
                 let (x, y) = (rng.range(-40, 80), rng.range(-40, 70));
                 let mut pred = vec![0i16; w * h];
-                let (mut a, mut b) = (vec![0u16; w * h], vec![0u16; w * h]);
-                inter_luma(&f, x, y, w, h, &mut pred, &mut sc);
+                let (mut a, mut b) = (vec![S::default(); w * h], vec![S::default(); w * h]);
+                mc_luma::<S>(&f, 0, 0, [(x * 4) as i16, (y * 4) as i16], w, h, &mut pred, &mut sc);
                 put_uni(&pred, w, h, bd, &mut a, w);
                 f.copy_block(0, x, y, w, h, &mut b, w);
                 assert_eq!(a, b, "luma bd {bd} at ({x}, {y}) {w}x{h}");
+                // (the window really was read: not all samples equal the default)
+                assert!(a.iter().any(|&v| v != S::default()) || w * h < 8);
                 for c in 1..3 {
                     let (cw, ch) = (w / 2, h / 2);
-                    mc_chroma(&f, c - 1, 0, 0, [(x * 8) as i16, (y * 8) as i16], cw, ch, &mut pred, &mut sc);
-                    let (mut a, mut b) = (vec![0u16; cw * ch], vec![0u16; cw * ch]);
+                    mc_chroma::<S>(&f, c - 1, 0, 0, [(x * 8) as i16, (y * 8) as i16], cw, ch, &mut pred, &mut sc);
+                    let (mut a, mut b) = (vec![S::default(); cw * ch], vec![S::default(); cw * ch]);
                     put_uni(&pred, cw, ch, bd, &mut a, cw);
                     f.copy_block(c, x, y, cw, ch, &mut b, cw);
                     assert_eq!(a, b, "chroma {c} bd {bd} at ({x}, {y}) {cw}x{ch}");
                 }
             }
         }
-    }
-
-    fn inter_luma(f: &Frame, x: i32, y: i32, w: usize, h: usize, out: &mut [i16], sc: &mut McScratch) {
-        mc_luma(f, 0, 0, [(x * 4) as i16, (y * 4) as i16], w, h, out, sc);
+        let mut rng = Rng(0x0123_4567_89ab_cdef);
+        check::<u8>(&mut rng, 8);
+        check::<u16>(&mut rng, 10);
     }
 }

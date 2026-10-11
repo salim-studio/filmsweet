@@ -8,7 +8,7 @@ use crate::error::{Result, ensure, invalid};
 use crate::inter;
 use crate::intra::{self, Refs};
 use crate::params::{Layout, Pps, Sps};
-use crate::picture::{FrameRef, RefPic};
+use crate::picture::{FrameRef, RefPic, Sample};
 use crate::slice::{SliceHeader, SliceType};
 use crate::spec_tables::*;
 use crate::tables::{CTX_IDX_MAP, LEVEL_SCALE, SCAN_4, qpc_420, scan_order};
@@ -95,7 +95,7 @@ pub struct SliceJob {
 }
 
 /// Per-picture decoding state.
-pub struct PicState {
+pub struct PicState<S> {
     pub frame: FrameRef,
     #[allow(dead_code)]
     pub sps: Arc<Sps>,
@@ -114,7 +114,7 @@ pub struct PicState {
     pub bd_y: u32,
     pub bd_c: u32,
     /// Reconstructed (pre-SAO) planes.
-    pub planes: [Vec<u16>; 3],
+    pub planes: [Vec<S>; 3],
     pub blk: Vec<Blk>,
     pub mvf: Vec<MvField>,
     /// Index into `slices` per CTB (u32::MAX = not decoded).
@@ -136,7 +136,7 @@ pub struct PicState {
     pub draft: bool,
 }
 
-impl PicState {
+impl<S: Sample> PicState<S> {
     pub fn new(frame: FrameRef, sps: Arc<Sps>, pps: Arc<Pps>, layout: Arc<Layout>, scaling: Option<Arc<Vec<Vec<u8>>>>) -> Self {
         let (width, height) = (sps.width as usize, sps.height as usize);
         let (cwidth, cheight) = (width / 2, height / 2);
@@ -144,8 +144,8 @@ impl PicState {
         let log2_ctb = sps.log2_ctb;
         let (wctb, hctb) = (sps.pic_width_in_ctbs() as usize, sps.pic_height_in_ctbs() as usize);
         let (bd_y, bd_c) = (sps.bit_depth_luma, sps.bit_depth_chroma);
-        let gy = 1u16 << (bd_y - 1);
-        let gc = 1u16 << (bd_c - 1);
+        let gy = S::from_u16(1u16 << (bd_y - 1));
+        let gc = S::from_u16(1u16 << (bd_c - 1));
         PicState {
             poc: frame.poc,
             frame,
@@ -231,8 +231,8 @@ pub enum PartMode {
 }
 
 /// Decoder of one slice segment.
-pub struct SliceDecoder<'a> {
-    pub pic: &'a mut PicState,
+pub struct SliceDecoder<'a, S> {
+    pub pic: &'a mut PicState<S>,
     pub sh: &'a SliceHeader,
     pub sps: &'a Sps,
     pub pps: &'a Pps,
@@ -272,7 +272,7 @@ pub struct SliceDecoder<'a> {
     pub ctb_y: i32,
 }
 
-impl<'a> SliceDecoder<'a> {
+impl<'a, S: Sample> SliceDecoder<'a, S> {
     #[inline(always)]
     fn dd(&mut self, ctx: usize) -> u32 {
         self.c.decode_decision(ctx)
@@ -294,7 +294,7 @@ impl<'a> SliceDecoder<'a> {
     }
 
     /// Decode the slice segment `job` into `pic`.
-    pub fn decode(pic: &'a mut PicState, job: &'a SliceJob) -> Result<()> {
+    pub fn decode(pic: &'a mut PicState<S>, job: &'a SliceJob) -> Result<()> {
         let sh = &job.sh;
         let (sps, pps) = (&*job.sps, &*job.pps);
         ensure!(sh.data_offset < job.rbsp.len(), "empty slice segment data");
@@ -802,7 +802,7 @@ impl<'a> SliceDecoder<'a> {
         for y in 0..n {
             for x in 0..n {
                 let v = r.read_bits(bl)? as u16;
-                self.pic.planes[0][(y0 as usize + y) * w + x0 as usize + x] = v << sy;
+                self.pic.planes[0][(y0 as usize + y) * w + x0 as usize + x] = S::from_u16(v << sy);
             }
         }
         let cw = self.pic.cwidth;
@@ -810,7 +810,7 @@ impl<'a> SliceDecoder<'a> {
             for y in 0..n / 2 {
                 for x in 0..n / 2 {
                     let v = r.read_bits(bc)? as u16;
-                    self.pic.planes[c][(y0 as usize / 2 + y) * cw + x0 as usize / 2 + x] = v << sc;
+                    self.pic.planes[c][(y0 as usize / 2 + y) * cw + x0 as usize / 2 + x] = S::from_u16(v << sc);
                 }
             }
         }
@@ -997,14 +997,14 @@ impl<'a> SliceDecoder<'a> {
         let mut at = [false; 129];
         let addr = self.slice_addr;
         let avail =
-            |pic: &PicState, xn: i32, yn: i32| -> bool { pic.zavail(xl, yl, xn, yn, addr) && (!constrained || pic.blk_at(xn, yn).flags & F_INTRA != 0) };
+            |pic: &PicState<S>, xn: i32, yn: i32| -> bool { pic.zavail(xl, yl, xn, yn, addr) && (!constrained || pic.blk_at(xn, yn).flags & F_INTRA != 0) };
         let plane = &self.pic.planes[c];
         let r = &mut self.refs_buf;
         // corner
         if avail(self.pic, xl - 1, yl - 1) {
             al[0] = true;
             at[0] = true;
-            let v = plane[(y0 - 1) as usize * stride + (x0 - 1) as usize];
+            let v = plane[(y0 - 1) as usize * stride + (x0 - 1) as usize].to_u16();
             r.left[0] = v;
             r.top[0] = v;
         }
@@ -1014,7 +1014,7 @@ impl<'a> SliceDecoder<'a> {
             if avail(self.pic, xl - 1, yn * sc) {
                 for i in 0..unit {
                     al[1 + k + i] = true;
-                    r.left[1 + k + i] = plane[(yn as usize + i) * stride + (x0 - 1) as usize];
+                    r.left[1 + k + i] = plane[(yn as usize + i) * stride + (x0 - 1) as usize].to_u16();
                 }
             }
             let xn = x0 + k as i32;
@@ -1022,7 +1022,7 @@ impl<'a> SliceDecoder<'a> {
                 let o = (y0 - 1) as usize * stride + xn as usize;
                 for i in 0..unit {
                     at[1 + k + i] = true;
-                    r.top[1 + k + i] = plane[o + i];
+                    r.top[1 + k + i] = plane[o + i].to_u16();
                 }
             }
             k += unit;
@@ -1318,7 +1318,7 @@ impl<'a> SliceDecoder<'a> {
         for y in 0..n {
             let row = &mut plane[(y0 as usize + y) * stride + x0 as usize..][..n];
             for (x, s) in row.iter_mut().enumerate() {
-                *s = (*s as i32 + coeffs[y * n + x]).clamp(0, max) as u16;
+                *s = S::from_i32((s.to_i32() + coeffs[y * n + x]).clamp(0, max));
             }
         }
         Ok(())
@@ -1472,9 +1472,9 @@ impl<'a> SliceDecoder<'a> {
                 let frame = &self.refs[l][f.ref_idx[l] as usize].frame;
                 let buf = if l == 0 || !bi { &mut self.pred0 } else { &mut self.pred1 };
                 if c == 0 {
-                    inter::mc_luma(frame, x, y, f.mv[l], bw, bh, buf, &mut self.mc);
+                    inter::mc_luma::<S>(frame, x, y, f.mv[l], bw, bh, buf, &mut self.mc);
                 } else {
-                    inter::mc_chroma(frame, c - 1, x, y, f.mv[l], bw, bh, buf, &mut self.mc);
+                    inter::mc_chroma::<S>(frame, c - 1, x, y, f.mv[l], bw, bh, buf, &mut self.mc);
                 }
             }
             let stride = if c == 0 { self.pic.width } else { self.pic.cwidth };
