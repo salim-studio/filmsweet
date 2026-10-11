@@ -166,6 +166,10 @@ Notes:
   an "invalid parameters" error, never a different track.
   In `timeline.place`, `track` is where the picture goes and `audioTrack` where the sound goes;
   an audio track given as `track` places the sound alone, on that track.
+  The clip lands on the frame grid: its start and its end (`time + duration`) each snap to the
+  nearest frame.
+- `sequence.inspect` reports `durationFrames` as the number of frames export renders: a sequence
+  that ends partway through a frame counts that frame.
 - `engine.execute` also runs UI-only commands (`tool.razor`, `playback.toggle`,
   `window.workspace.color`, `window.panel.<name>`).
 - A command that works on the selection is disabled ("no clips selected", "select a clip in the
