@@ -123,3 +123,22 @@ fn items_on_a_new_track_share_that_one_track() {
     s.undo();
     assert_eq!(s.active_sequence().unwrap().video_tracks.len(), tracks, "undo removes the track too");
 }
+
+/// A panic inside a group leaves the project, the history and its limit as they were.
+#[test]
+fn a_panic_in_a_group_rolls_back_and_keeps_the_history_limit() {
+    let (mut s, items) = three();
+    let (steps, limit) = (s.history.undo.len(), s.history.limit);
+    let before = s.project.to_json();
+    let one = items[0];
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = s.edit_group::<()>("Boom", |s| {
+            s.execute("timeline.place", json!({"item": one.0, "time": 0}))?;
+            panic!("inside the group");
+        });
+    }));
+    assert!(outcome.is_err(), "the panic goes on");
+    assert_eq!(s.history.limit, limit, "the history is not left unlimited");
+    assert_eq!(s.history.undo.len(), steps);
+    assert_eq!(s.project.to_json(), before);
+}

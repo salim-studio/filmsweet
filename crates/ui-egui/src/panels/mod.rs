@@ -182,7 +182,8 @@ pub fn dragged_project_item(ui: &egui::Ui) -> Option<ItemId> {
 /// one of several selected, otherwise just the dragged item.
 pub fn dragged_selection(app: &FilmcraftApp, item: ItemId) -> Vec<ItemId> {
     let sel = &app.session.state.project_selection;
-    if sel.len() > 1 && sel.contains(&item) { sel.clone() } else { vec![item] }
+    // the selection can hold bins beside items (one id space): only items can be placed
+    if sel.len() > 1 && sel.contains(&item) { sel.iter().copied().filter(|i| app.session.project.item(*i).is_some()).collect() } else { vec![item] }
 }
 pub fn dragged_effect(ui: &egui::Ui) -> Option<String> {
     match payload(ui) {

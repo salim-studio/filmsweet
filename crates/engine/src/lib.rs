@@ -840,11 +840,20 @@ impl Session {
             (self.project.clone(), self.state.clone(), self.history.undo.len(), self.history.redo.clone(), self.history.limit);
         // keep every step the group makes, however many, so the first one can be found afterwards
         self.history.limit = usize::MAX;
-        let r = f(self);
+        // a panic inside the group must not leave the history unlimited: restore, then let it go on
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self)));
         self.history.limit = limit;
         let first = self.history.undo.get(undo).map(|e| e.1.clone());
+        let rolled_back = |s: &mut Session| {
+            s.history.undo.truncate(undo);
+            s.history.redo = redo.clone();
+            s.history.merge_key = None;
+            s.project = project.clone();
+            s.state = state.clone();
+            s.bump();
+        };
         match (r, first) {
-            (Ok(v), Some(first)) => {
+            (Ok(Ok(v)), Some(first)) => {
                 self.history.undo.truncate(undo);
                 self.history.undo.push((label.to_string(), first));
                 if self.history.undo.len() > limit {
@@ -853,15 +862,14 @@ impl Session {
                 self.history.merge_key = None;
                 Ok(v)
             }
-            (Ok(v), None) => Ok(v),
-            (Err(e), _) => {
-                self.history.undo.truncate(undo);
-                self.history.redo = redo;
-                self.history.merge_key = None;
-                self.project = project;
-                self.state = state;
-                self.bump();
+            (Ok(Ok(v)), None) => Ok(v),
+            (Ok(Err(e)), _) => {
+                rolled_back(self);
                 Err(e)
+            }
+            (Err(panic), _) => {
+                rolled_back(self);
+                std::panic::resume_unwind(panic)
             }
         }
     }
