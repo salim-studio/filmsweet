@@ -622,6 +622,11 @@ pub struct MenuItem {
 
 pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
 
+/// Labels only the native macOS app menu shows, with no command in the menu tree behind them: the
+/// Settings submenu and the predefined Hide, Hide Others and Quit items. They are translated through
+/// the catalogs like menu labels (`apps/filmcraft/src/native_menu.rs`).
+pub const NATIVE_APP_MENU: [&str; 4] = ["Settings", "Hide FilmCraft", "Hide Others", "Quit FilmCraft"];
+
 pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
     let mut v = menu_items_for(&app.session);
     for it in &mut v {
