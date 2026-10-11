@@ -735,11 +735,12 @@ pub(crate) fn wants_new_track(p: &Value) -> bool {
 pub(crate) fn place_on_new_tracks(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "timeline.place";
     let item = crate::commands::item_p(p, "item").ok_or_else(|| bad(cmd, "need `item`"))?;
-    let pi = s.project.item(item).ok_or_else(|| bad(cmd, "no such item"))?;
+    s.project.item(item).ok_or_else(|| bad(cmd, "no such item"))?;
+    let (video, audio) = s.project.source_streams(item);
     let is_new = |k: &str| p.get(k).and_then(Value::as_str).is_some_and(|v| v.eq_ignore_ascii_case("new"));
     let enabled = |k: &str| p.get(k).and_then(Value::as_bool).unwrap_or(true);
-    let new_v = is_new("track") && pi.has_video() && enabled("video");
-    let new_a = is_new("audioTrack") && pi.has_audio() && enabled("audio");
+    let new_v = is_new("track") && video && enabled("video");
+    let new_a = is_new("audioTrack") && audio && enabled("audio");
     if !new_v && !new_a {
         return Err(bad(cmd, "no new track to add: the item has no picture or sound for it"));
     }

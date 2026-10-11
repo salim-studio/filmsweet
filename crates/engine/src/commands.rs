@@ -755,8 +755,9 @@ pub(crate) fn place_item(
     if s.state.sequences_as_clips && pi.as_sequence().is_some_and(|q| q.multicam.is_none()) {
         return crate::sequence_tools::place_sequence_clips(s, item, range, at, vdest, adest, insert, label);
     }
-    let has_v = pi.has_video() && vdest.is_some();
-    let has_a = pi.has_audio() && adest.is_some();
+    let (video, audio) = s.project.source_streams(item);
+    let has_v = video && vdest.is_some();
+    let has_a = audio && adest.is_some();
     if !has_v && !has_a {
         return Err(EngineError::Other("no destination track for this media (check source patching)".into()));
     }
@@ -798,7 +799,7 @@ pub(crate) fn place_item(
             let mut a = p.make_track_item(item, TrackKind::Audio, aat, arange, rate).ok_or_else(|| bad(label, "bad item"))?;
             // Modify ▸ Audio Channels with several audio clips: one per clip, on the tracks below
             let clips: Vec<Vec<u16>> =
-                p.item(item).and_then(|i| i.as_media()).and_then(|m| m.interpret.audio_channels.as_ref()).map(|m| m.clips.clone()).unwrap_or_default();
+                p.resolve_media(item).and_then(|(_, m, _)| m.interpret.audio_channels.as_ref()).map(|m| m.clips.clone()).unwrap_or_default();
             let streams = p.resolve_media(item).map_or(1, |(_, m, _)| m.info.audio_streams.len());
             let specs = audio_placement_specs(&clips, streams);
             let first = p.sequence(seq_id).and_then(|q| q.audio_tracks.iter().position(|t| t.id == adest)).unwrap_or(0);
@@ -2282,6 +2283,7 @@ fn build() -> Vec<CommandSpec> {
                 let at = sequence_time_p(s, p, "", "timeline.place")?.unwrap_or(s.playhead());
                 let tg = s.targeting();
                 let pi = s.project.item(item).ok_or_else(|| bad("timeline.place", "no such item"))?;
+                let (has_video, has_audio) = s.project.source_streams(item);
                 let is_audio = |t: TrackId| s.active_sequence().is_some_and(|q| q.audio_tracks.iter().any(|x| x.id == t));
                 // `track` is where the picture goes and `audioTrack` where the sound goes. A caller that
                 // names an audio track as `track` asks for the sound alone, on that track.
@@ -2290,21 +2292,21 @@ fn build() -> Vec<CommandSpec> {
                         return Err(bad("timeline.place", "`track` names an audio track and `audioTrack` is given as well: name the sound's track once"));
                     }
                     (_, Some(t)) if !is_audio(t) => return Err(bad("timeline.place", "`audioTrack` names a video track")),
-                    (Some(t), None) if is_audio(t) && !pi.has_audio() => {
+                    (Some(t), None) if is_audio(t) && !has_audio => {
                         return Err(bad("timeline.place", "`track` names an audio track and this item has no sound"));
                     }
                     (Some(t), None) if is_audio(t) => (None, Some(t)),
-                    (Some(_), None) if !pi.has_video() => {
+                    (Some(_), None) if !has_video => {
                         return Err(bad("timeline.place", "`track` names a video track and this item has no picture: name an audio track"));
                     }
                     (v, a) => (v.or(tg.video_dest), a.or(tg.audio_dest)),
                 };
                 let v = v.filter(|_| video);
                 let a = a.filter(|_| audio);
-                if p.get("video").is_some() && video && pi.has_video() && v.is_none() {
+                if p.get("video").is_some() && video && has_video && v.is_none() {
                     return Err(bad("timeline.place", "no video destination: add or enable a video track"));
                 }
-                if p.get("audio").is_some() && audio && pi.has_audio() && a.is_none() {
+                if p.get("audio").is_some() && audio && has_audio && a.is_none() {
                     return Err(bad("timeline.place", "no audio destination: add or enable an audio track"));
                 }
                 let full = full_duration(s, pi);
