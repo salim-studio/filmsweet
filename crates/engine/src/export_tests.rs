@@ -137,7 +137,7 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
             Some(a) => (a[0].as_u64().unwrap(), a[1].as_u64().unwrap()),
             None => (1920, 1080),
         };
-        if matches!(fmt.as_str(), "png" | "tiff" | "bmp") {
+        if matches!(fmt.as_str(), "png" | "tiff" | "bmp" | "jpg" | "tga" | "dpx" | "exr") {
             let files = files_in(&sub);
             let ext = Path::new(&out).extension().unwrap().to_string_lossy().to_string();
             assert_eq!(frames, 7, "frames 23..=29 at 23.976 fps");
@@ -148,6 +148,10 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
                 let codec = match fmt.as_str() {
                     "png" => "png",
                     "tiff" => "tiff",
+                    "jpg" => "mjpeg",
+                    "tga" => "targa",
+                    "dpx" => "dpx",
+                    "exr" => "exr",
                     _ => "bmp",
                 };
                 assert_eq!(v["codec_name"], codec, "{name}");
@@ -172,6 +176,16 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
                 assert_eq!(a["sample_rate"], "48000", "{name}");
                 assert_eq!(a["channels"], 2, "{name}");
                 assert!((num(&j["format"]["duration"]) - 0.25).abs() < 0.01, "{name}: {}", j["format"]["duration"]);
+                continue;
+            }
+            "aac" => {
+                // AAC Audio: an MPEG-4 audio file, sound only
+                assert!(out.ends_with(".m4a"), "{name}: {out}");
+                assert!(fmt_name.contains("m4a"), "{name}: {fmt_name}");
+                assert_eq!(j["streams"].as_array().unwrap().len(), 1, "{name}");
+                let a = stream(&j, "audio").unwrap();
+                assert_eq!((a["codec_name"].as_str(), a["sample_rate"].as_str(), a["channels"].as_u64()), (Some("aac"), Some("48000"), Some(2)), "{name}");
+                assert!((num(&j["format"]["duration"]) - 0.25).abs() < 0.03, "{name}: {}", j["format"]["duration"]);
                 continue;
             }
             "gif" => {
@@ -278,6 +292,25 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
 /// H.264 bitrate control over three seconds of the demo: the adaptive Match Source preset
 /// targets width × height × fps × bpp, the 1080p delivery presets their fixed targets; ffprobe's
 /// measured video bitrate stays within the VBR maximum and close to the target.
+#[test]
+fn aac_audio_keeps_a_dot_aac_path_as_adts_and_adds_m4a_otherwise() {
+    let mut s = demo();
+    let dir = Scratch::new("aac-audio");
+    let range = json!({"range": "custom", "startSeconds": 1.0, "endSeconds": 1.25, "wait": true, "format": "aac"});
+    let run = |s: &mut Session, path: String| {
+        let mut p = range.clone();
+        p["path"] = json!(path);
+        s.execute("file.exportMedia", p).unwrap()["path"].as_str().unwrap().to_string()
+    };
+    let adts = run(&mut s, dir.path("Mix.aac"));
+    assert!(adts.ends_with("Mix.aac"), "{adts}");
+    let b = std::fs::read(&adts).unwrap();
+    assert_eq!((b[0], b[1]), (0xFF, 0xF1), "an ADTS header");
+    let m4a = run(&mut s, dir.path("Mix"));
+    assert!(m4a.ends_with("Mix.m4a"), "{m4a}");
+    assert_eq!(&std::fs::read(&m4a).unwrap()[4..8], b"ftyp");
+}
+
 #[test]
 fn h264_presets_hit_their_bitrates() {
     let mut s = demo();

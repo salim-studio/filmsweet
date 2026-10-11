@@ -126,12 +126,18 @@ impl Driver {
     }
 
     fn drag(&mut self, from: (f64, f64), by: (f64, f64)) {
-        self.ok("ui.drag", json!({"from": {"x": from.0, "y": from.1}, "to": {"x": from.0 + by.0, "y": from.1 + by.1}, "steps": 6}));
+        // Control gestures use explicit modifiers and isolate ambient native keyboard state.
+        let m = self.harness.ctx.input(|input| input.modifiers);
+        self.ok(
+            "ui.drag",
+            json!({"from": {"x": from.0, "y": from.1}, "to": {"x": from.0 + by.0, "y": from.1 + by.1}, "steps": 6,
+            "modifiers": {"shift":m.shift,"alt":m.alt,"ctrl":m.ctrl,"command":m.command}}),
+        );
         self.frames(4);
     }
 
-    /// Press or let go of Shift, as a keyboard reports it (the control channel's drags carry
-    /// modifiers only on their press and release).
+    /// Press or let go of Shift as a keyboard reports it. The drag fixture then explicitly
+    /// forwards the held modifiers to the control gesture.
     fn hold_shift(&mut self, on: bool) {
         let m = if on { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
         self.harness.input_mut().events.push(egui::Event::ModifiersChanged(m));

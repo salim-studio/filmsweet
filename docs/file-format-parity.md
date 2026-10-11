@@ -52,12 +52,12 @@ only). "Tested" names the evidence.
 
 | Format | Premiere | Read | Write (frame / sequence) | % |
 |---|---|---|---|---|
-| PNG, JPEG, TIFF, BMP, GIF | read + write | yes | PNG / TIFF / BMP sequences, GIF; **no JPEG sequence** | 80% |
+| PNG, JPEG, TIFF, BMP, GIF | read + write | yes | PNG / TIFF / BMP / JPEG sequences, GIF | 90% |
 | WebP | — | yes | no | ahead |
 | **PSD** (layers as sequence) | read (layered) | no | — | 0% |
-| **OpenEXR** | read + write | no | no | 0% |
-| **DPX** | read + write | no | no | 0% |
-| Targa | read + write | no | no | 0% |
+| **OpenEXR** | read + write | no | sequences (half float, linear RGB / premultiplied RGBA, uncompressed; #806) | 35% |
+| **DPX** | read + write | yes: luma / RGB / RGBA, 8–16-bit, filled 10/12-bit, either byte order (#821); no packed 10/12-bit, RLE or Y'CbCr | sequences (10-bit RGB, BT.709; #779) | 80% |
+| Targa | read + write | yes: every image type, RLE, colour maps, 15–32-bit (#821) | sequences (24-bit, 32-bit with alpha; #779) | 95% |
 | HEIF / HEIC | read | no | — | 0% |
 | Radiance HDR, AI / EPS, ICO, PTL | read | no | — | 0% |
 
@@ -68,7 +68,7 @@ only). "Tested" names the evidence.
 | WAV / BWF (timecode, iXML partial) | read + write | yes | yes | 90% |
 | AIFF / AIFC | read + write | yes | yes | 95% |
 | MP3 | read + write | read | **no** | 60% |
-| AAC / M4A | read + write | yes | inside MP4 / MOV only, **no AAC-only file** | 70% |
+| AAC / M4A | read + write | yes | yes (in MP4 / MOV, and AAC Audio: `.m4a` or ADTS `.aac`, #814) | 95% |
 | FLAC, Ogg, Opus | partial | yes | no | ahead on read |
 | WMA | read (Windows) | no | no | 0% |
 
@@ -84,7 +84,7 @@ only). "Tested" names the evidence.
 ## Summary
 
 **File formats dimension: ~60%, 140–240 h** (codecs counted separately). The beta blocker is
-`.prproj`. After it, by user impact: AVI and WMV import, EXR / DPX / PSD stills, AAF / OMF
+`.prproj`. After it, by user impact: AVI and WMV import, EXR / PSD stills, AAF / OMF
 validation in Avid and Pro Tools, DVD / Blu-ray / DCP / broadcast MXF delivery.
 
 ## Revision history

@@ -677,6 +677,7 @@
 	Extract (')	Extraer (')
 	Export Frame: use Export mode (M6)	Exportar fotograma: usa el modo Exportar (M6)
 	Button Editor	Editor de botones
+	More transport controls	Más controles de reproducción
 	Multi-Camera Record on	Grabación multicámara activada
 	Multi-Camera Record off	Grabación multicámara desactivada
 	{first} - Merged	{first} - Combinado
@@ -2974,6 +2975,9 @@
 	Step Forward 1 Frame	Avanzar 1 fotograma
 	Match Playhead	Igualar cabezal
 	Gang to Program	Vincular al programa
+	AAC Audio	AAC Audio
+	AAC Audio 48 kHz 320 kbps	AAC Audio 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	Audio MPEG-4 (.m4a), estéreo, AAC-LC de 48 kHz a 320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 bits
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF, estéreo, PCM de 48 kHz y 16 bits
@@ -3173,6 +3177,18 @@
 	Nudge Volume -1dB	Ajustar volumen -1 dB
 	Nudge Volume -3dB	Ajustar volumen -3 dB
 	Numbered BMP stills (24-bit)	Imágenes fijas BMP numeradas (24 bits)
+	JPEG	JPEG
+	Targa	Targa
+	DPX	DPX
+	JPEG Sequence	Secuencia JPEG
+	Targa Sequence	Secuencia Targa
+	DPX Sequence	Secuencia DPX
+	Numbered JPEG stills (quality 90)	Imágenes fijas JPEG numeradas (calidad 90)
+	Numbered Targa stills (24-bit, uncompressed)	Imágenes fijas Targa numeradas (24 bits, sin comprimir)
+	Numbered DPX stills (10-bit RGB)	Imágenes fijas DPX numeradas (RGB de 10 bits)
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	Secuencia OpenEXR
+	Numbered OpenEXR stills (half float, linear, uncompressed)	Imágenes fijas OpenEXR numeradas (coma flotante de 16 bits, lineal, sin comprimir)
 	Numbered PNG stills at the sequence's frame size	Imágenes fijas PNG numeradas al tamaño de fotograma de la secuencia
 	Numbered TIFF stills (RGB, 8-bit)	Imágenes fijas TIFF numeradas (RGB, 8 bits)
 	Opacity 0 → 100 % over the first second	Opacidad de 0 a 100 % durante el primer segundo
@@ -3536,6 +3552,11 @@
 	Composite on the GPU when available	Componer en la GPU cuando esté disponible
 	Text to Speech	Texto a voz
 	Edit Narration	Editar narración
+
+	Dock Panel	Acoplar panel
+	Undock Panel	Desacoplar panel
+	Docking Action	Acción de acoplamiento
+	Resize floating panel	Cambiar tamaño del panel flotante
 	Project Notes	Notas del proyecto
 	Get Project Notes	Obtener notas del proyecto
 	Edit Project Notes	Editar notas del proyecto

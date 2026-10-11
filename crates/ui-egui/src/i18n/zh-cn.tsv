@@ -2957,6 +2957,9 @@
 	Step Forward 1 Frame	前进 1 帧
 	Match Playhead	匹配播放头
 	Gang to Program	联动到节目
+	AAC Audio	AAC 音频
+	AAC Audio 48 kHz 320 kbps	AAC 音频 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	MPEG-4 音频 (.m4a)，立体声 48 kHz AAC-LC，320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 位
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF，立体声 48 kHz 16 位 PCM
@@ -3156,6 +3159,18 @@
 	Nudge Volume -1dB	微调音量 -1dB
 	Nudge Volume -3dB	微调音量 -3dB
 	Numbered BMP stills (24-bit)	带编号的 BMP 静帧（24 位）
+	JPEG	JPEG
+	Targa	Targa
+	DPX	DPX
+	JPEG Sequence	JPEG 序列
+	Targa Sequence	Targa 序列
+	DPX Sequence	DPX 序列
+	Numbered JPEG stills (quality 90)	带编号的 JPEG 静帧（质量 90）
+	Numbered Targa stills (24-bit, uncompressed)	带编号的 Targa 静帧（24 位，未压缩）
+	Numbered DPX stills (10-bit RGB)	带编号的 DPX 静帧（10 位 RGB）
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	OpenEXR 序列
+	Numbered OpenEXR stills (half float, linear, uncompressed)	带编号的 OpenEXR 静帧（16 位半精度浮点，线性，未压缩）
 	Numbered PNG stills at the sequence's frame size	带编号的 PNG 静帧（采用序列帧大小）
 	Numbered TIFF stills (RGB, 8-bit)	带编号的 TIFF 静帧（RGB，8 位）
 	Opacity 0 → 100 % over the first second	在最初一秒内不透明度从 0 → 100%
@@ -3513,6 +3528,9 @@
 	Edit Narration	编辑旁白
 	Clear Transition	清除过渡
 	Set Transition Duration	设置过渡持续时间
+	Resize floating panel	调整浮动面板大小
+	More transport controls	更多播放控制
+	Undock Panel	取消面板停靠
 	Project Notes	项目备注
 	Get Project Notes	获取项目备注
 	Edit Project Notes	编辑项目备注

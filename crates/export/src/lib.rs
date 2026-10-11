@@ -5,8 +5,8 @@
 //! are shared atomics so the UI (Export mode, header progress) and MCP can observe/cancel jobs.
 //!
 //! Video encoders implement [`VideoEncoder`]; codec crates register theirs with
-//! [`register_encoder`] (H.264, ProRes …). Built in: Motion-JPEG (MOV), PNG / TIFF / BMP
-//! sequences, GIF, WAV and AIFF.
+//! [`register_encoder`] (H.264, ProRes …). Built in: Motion-JPEG (MOV), PNG / TIFF / BMP / JPEG /
+//! Targa / DPX / OpenEXR sequences, GIF, WAV and AIFF.
 //!
 //! [`ExportSettings`] carries every Export-mode setting (frame size, rate, bitrate encoding, audio
 //! format, multiplexer, captions, effects, metadata) as serde data; [`presets`] defines the
@@ -15,6 +15,7 @@
 
 use std::io::Write;
 
+mod aac_out;
 mod audio_out;
 mod job;
 mod mxf_out;
@@ -22,6 +23,7 @@ mod pace;
 mod pcm;
 mod pipeline;
 pub mod presets;
+mod raster;
 pub mod settings;
 pub mod still;
 pub use audio_out::LoudnessReport;
@@ -96,12 +98,28 @@ pub enum Format {
     /// Numbered BMP stills.
     #[serde(rename = "bmp", alias = "BmpSequence")]
     BmpSequence,
+    /// Numbered JPEG stills (baseline, [`ExportSettings::quality`]).
+    #[serde(rename = "jpg", alias = "JpegSequence")]
+    JpegSequence,
+    /// Numbered Targa stills (uncompressed, 24-bit, or 32-bit with [`ExportSettings::alpha`]).
+    #[serde(rename = "tga", alias = "TgaSequence")]
+    TgaSequence,
+    /// Numbered DPX stills (SMPTE ST 268, 10-bit RGB, BT.709).
+    #[serde(rename = "dpx", alias = "DpxSequence")]
+    DpxSequence,
+    /// Numbered OpenEXR stills (half-float scene-linear RGB, RGBA with [`ExportSettings::alpha`]).
+    #[serde(rename = "exr", alias = "ExrSequence")]
+    ExrSequence,
     #[serde(rename = "gif", alias = "Gif")]
     Gif,
     #[serde(rename = "wav", alias = "Wav")]
     Wav,
     #[serde(rename = "aiff", alias = "Aiff")]
     Aiff,
+    /// AAC Audio: the mix alone, AAC-LC in an MPEG-4 audio file (`.m4a`), or a raw ADTS stream when
+    /// the path ends in `.aac`.
+    #[serde(rename = "aac", alias = "Aac")]
+    Aac,
     /// MXF OP1a (SMPTE ST 378): frame-wrapped DNxHR, ProRes or H.264 ([`MxfVideoCodec`]) + PCM.
     #[serde(rename = "mxf-op1a", alias = "MxfOp1a")]
     MxfOp1a,
@@ -126,9 +144,15 @@ impl Format {
             "png" | "pngsequence" => Format::PngSequence,
             "tif" | "tiff" | "tiffsequence" => Format::TiffSequence,
             "bmp" | "bmpsequence" => Format::BmpSequence,
+            // "jpeg" alone stays Motion-JPEG (QuickTime), as it always was
+            "jpg" | "jpgsequence" | "jpegsequence" => Format::JpegSequence,
+            "tga" | "targa" | "tgasequence" | "targasequence" => Format::TgaSequence,
+            "dpx" | "dpxsequence" => Format::DpxSequence,
+            "exr" | "openexr" | "exrsequence" | "openexrsequence" => Format::ExrSequence,
             "gif" | "animatedgif" => Format::Gif,
             "wav" | "waveform" | "waveformaudio" => Format::Wav,
             "aif" | "aiff" | "aifc" => Format::Aiff,
+            "aac" | "aacaudio" | "m4a" | "adts" => Format::Aac,
             _ => return None,
         })
     }
@@ -145,9 +169,14 @@ impl Format {
             Format::PngSequence => "png",
             Format::TiffSequence => "tiff",
             Format::BmpSequence => "bmp",
+            Format::JpegSequence => "jpg",
+            Format::TgaSequence => "tga",
+            Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aiff",
+            Format::Aac => "aac",
             Format::MxfOp1a => "mxf-op1a",
             Format::MxfOpAtom => "mxf-opatom",
         }
@@ -159,9 +188,14 @@ impl Format {
             Format::PngSequence => "png",
             Format::TiffSequence => "tif",
             Format::BmpSequence => "bmp",
+            Format::JpegSequence => "jpg",
+            Format::TgaSequence => "tga",
+            Format::DpxSequence => "dpx",
+            Format::ExrSequence => "exr",
             Format::Gif => "gif",
             Format::Wav => "wav",
             Format::Aiff => "aif",
+            Format::Aac => "m4a",
             Format::MxfOp1a | Format::MxfOpAtom => "mxf",
         }
     }
@@ -177,12 +211,30 @@ impl Format {
             Format::PngSequence => "PNG",
             Format::TiffSequence => "TIFF",
             Format::BmpSequence => "BMP",
+            Format::JpegSequence => "JPEG",
+            Format::TgaSequence => "Targa",
+            Format::DpxSequence => "DPX",
+            Format::ExrSequence => "OpenEXR",
             Format::Gif => "Animated GIF",
             Format::Wav => "Waveform Audio",
             Format::Aiff => "AIFF",
+            Format::Aac => "AAC Audio",
             Format::MxfOp1a => "MXF OP1a",
             Format::MxfOpAtom => "MXF OP-Atom",
         }
+    }
+    /// Numbered stills, one per frame ([`image_sequence_path`]).
+    pub fn is_image_sequence(self) -> bool {
+        matches!(
+            self,
+            Format::PngSequence
+                | Format::TiffSequence
+                | Format::BmpSequence
+                | Format::JpegSequence
+                | Format::TgaSequence
+                | Format::DpxSequence
+                | Format::ExrSequence
+        )
     }
     /// An MXF container format.
     pub fn is_mxf(self) -> bool {
@@ -192,6 +244,10 @@ impl Format {
     /// ([`register_format_probe`]).
     pub fn has_builtin_encoder(self) -> bool {
         !matches!(self, Format::Hevc | Format::Av1)
+    }
+    /// Sound without picture: Waveform Audio, AIFF and AAC Audio.
+    pub fn is_audio_only(self) -> bool {
+        matches!(self, Format::Wav | Format::Aiff | Format::Aac)
     }
     /// H.264 or H.265: MPEG-4 (or QuickTime) with AAC audio, set up with the same bitrate controls.
     pub fn is_h26x(self) -> bool {
@@ -205,7 +261,7 @@ impl Format {
     pub fn is_mp4_with(self, mux: Multiplexer) -> bool {
         self == Format::Av1 || (self.is_h26x() && mux == Multiplexer::Mp4)
     }
-    pub const ALL: [Format; 15] = [
+    pub const ALL: [Format; 20] = [
         Format::H264,
         Format::Hevc,
         Format::Av1,
@@ -216,9 +272,14 @@ impl Format {
         Format::PngSequence,
         Format::TiffSequence,
         Format::BmpSequence,
+        Format::JpegSequence,
+        Format::TgaSequence,
+        Format::DpxSequence,
+        Format::ExrSequence,
         Format::Gif,
         Format::Wav,
         Format::Aiff,
+        Format::Aac,
         Format::MxfOp1a,
         Format::MxfOpAtom,
     ];
@@ -244,7 +305,7 @@ pub struct ExportSettings {
     /// Output scale (1.0 = sequence frame size).
     pub scale: f32,
     pub include_audio: bool,
-    /// Quality 0–100 for lossy codecs.
+    /// Quality 0–100 for lossy codecs (Motion-JPEG, JPEG sequences).
     pub quality: u8,
     /// Target video bitrate (kbps) for bitrate-driven encoders.
     pub bitrate_kbps: u32,
@@ -272,9 +333,10 @@ pub struct ExportSettings {
     /// sequence's HDR space and signal it (VUI / `colr` / `mdcv` / `clli` / SEI).
     #[serde(default)]
     pub sdr: bool,
-    /// Keep the alpha channel in PNG and TIFF sequences and ProRes 4444 / 4444 XQ QuickTime movies
-    /// (straight alpha, Premiere's "Include Alpha Channel"). Off, every frame is flattened over
-    /// black (#160). Other formats ignore it.
+    /// Keep the alpha channel in PNG, TIFF, Targa and OpenEXR sequences and ProRes 4444 / 4444 XQ
+    /// QuickTime movies (straight alpha, Premiere's "Include Alpha Channel"; OpenEXR stores it
+    /// premultiplied, as the format defines). Off, every frame is flattened over black (#160).
+    /// Other formats ignore it.
     #[serde(default)]
     pub alpha: bool,
     /// Output frame size (None = Match Source: the sequence size times `scale`).
@@ -1629,11 +1691,32 @@ pub fn encode_png(rgba: Vec<u8>, w: u32, h: u32) -> Result<Vec<u8>> {
 }
 
 /// Encode one still of an image sequence (also Export Frame). PNG always carries the alpha
-/// channel it is given; `alpha` keeps it in TIFF too, which is otherwise written as RGB.
+/// channel it is given; `alpha` keeps it in TIFF, Targa and OpenEXR too, which are otherwise written
+/// as RGB.
+/// JPEG uses the default export quality ([`encode_still_with_quality`] picks another).
 pub fn encode_still(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool) -> Result<Vec<u8>> {
+    encode_still_with_quality(format, rgba, w, h, alpha, ExportSettings::default().quality)
+}
+
+/// [`encode_still`] with the JPEG quality (1–100; ignored by the lossless formats).
+pub fn encode_still_with_quality(format: Format, rgba: Vec<u8>, w: u32, h: u32, alpha: bool, quality: u8) -> Result<Vec<u8>> {
     let enc = |e: image::ImageError| ExportError::Encode(e.to_string());
     let mut out = std::io::Cursor::new(Vec::new());
     match format {
+        Format::JpegSequence => {
+            let rgb = raster::rgb(&rgba, w, h)?;
+            image::ImageEncoder::write_image(
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, quality.clamp(1, 100)),
+                &rgb,
+                w,
+                h,
+                image::ExtendedColorType::Rgb8,
+            )
+            .map_err(enc)?
+        }
+        Format::TgaSequence => return raster::tga(&rgba, w, h, alpha),
+        Format::DpxSequence => return raster::dpx(&rgba, w, h),
+        Format::ExrSequence => return raster::exr(&rgba, w, h, alpha),
         Format::PngSequence => {
             image::ImageEncoder::write_image(image::codecs::png::PngEncoder::new(&mut out), &rgba, w, h, image::ExtendedColorType::Rgba8).map_err(enc)?
         }
@@ -1670,6 +1753,7 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
     let cancelled = || progress.cancel.load(Ordering::Relaxed);
     let batch = rayon::current_num_threads().clamp(2, 16) as i64;
     let (bytes, nframes) = match settings.format {
+        Format::Aac => aac_out::export(project, seq, settings, range, sources, progress)?,
         Format::Wav | Format::Aiff => {
             let mut a = audio_out::AudioOut::new(project.clone(), seq, settings, range)?;
             let (ch, sr, bits) = (a.channels as u16, a.sr, settings.audio.bits);
@@ -1707,7 +1791,7 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
             }
             (n, frames)
         }
-        Format::PngSequence | Format::TiffSequence | Format::BmpSequence | Format::Gif => {
+        f if f.is_image_sequence() || f == Format::Gif => {
             let pipe = pipeline::Pipeline::new(project.clone(), seq, settings, false)?;
             let (f0, f1) = frame_span(pipe.rate, range);
             let count = (f1 - f0) as u64;
@@ -1742,7 +1826,7 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
                     let written: Vec<Result<u64>> = (f..end)
                         .into_par_iter()
                         .map(|fi| {
-                            let data = encode_still(settings.format, pipe.frame(fi, sources).0, w, h, settings.alpha)?;
+                            let data = encode_still_with_quality(settings.format, pipe.frame(fi, sources).0, w, h, settings.alpha, settings.quality)?;
                             write_output(settings, &pcm::image_sequence_path(&settings.path, (fi - f0) as u64, count), data)
                         })
                         .collect();
@@ -1761,7 +1845,7 @@ pub fn export(project: &Arc<Project>, seq: ItemId, settings: &ExportSettings, so
             }
             (total, count)
         }
-        Format::H264 | Format::Hevc | Format::Av1 | Format::ProRes | Format::DnxHr | Format::Apv | Format::Mjpeg | Format::MxfOp1a | Format::MxfOpAtom => {
+        _ => {
             // Handled by the stepped exporter above; reaching here would be a dispatch bug.
             return Err(ExportError::Unsupported(format!("{:?} must run as a stepped export", settings.format)));
         }
