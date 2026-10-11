@@ -2217,7 +2217,15 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 // as in Premiere Pro, a drag with the tool moves what it just selected
                 if resp.drag_started() {
                     let clips = app.session.state.selection.clone();
-                    (!clips.is_empty()).then_some(Drag::Move { clips, grab_tick: t, start_track: track, offset: Tick::ZERO, track_delta: 0, copy: mods.alt })
+                    (!clips.is_empty()).then_some(Drag::Move {
+                        clips,
+                        grab_tick: t,
+                        start_track: track,
+                        offset: Tick::ZERO,
+                        track_delta: 0,
+                        new_track: None,
+                        copy: mods.alt,
+                    })
                 } else {
                     None
                 }
@@ -2361,12 +2369,10 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     _ => 0,
                 };
                 // #1104: past the last track of the clips' kind, a new track (only for clips of one track)
-                let new_track = start_row
-                    .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(t, _)| t == start_track)))
-                    .and_then(|s| {
-                        let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
-                        new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
-                    });
+                let new_track = start_row.filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(t, _)| t == start_track))).and_then(|s| {
+                    let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
+                    new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
+                });
                 if let Some((_, band)) = new_track {
                     let (x0, x1) = (layout.x_of((first + offset).max(Tick::ZERO)), layout.x_of((last + offset).max(Tick::ZERO)));
                     let r = Rect::from_min_max(pos2(x0, band.min.y + 1.0), pos2(x1, band.max.y - 1.0));
