@@ -931,7 +931,7 @@ mod tests {
     }
 
     /// German covers at least the core menus (the Brazilian Portuguese entries, the top-level menus
-    /// and the native macOS Settings menu); every entry must still be a menu label.
+    /// and the native macOS app menu); every entry must still be a menu label.
     #[test]
     fn german_entries_cover_the_original_menu_catalog() {
         let app = crate::FilmcraftApp::new(filmcraft_engine::Session::default());
@@ -939,17 +939,18 @@ mod tests {
         let known = |text: &str| crate::menus::MENUS.contains(&text) || items.iter().any(|it| it.label == text || it.path.iter().any(|p| p == text));
         let (entries, _) = catalog::parse_entries(include_str!("de.tsv"));
         for (_, en, _) in entries {
-            assert!(known(&en) || en == "Settings", "not a menu label: {en}");
+            assert!(known(&en) || crate::menus::NATIVE_APP_MENU.contains(&en.as_str()), "not a menu label: {en}");
         }
         let (portuguese, _) = catalog::parse_entries(include_str!("pt-br.tsv"));
         for (_, en, _) in portuguese {
             assert!(Language::De.has(&en), "missing German menu label: {en}");
         }
         // "Clip" and "Audio" are the same word in German, so check for an entry, not a change
-        for en in crate::menus::MENUS.into_iter().chain(["Audio", "Settings"]) {
+        for en in crate::menus::MENUS.into_iter().chain(["Audio"]).chain(crate::menus::NATIVE_APP_MENU) {
             assert!(Language::De.has(en), "untranslated German menu: {en}");
         }
         assert_eq!(Language::De.tr("Settings"), "Voreinstellungen");
+        assert_eq!(Language::De.tr("Quit FilmCraft"), "FilmCraft beenden");
     }
 
     /// French covers the whole interface (the Spanish catalog's entries and the native macOS
