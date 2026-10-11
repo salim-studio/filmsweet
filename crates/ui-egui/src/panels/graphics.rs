@@ -1012,7 +1012,8 @@ fn text_edit(app: &mut FilmcraftApp, ui: &mut egui::Ui, v: &LayerView, mut ed: G
     };
     for ev in events {
         match ev {
-            egui::Event::Text(s) | egui::Event::Paste(s) => {
+            // an input method (Chinese, Japanese, Korean) hands over its finished text as a commit (#1083)
+            egui::Event::Text(s) | egui::Event::Paste(s) | egui::Event::Ime(egui::ImeEvent::Commit(s)) => {
                 let s: String = s.chars().filter(|c| !c.is_control() || *c == '\n').collect();
                 if s.is_empty() {
                     continue;
