@@ -3564,3 +3564,8 @@
 	Export the labels to a preset file…	将标签导出为预设文件…
 	Show the presets folder	显示预设文件夹
 	Delete this preset	删除此预设
+	Opens in your web browser: {url}	在网页浏览器中打开：{url}
+	Saves this session's log and shows it in your file manager (no web page).	保存本次会话的日志并在文件管理器中显示（不打开网页）。
+	Shows a report on this computer in a FilmCraft window (no web page).	在 FilmCraft 窗口中显示本机的报告（不打开网页）。
+	Shows the version, community links and credits in a FilmCraft window (no web page).	在 FilmCraft 窗口中显示版本、社区链接和致谢（不打开网页）。
+	Couldn't open your web browser ({error}). The address is copied to the clipboard: {url}	无法打开网页浏览器（{error}）。地址已复制到剪贴板：{url}
