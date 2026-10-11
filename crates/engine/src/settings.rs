@@ -100,6 +100,8 @@ pub struct AppearancePrefs {
     pub dark_theme: String,
     /// The theme shown in light mode: `light`.
     pub light_theme: String,
+    /// Theme shortcuts for the header context menu.
+    pub favorite_themes: Vec<String>,
     /// "Accessible color contrast": brighter secondary text and borders.
     pub accessible_contrast: bool,
     /// Highlight (accent) colour of selections, focus and primary buttons (`#rrggbb`).
@@ -116,6 +118,7 @@ impl Default for AppearancePrefs {
             appearance_mode: "dark".into(),
             dark_theme: "darkest".into(),
             light_theme: "light".into(),
+            favorite_themes: Vec::new(),
             accessible_contrast: false,
             highlight_color: DEFAULT_HIGHLIGHT.into(),
             ui_scale: "auto".into(),
@@ -1152,6 +1155,18 @@ pub fn field(key: &str) -> Option<Field> {
 
 /// Check a value for `key` against the schema (choices, colours). Ranges are clamped later.
 pub fn validate(key: &str, v: &Value) -> std::result::Result<(), String> {
+    if key == "appearance.favoriteThemes" {
+        let items = v.as_array().ok_or("favorite themes must be a list")?;
+        let mut seen = Vec::new();
+        for item in items {
+            let id = item.as_str().ok_or("favorite theme ids must be strings")?;
+            if !LIGHT_THEMES.iter().chain(DARK_THEMES).any(|(theme, _)| *theme == id) || seen.contains(&id) {
+                return Err(format!("unknown or duplicate favorite theme `{id}`"));
+            }
+            seen.push(id);
+        }
+        return Ok(());
+    }
     let kind = match field(key) {
         Some(f) => f.kind,
         None if is_unit_key(key) => Kind::Choice(DURATION_UNITS),
@@ -1184,6 +1199,11 @@ pub fn is_unit_key(key: &str) -> bool {
 /// Repair a preferences value in place against the schema: unknown choices and bad colours go back
 /// to their defaults, numbers are clamped to their ranges.
 pub fn sanitize(v: &mut Value, defaults: &Value) {
+    if let Some(slot) = v.pointer_mut("/appearance/favoriteThemes")
+        && validate("appearance.favoriteThemes", slot).is_err()
+    {
+        *slot = json!([]);
+    }
     for (_, f) in fields() {
         if let Kind::Duration { unit_key } = f.kind {
             let ptr = format!("/{}", unit_key.replace('.', "/"));
