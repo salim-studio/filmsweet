@@ -57,8 +57,9 @@ pub fn sniff(b: &[u8]) -> bool {
 }
 
 /// Audio packet start positions in source sample frames at `rate`: the running total of the sample
-/// durations, except that packets which all decode to the same length (AAC, MPEG audio, AC-3) run
-/// on from one another, resynchronising to the total only across gaps of more than half a packet.
+/// durations, except that packets which all decode to the same length (AAC, MPEG audio, AC-3,
+/// E-AC-3) run on from one another, resynchronising to the total only across gaps of more than half
+/// a packet.
 /// A remux from Matroska (OBS's) carries the millisecond rounding of its timestamps into the
 /// durations: 1008, 1008, 1056… for 1024-sample AAC frames at 48 kHz (see
 /// [`crate::audio::contiguous_starts`]).
@@ -81,6 +82,7 @@ fn audio_starts(file: &Mp4File, bytes: &crate::Src, ti: usize, rate: u32) -> Vec
         Some(CodecConfig::Aac(a)) => fixed_packet_samples(FixedFrames::Aac(&a.asc), &[], rate),
         Some(CodecConfig::Mp3) => fixed_packet_samples(FixedFrames::MpegAudio, &first(), rate),
         Some(CodecConfig::Ac3 { .. }) => fixed_packet_samples(FixedFrames::Ac3, &first(), rate),
+        Some(CodecConfig::Eac3 { .. }) => fixed_packet_samples(FixedFrames::Eac3, &first(), rate),
         _ => None,
     };
     let Some(frame) = frame else { return stamps };
@@ -545,7 +547,18 @@ fn audio_stream_info(t: &filmcraft_isobmff::Track, bytes: &crate::Src) -> Option
         CodecConfig::Opus(o) => (crate::audio::OPUS_RATE, (o.output_channels as u32).max(1), None),
         _ => (if ap.sample_rate > 0.0 { ap.sample_rate as u32 } else { t.timescale }, ap.channels.max(1), None),
     };
-    Some(AudioStreamInfo { sample_rate: rate.max(1), channels: ch.max(1), codec: codec_label(&entry.codec), bits_per_sample: bits })
+    let codec = match &entry.codec {
+        // these entries name no layer (ffmpeg stores MP2 as `mp4a` + 0x6B): the first frame does
+        CodecConfig::Mp3 => {
+            let head = t.samples.first().and_then(|s| filmcraft_media::reader::read_range(&*bytes.0, s.offset, (s.size as usize).min(4)).ok());
+            match head.as_deref().and_then(crate::audio::mpeg_audio_layer) {
+                Some(1 | 2) => "MPEG Audio".into(),
+                _ => codec_label(&entry.codec),
+            }
+        }
+        c => codec_label(c),
+    };
+    Some(AudioStreamInfo { sample_rate: rate.max(1), channels: ch.max(1), codec, bits_per_sample: bits })
 }
 
 fn codec_label(c: &CodecConfig) -> String {

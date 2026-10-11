@@ -24,8 +24,14 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             format!("{} ({})", app.ui.language.tr(current.label()), current.shortcut())
         };
         let resp = ui.interact(r, egui::Id::new(("tool", format!("{:?}", group[0]))), Sense::click()).on_hover_text(tip);
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, resp.enabled(), app.ui.tool == current, current.label()));
         for tl in &group {
-            app.auto.add(&format!("tools.{tl:?}"), r, tl.label());
+            if *tl == current {
+                app.auto.add_response(&format!("tools.{tl:?}"), &resp, tl.label());
+            } else {
+                // Hidden group alternatives remain click aliases, not separate focus targets.
+                app.auto.add(&format!("tools.{tl:?}"), r, tl.label());
+            }
         }
         let active = group.contains(&app.ui.tool);
         if active {
@@ -34,6 +40,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             ui.painter().rect_filled(r, 4.0, t.hover);
         }
         icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(17.0, 17.0)), current.icon(), if active { egui::Color32::WHITE } else { t.icon });
+        if resp.has_focus() {
+            ui.painter().rect_stroke(r.shrink(2.0), 4.0, egui::Stroke::new(1.5, t.focus), egui::StrokeKind::Inside);
+        }
         if group.len() > 1 {
             let c = r.right_bottom() - vec2(3.0, 3.0);
             ui.painter().add(egui::Shape::convex_polygon(vec![c, c - vec2(5.0, 0.0), c - vec2(0.0, 5.0)], t.text_dim, egui::Stroke::NONE));
@@ -64,7 +73,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             egui::Popup::menu(&resp).open_memory(command).close_behavior(close_behavior).show(|ui| {
                 for tl in &group {
                     let row = ui.selectable_label(app.ui.tool == *tl, format!("{}   {}", app.ui.language.tr(tl.label()), tl.shortcut()));
-                    app.auto.add(&format!("tools.select.{tl:?}"), row.rect, tl.label());
+                    app.auto.add_response(&format!("tools.select.{tl:?}"), &row, tl.label());
                     if row.clicked() {
                         app.ui.tool = *tl;
                         ui.close();

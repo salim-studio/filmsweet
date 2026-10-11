@@ -106,7 +106,7 @@ agent-hours to close the area to Premiere, sequential.
 | Area | Weight | Breadth | Ready | Hours | Evidence | Detail |
 |---|---|---|---|---|---|---|
 | Editing, timeline, trimming, multicam | 20% | ~90% | ~70% | 80–140 | Edit algebra, trim modes, Trim Monitor, multicam with audio sync, Premiere default keyboard (143 commands), Source playback and range dragging (10-08). Open: ripple-delete of a gap by column (#668), Backspace on gaps (#648), clip stretching (#653), deselect on empty space (#683), new tracks by dragging media (#483), Escape cancelling drags (#580), time remapping (#510), effects on a whole track (#623) | [ui-parity.md](ui-parity.md) |
-| Effects and transitions | 12% | 100% (measured) | ~60% | 80–140 | Every effect exists; Warp Stabilizer is 2-D, Morph Cut and Auto Reframe approximate, optical flow renders as frame blending. 34 effect ids run on the GPU against ~82 of Premiere's ~92 marked Accelerated. No Object Mask (26.0, AI). Transform shutter angle adds no motion blur (#415); Ultra Key setting (#458) | [hardware-parity.md](hardware-parity.md) |
+| Effects and transitions | 12% | 100% (measured) | ~60% | 80–140 | Every effect exists; Warp Stabilizer is 2-D, Auto Reframe approximate, Morph Cut morphs with optical flow but without face tracking (#805); Optical Flow time interpolation is motion compensated on the CPU (#780). 34 effect ids run on the GPU against ~82 of Premiere's ~92 marked Accelerated. No Object Mask (26.0, AI). | [hardware-parity.md](hardware-parity.md) |
 | Media import and codecs | 12% | ~75% | ~60% | 150–250 | Own bit-exact decoders for H.264, HEVC, VP9, AV1, ProRes, DNx, APV, MPEG-2, AAC, AC-3, Opus. But H.264 only 8-bit 4:2:0 and HEVC no 4:2:2 in software (most 10-bit cameras, #626); no camera RAW (R3D, ARRIRAW, BRAW, Sony RAW, Canon RAW, ProRes RAW, #345, #383); no E-AC-3 (#647), AVI (#598), WMV, DV, XAVC / P2 metadata; Sony start timecode (#460); WebM black (#432) | [codec-parity.md](codec-parity.md), [file-format-parity.md](file-format-parity.md) |
 | Audio | 10% | ~88% | ~65% | 50–90 | Mixer graph, automation, all 53 effects, Essential Sound, 5.1, voice-over, Remix, multi-stream container audio (#361). Device and playback reports: crackle / cut-outs (#336, #410, #602, #605, #617); Enhance Speech is DSP, not a model; ALSA fallback fixed (#254) | |
 | Panels and UI fidelity | 10% | ~88% | ~60% | 120–200 | All main panels. Missing: on-screen transform handles in the Program monitor (#639), Effect Controls keyframe zoom / divider / row lines (#640–#645), docking rearrangement (#493), multi-monitor windows (#466), filmstrip thumbnails (#614), marquee in Project panel (#578) | [ui-parity.md](ui-parity.md) |
@@ -139,8 +139,8 @@ Evidence for the cross-cutting rows:
 
 - **Hardware ~45%.** Hardware decode exists on all three desktop OSs (VideoToolbox; Media
   Foundation / D3D11 incl. VP9 and AV1; VA-API and NVDEC for H.264 / HEVC on Linux). Hardware
-  encode: VideoToolbox H.264 / HEVC 8-bit; NVENC H.264 and HEVC incl. Main 10 HDR (Windows,
-  Linux). Missing against Premiere: Intel Quick Sync and AMD encoders, 10-bit HEVC on macOS,
+  encode: VideoToolbox H.264 / HEVC 8-bit; NVENC H.264 (Windows, Linux) and HEVC incl. Main 10 HDR
+  (Windows). Missing against Premiere: Intel Quick Sync and AMD encoders, 10-bit HEVC on macOS,
   ProRes hardware, zero-copy upload, ~48 of Premiere's accelerated effects, external video I/O,
   control surfaces. Detail: [hardware-parity.md](hardware-parity.md).
 - **Performance ~55%.** 4K H.264 / HEVC play with no dropped frames with hardware decoding (M4
