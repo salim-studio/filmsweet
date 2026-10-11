@@ -1039,3 +1039,20 @@ fn marquee_selects_cards_in_freeform_view() {
     assert_eq!(selection(&mut d), sorted(vec![i0, i1]));
     assert!(!d.app().session.project.item(ItemId(i0)).unwrap().metadata.contains_key(FREEFORM_POS), "the marquee moved no card");
 }
+
+/// The Project selection can hold a bin beside items (one id space). Dragging the items still
+/// places them: the bin is left out instead of failing the whole drop.
+#[test]
+fn a_bin_in_the_selection_does_not_stop_the_items_being_placed() {
+    let mut d = Driver::demo();
+    let (bin, items) = d.footage();
+    d.exec("file.newSequence", json!({"name": "Drop", "video": 2, "audio": 2}));
+    d.ok("ui.menu.invoke", json!({"id": "projectPanel.openBin", "params": {"bin": bin, "how": "inPlace"}}));
+    d.wait_for(&format!("project.item.{}", items[0]));
+    d.exec("project.select", json!({"items": [items[0], bin, items[1]]}));
+    d.frames(2);
+    d.ok("ui.drag", json!({"from": {"id": format!("project.item.{}", items[0])}, "to": {"id": "timeline.tracks", "fx": 0.3, "fy": 0.1}, "steps": 16}));
+    d.frames(4);
+    let clips = d.app().session.active_sequence().map(|q| q.video_tracks.iter().map(|t| t.items.len()).sum::<usize>()).unwrap_or(0);
+    assert_eq!(clips, 2, "status: {}", d.app().ui.status);
+}
