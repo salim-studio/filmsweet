@@ -37,7 +37,8 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .pivot(egui::Align2::CENTER_CENTER)
+                .default_pos(crate::widgets::dialog_center(ctx))
                 .show(ctx, |ui| about(app, ui));
             if crate::widgets::escape_closes(ctx) {
                 open = false;
@@ -112,7 +113,8 @@ fn audio_gain(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .id(egui::Id::new("Audio Gain"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.add_space(6.0);
             egui::Grid::new("audio-gain").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
@@ -200,7 +202,8 @@ fn add_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .collapsible(false)
         .resizable(false)
         .default_width(320.0)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             // everything spans the width the window has: no empty band beside the fields
             ui.set_width(ui.available_width());
@@ -329,7 +332,8 @@ fn delete_tracks(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .id(egui::Id::new("Delete Tracks"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.set_min_width(300.0);
             for (kind, title, delete, on, target, list) in [

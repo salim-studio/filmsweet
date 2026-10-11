@@ -803,9 +803,13 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
         GuideDialog::SaveTemplate { .. } => ("Save Guides as Template", tl!("Save Guides as Template")),
         GuideDialog::Manage { .. } => ("Manage Guides", tl!("Manage Guides")),
     };
-    egui::Window::new(shown).id(egui::Id::new(title)).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| match &mut d {
+    egui::Window::new(shown)
+        .id(egui::Id::new(title))
+        .collapsible(false)
+        .resizable(false)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
+        .show(ctx, |ui| match &mut d {
             GuideDialog::Add { vertical, position, source } => {
                 let m = if *source { "source" } else { "program" };
                 ui.horizontal(|ui| {
@@ -893,8 +897,7 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     close |= r.clicked();
                 });
             }
-        },
-    );
+        });
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }
