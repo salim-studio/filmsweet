@@ -184,7 +184,7 @@ fn native_options(agent: bool) -> eframe::NativeOptions {
 /// Creates the app once eframe has its window and graphics device; sets `created` when it runs,
 /// and confirms the graphics mode once two frames have painted.
 fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<AtomicBool>) -> eframe::AppCreator<'static> {
-    let Launch { control_port, files, demo, startup_flag, recover, data_dir } = launch;
+    let Launch { control_port, control_input_only, files, demo, startup_flag, recover, data_dir } = launch;
     Box::new(move |cc| {
         created.store(true, Ordering::Relaxed);
         let confirmed = AtomicBool::new(false);
@@ -321,7 +321,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         }
         if let Some(port) = control_port {
             let rx = control_server::start(port, cc.egui_ctx.clone());
-            app = app.with_control(rx);
+            app = if control_input_only { app.with_control_input_only(rx) } else { app.with_control(rx) };
         }
         Ok(Box::new(app))
     })
