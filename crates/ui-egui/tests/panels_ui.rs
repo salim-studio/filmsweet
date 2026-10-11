@@ -463,3 +463,54 @@ fn scopes_of_colour_bars() {
         assert!(angles.iter().any(|x| (x - a).abs() < 1.5), "{} at {a:.1}° not in {angles:?}", t.name);
     }
 }
+
+/// #1075: child backgrounds must not cover the focus outline shared with Program. Check the
+/// rendered primitives, including Media Browser's parent group, in both requested themes.
+#[test]
+fn focused_panel_outline_is_not_covered_by_child_backgrounds() {
+    fn rectangles<'a>(shape: &'a egui::Shape, clip: egui::Rect, out: &mut Vec<(&'a egui::epaint::RectShape, egui::Rect)>) {
+        match shape {
+            egui::Shape::Rect(rect) => out.push((rect, clip)),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| rectangles(shape, clip, out)),
+            _ => {}
+        }
+    }
+    let mut d = Driver::demo();
+    for theme in ["dark", "light"] {
+        d.ok("ui.set", json!({"theme": theme}));
+        for panel in ["Program", "Text", "LumetriScopes", "EssentialSound", "Timeline", "TextToSpeech", "MediaBrowser"] {
+            d.ok("ui.panel.show", json!({"panel": panel}));
+            d.ok("ui.set", json!({"focused": panel}));
+            d.frames(3);
+            d.snapshot(&format!("focus-{theme}-{panel}"), None);
+            let mut rects = Vec::new();
+            for shape in &d.harness.output().shapes {
+                rectangles(&shape.shape, shape.clip_rect, &mut rects);
+            }
+            let focus = d.harness.state().tokens.focus;
+            let outlines: Vec<_> = rects
+                .iter()
+                .enumerate()
+                .filter(|(_, (r, _))| r.stroke.color == focus && r.stroke.width == 1.0 && r.rect.width() > 100.0 && r.rect.height() > 80.0)
+                .collect();
+            assert_eq!(outlines.len(), 1, "{theme} {panel}: one focus outline for the whole parent group");
+            let (at, (outline, _)) = outlines[0];
+            let bounds = outline.rect;
+            let strips = [
+                egui::Rect::from_min_max(bounds.min, egui::pos2(bounds.max.x, bounds.min.y + 1.0)),
+                egui::Rect::from_min_max(egui::pos2(bounds.min.x, bounds.max.y - 1.0), bounds.max),
+                egui::Rect::from_min_max(bounds.min, egui::pos2(bounds.min.x + 1.0, bounds.max.y)),
+                egui::Rect::from_min_max(egui::pos2(bounds.max.x - 1.0, bounds.min.y), bounds.max),
+            ];
+            for (child, clip) in &rects[at + 1..] {
+                if child.fill.a() != 0 {
+                    let painted = child.rect.intersect(*clip);
+                    assert!(
+                        strips.iter().all(|edge| !edge.intersect(painted).is_positive()),
+                        "{theme} {panel}: a later child background {painted:?} covers the focus outline {bounds:?}"
+                    );
+                }
+            }
+        }
+    }
+}
