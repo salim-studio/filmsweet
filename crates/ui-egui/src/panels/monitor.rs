@@ -282,11 +282,17 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which)
         let c = if app.playback.meter.counts().1 > 0 { t.render_yellow } else { t.render_green };
         ui.painter().circle_filled(pos2(video_area.min.x + 10.0, video_area.min.y + 10.0), 4.0, c);
     }
+    // A click on the Program monitor around the picture lets go of what is selected on it (#683;
+    // in the picture the overlays do that). Under the picture and the overlays, so they come first.
+    if which == Which::Program && show_picture && ui.interact(video_area, egui::Id::new((prefix, "background")), Sense::click()).clicked() {
+        crate::panels::graphics::deselect_on_monitor(app, ui);
+    }
     // Click/drag in the picture: the Hand tool pans a magnified picture, otherwise focus.
     let pic_resp = ui.interact(pic, egui::Id::new((prefix, "pic")), if show_picture { Sense::click_and_drag() } else { Sense::hover() });
     app.auto.add(&format!("{prefix}.picture"), pic.intersect(video_area), "picture");
-    if show_picture {
-        monitor_view::pan_input(app, ui, which, video_area, pic);
+    // (Comparison View always fits both frames)
+    if show_picture && !compare {
+        monitor_view::zoom_pan_input(app, ui, which, video_area, pic, display_w, ppp);
     }
     if which == Which::Program && show_picture {
         eyedropper(app, ui, &pic_resp, pic, target, rate, time);
@@ -713,6 +719,19 @@ fn mini_timeline(
     }
 }
 
+// A hidden transport action is still available through its regular shortcut/menu.
+fn transport_visible(hidden: &[String], command: &str) -> bool {
+    !hidden.iter().any(|id| id == command)
+}
+
+fn set_transport_visible(hidden: &mut Vec<String>, command: &str, visible: bool) {
+    if visible {
+        hidden.retain(|id| id != command);
+    } else if transport_visible(hidden, command) {
+        hidden.push(command.to_owned());
+    }
+}
+
 fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which) {
     let t = app.tokens;
     let src = which == Which::Source;
@@ -747,11 +766,53 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
             (Icon::Proxy, "media.toggleProxies", tl!("Toggle Proxies")),
         ]
     };
+    let mut buttons = buttons;
+    if !src {
+        buttons.push((Icon::Loop, "playback.loop", tl!("Loop")));
+    }
+    let hidden = monitor_view::view(app, which).transport_hidden.clone();
+    let all_buttons = buttons.clone();
+    buttons.retain(|(_, command, _)| transport_visible(&hidden, command));
     let prefix = if src { "source" } else { "program" };
-    let available = (row.width() - 16.0).max(0.0);
+    if row.width() >= 30.0 {
+        // Keep the existing button-editor affordance only when it has its own space.
+        // Customize this monitor's transport separately from the other monitor.
+        let r = Rect::from_min_size(pos2(row.max.x - 30.0, row.min.y + 4.0), vec2(22.0, 22.0));
+        let resp = ui.interact(r, egui::Id::new((prefix, "btn-editor")), Sense::click()).on_hover_text(tl!("Button Editor"));
+        app.auto.add(&format!("{prefix}.transport.editor"), r, "Button Editor");
+        icons::paint(ui.painter(), r.shrink(5.0), Icon::Plus, if resp.hovered() { t.tab_text_active } else { t.text_dim });
+        let mut edited_hidden = hidden.clone();
+        let editor_width = (ui.ctx().content_rect().width() - 10.0).clamp(1.0, 225.0);
+        let editor_height = (ui.ctx().content_rect().height() - 16.0).max(1.0);
+        egui::Popup::menu(&resp).width(editor_width).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            ui.set_width(editor_width);
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+            let scroll = egui::ScrollArea::vertical().id_salt((prefix, "editor-scroll")).max_height(editor_height).show(ui, |ui| {
+                for &(_, cmd, tip) in &all_buttons {
+                    let mut visible = transport_visible(&edited_hidden, cmd);
+                    let checkbox = ui.checkbox(&mut visible, tip);
+                    app.auto.add(&format!("{prefix}.transport.editor.{cmd}"), checkbox.rect, tip);
+                    if checkbox.changed() {
+                        set_transport_visible(&mut edited_hidden, cmd, visible);
+                    }
+                }
+                ui.separator();
+                let reset = ui.button(tl!("Reset"));
+                app.auto.add(&format!("{prefix}.transport.editor.reset"), reset.rect, "Reset");
+                if reset.clicked() {
+                    edited_hidden = crate::state::MonitorView::default().transport_hidden;
+                }
+            });
+            app.auto.add(&format!("{prefix}.transport.editor.scroll"), scroll.inner_rect, "Button editor");
+        });
+        if edited_hidden != hidden {
+            monitor_view::view_mut(app, which).transport_hidden = edited_hidden;
+        }
+    }
+    let available = (row.width() - 46.0).max(0.0);
     let widths = vec![28.0; buttons.len()];
     let Some(fit) = craft_ui::layout::fit_toolbar(&widths, available, 2.0, 28.0) else {
-        ui.scope_builder(egui::UiBuilder::new().max_rect(row), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_max(row.min, pos2((row.right() - 30.0).max(row.left()), row.bottom()))), |ui| {
             egui::ScrollArea::horizontal().id_salt((prefix, "transport-scroll")).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     for (icon, command, label) in &buttons {
@@ -766,7 +827,7 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
         return;
     };
     let total = fit.shown.len() as f32 * 30.0 - 2.0 + if fit.overflow.is_empty() { 0.0 } else { 30.0 };
-    let mut x = row.center().x - total.max(28.0) / 2.0;
+    let mut x = row.center().x - 15.0 - total.max(28.0) / 2.0;
     for (index, _) in &fit.shown {
         let Some((icon, command, label)) = buttons.get(*index) else { continue };
         let rect = Rect::from_min_size(pos2(x, row.min.y + 2.0), vec2(28.0, 26.0));
@@ -806,11 +867,6 @@ fn transport(app: &mut FilmcraftApp, ui: &mut egui::Ui, row: Rect, which: Which)
                 }
             }
         });
-    } else if row.right() - x >= 30.0 {
-        // Keep the existing button-editor affordance only when it has its own space.
-        let rect = Rect::from_min_size(pos2(row.max.x - 30.0, row.min.y + 4.0), vec2(22.0, 22.0));
-        let response = ui.interact(rect, egui::Id::new((prefix, "btn-editor")), Sense::click()).on_hover_text(tl!("Button Editor"));
-        icons::paint(ui.painter(), rect.shrink(5.0), Icon::Plus, if response.hovered() { t.tab_text_active } else { t.text_dim });
     }
 }
 
@@ -850,6 +906,40 @@ fn invoke_transport(app: &mut FilmcraftApp, ctx: &egui::Context, which: Which, c
     }
 }
 
+/// The Source panel menu's clips (#313): the recently opened clips, the shown one ticked, to
+/// switch between, then Close / Close All. Returns whether the menu is done.
+pub fn source_panel_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui) -> bool {
+    let mut done = false;
+    let current = app.session.state.source_item;
+    let recent: Vec<(u64, String)> =
+        app.session.state.source_history.iter().filter_map(|i| app.session.project.item(*i).map(|it| (i.0, it.name.clone()))).collect();
+    for (id, name) in &recent {
+        let shown = current.is_some_and(|c| c.0 == *id);
+        let r = ui.button(if shown { format!("✓ {name}") } else { name.clone() });
+        app.auto.add(&format!("panel.menu.Source.recent.{id}"), r.rect, name);
+        if r.clicked() {
+            if !shown && let Err(e) = app.session.execute("source.open", json!({"item": id})) {
+                app.ui.status = e.to_string();
+            }
+            done = true;
+        }
+    }
+    if !recent.is_empty() {
+        ui.separator();
+    }
+    for (cmd, id, label) in [("source.close", "close", tl!("Close")), ("source.closeAll", "closeAll", tl!("Close All"))] {
+        let r = ui.add_enabled(current.is_some(), egui::Button::new(label));
+        app.auto.add(&format!("panel.menu.Source.{id}"), r.rect, label);
+        if r.clicked() {
+            if let Err(e) = app.session.execute(cmd, json!({})) {
+                app.ui.status = e.to_string();
+            }
+            done = true;
+        }
+    }
+    done
+}
+
 fn source_nav(app: &mut FilmcraftApp, cmd: &str) {
     let Some(item) = app.session.state.source_item else { return };
     let Some(v) = filmcraft_engine::clip_ops::source_view(&app.session, item) else { return };
@@ -872,6 +962,21 @@ mod tests {
 
     fn flat(w: usize, h: usize, rgba: [u8; 4]) -> Rgba {
         Rgba { w, h, px: rgba.iter().copied().cycle().take(w * h * 4).collect() }
+    }
+
+    #[test]
+    fn button_editor_updates_visibility_without_affecting_other_monitor() {
+        let mut program = crate::state::MonitorView::default().transport_hidden;
+        let source = program.clone();
+        assert!(!transport_visible(&program, "playback.loop"));
+        set_transport_visible(&mut program, "playback.loop", true);
+        set_transport_visible(&mut program, "playback.loop", true);
+        assert!(transport_visible(&program, "playback.loop"));
+        assert!(program.is_empty(), "enabling twice must not leave hidden entries");
+        set_transport_visible(&mut program, "playhead.stepForward", false);
+        set_transport_visible(&mut program, "playhead.stepForward", false);
+        assert_eq!(program, vec!["playhead.stepForward"]);
+        assert!(transport_visible(&source, "playhead.stepForward"));
     }
 
     #[test]
