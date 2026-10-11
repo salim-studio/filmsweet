@@ -31,15 +31,39 @@ pub fn url_for(command: &str) -> Option<&'static str> {
     ALL.iter().find(|(id, _, _)| *id == command).map(|(_, _, u)| *u)
 }
 
+/// What a Help menu item does, shown when the pointer rests on it: the address a link opens in
+/// the web browser, or that the item stays inside FilmCraft.
+pub fn menu_hint(command: &str) -> Option<String> {
+    let url = if command == "help.filmcraftHelp" { Some(crate::panels::keyboard::HELP_URL) } else { url_for(command) };
+    if let Some(url) = url {
+        return Some(tlf!("Opens in your web browser: {url}", url));
+    }
+    Some(
+        match command {
+            "help.revealLogFiles" => tl!("Saves this session's log and shows it in your file manager (no web page)."),
+            "help.systemCompatibilityReport" => tl!("Shows a report on this computer in a FilmCraft window (no web page)."),
+            "app.about" => tl!("Shows the version, community links and credits in a FilmCraft window (no web page)."),
+            _ => return None,
+        }
+        .to_string(),
+    )
+}
+
 /// Open `url` in the system browser (a new tab on the web). The desktop host's
 /// [`HostHooks::open_url`](crate::HostHooks::open_url) opens it; without the hook, or when it
 /// fails, it goes through `ctx.open_url`, which only does something on the web: the native egui
-/// backend is built without its `links` feature, so there it would only log (#642).
+/// backend is built without its `links` feature, so there it would only log (#642). When the
+/// host can't open a browser, the address goes to the clipboard and the status bar says so, so
+/// the click is never silently lost.
 pub fn open(app: &mut crate::FilmcraftApp, ctx: &egui::Context, url: &str) {
     if let Some(f) = app.hooks.open_url.as_mut() {
         match f(url) {
             Ok(()) => return,
-            Err(e) => log::warn!("can't open {url} in the browser: {e}"),
+            Err(error) => {
+                log::warn!("can't open {url} in the browser: {error}");
+                ctx.copy_text(url.to_string());
+                app.ui.status = tlf!("Couldn't open your web browser ({error}). The address is copied to the clipboard: {url}", error, url);
+            }
         }
     }
     ctx.open_url(egui::OpenUrl::new_tab(url));
@@ -87,5 +111,31 @@ mod tests {
         let fallback: Vec<String> =
             ctx.output(|o| o.commands.iter().filter_map(|c| if let egui::OutputCommand::OpenUrl(u) = c { Some(u.url.clone()) } else { None }).collect());
         assert_eq!(fallback, [ISSUES]);
+        // ... and keeps the address at hand: copied, and named in the status bar with the reason
+        let copied: Vec<String> =
+            ctx.output(|o| o.commands.iter().filter_map(|c| if let egui::OutputCommand::CopyText(t) = c { Some(t.clone()) } else { None }).collect());
+        assert_eq!(copied, [ISSUES]);
+        assert!(app.ui.status.contains(ISSUES) && app.ui.status.contains("no browser"), "{}", app.ui.status);
+    }
+
+    #[test]
+    fn help_menu_items_say_where_they_go() {
+        // links name their address; the other Help items say they stay inside FilmCraft
+        for (id, _, url) in ALL {
+            let hint = menu_hint(id).unwrap();
+            assert!(hint.contains(url) && hint.contains("web browser"), "{id}: {hint}");
+        }
+        assert!(menu_hint("help.filmcraftHelp").unwrap().contains(crate::panels::keyboard::HELP_URL));
+        let help_items: Vec<String> = crate::menus::menu_items(&crate::FilmcraftApp::new(filmcraft_engine::Session::default()))
+            .into_iter()
+            .filter(|it| it.path.first().map(String::as_str) == Some("Help"))
+            .map(|it| it.id)
+            .collect();
+        assert!(help_items.len() >= ALL.len() + 3, "{help_items:?}");
+        for id in &help_items {
+            let hint = menu_hint(id).unwrap_or_else(|| panic!("{id} has no hover hint"));
+            assert!(hint.contains("web browser") || hint.contains("no web page"), "{id}: {hint}");
+        }
+        assert_eq!(menu_hint("edit.undo"), None);
     }
 }
