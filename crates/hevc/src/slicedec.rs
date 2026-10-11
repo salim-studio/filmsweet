@@ -1446,11 +1446,17 @@ impl<'a, S: Sample> SliceDecoder<'a, S> {
             SliceType::I => false,
         };
         let bi = f.pred(0) && f.pred(1);
+        let pwt = self.sh.pwt.as_ref().filter(|_| weighted);
         for c in 0..3 {
             let (x, y, bw, bh, bd) = if c == 0 { (xp, yp, w, h, self.pic.bd_y) } else { (xp / 2, yp / 2, w / 2, h / 2, self.pic.bd_c) };
+            // Explicit weights equal to the default ones (weight 2^denom and offset 0 for every
+            // list used, as signalled for most slices of a weighted-prediction stream) give exactly
+            // the default prediction: with log2WD = denom + shift1 the weighted sums of 8-265 /
+            // 8-266 are those of 8-262 / 8-263 multiplied by 2^denom.
+            let pwt = pwt.filter(|pwt| !default_weights(pwt, f, c));
             // Uni-prediction at a full-sample position without weighting: the prediction
             // ((s << shift3) + off) >> shift3 (8-228, 8-262) is the reference sample itself.
-            if !bi && !weighted {
+            if !bi && pwt.is_none() {
                 let l = if f.pred(0) { 0 } else { 1 };
                 let frac = if c == 0 { 3 } else { 7 };
                 let mv = f.mv[l];
@@ -1479,7 +1485,7 @@ impl<'a, S: Sample> SliceDecoder<'a, S> {
             }
             let stride = if c == 0 { self.pic.width } else { self.pic.cwidth };
             let dst = &mut self.pic.planes[c][y as usize * stride + x as usize..];
-            let Some(pwt) = self.sh.pwt.as_ref().filter(|_| weighted) else {
+            let Some(pwt) = pwt else {
                 if bi {
                     inter::put_bi(&self.pred0, &self.pred1, bw, bh, bd, dst, stride);
                 } else {
@@ -1505,4 +1511,16 @@ impl<'a, S: Sample> SliceDecoder<'a, S> {
             }
         }
     }
+}
+
+/// Whether the explicit weights of the lists `f` predicts from are the default ones for component
+/// `c` (weight 2^denom, offset 0).
+fn default_weights(pwt: &crate::slice::PredWeightTable, f: &MvField, c: usize) -> bool {
+    let denom = if c == 0 { pwt.luma_log2_denom } else { pwt.chroma_log2_denom };
+    (0..2).filter(|&l| f.pred(l)).all(|l| {
+        pwt.l[l].get(f.ref_idx[l] as usize).is_some_and(|e| {
+            let (wt, o) = if c == 0 { e.luma } else { e.chroma[c - 1] };
+            wt == 1 << denom && o == 0
+        })
+    })
 }

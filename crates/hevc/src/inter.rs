@@ -417,6 +417,50 @@ mod tests {
         }
     }
 
+    /// Explicit weighted prediction gives exactly 8-265 / 8-266 for every block width, bit depth,
+    /// denominator and the extreme weights and offsets, and with the default weights (2^denom,
+    /// offset 0) exactly the default weighted prediction (8-262 / 8-263) that replaces it then.
+    #[test]
+    fn explicit_weighted_prediction_matches_the_formulas() {
+        let mut rng = Rng(0x7f4a_7c15_9e37_79b9);
+        for bd in [8u32, 10, 12] {
+            let max = (1i32 << bd) - 1;
+            for &w in &WIDTHS {
+                for _ in 0..40 {
+                    let h = 2;
+                    let p0: Vec<i16> = (0..w * h).map(|_| rng.range(-10_240, 26_624) as i16).collect();
+                    let p1: Vec<i16> = (0..w * h).map(|_| rng.range(-10_240, 26_624) as i16).collect();
+                    let log2wd = rng.range(0, 7) as u32 + 14 - bd;
+                    let wt = |rng: &mut Rng| [-128, 255, rng.range(-128, 255)][rng.range(0, 2) as usize];
+                    let (w0, w1) = (wt(&mut rng), wt(&mut rng));
+                    let off = |rng: &mut Rng| [-128, 127, rng.range(-128, 127)][rng.range(0, 2) as usize] << (bd - 8);
+                    let (o0, o1) = (off(&mut rng), off(&mut rng));
+                    let ds = w + 3;
+                    let (mut uni, mut bi) = (vec![0u16; ds * h], vec![0u16; ds * h]);
+                    put_weighted_uni(&p0, w, h, bd, log2wd, w0, o0, &mut uni, ds);
+                    put_weighted_bi(&p0, &p1, w, h, bd, log2wd, w0, w1, o0, o1, &mut bi, ds);
+                    let denom = log2wd - (14 - bd);
+                    let (mut duni, mut dbi) = (vec![0u16; ds * h], vec![0u16; ds * h]);
+                    put_weighted_uni(&p0, w, h, bd, log2wd, 1 << denom, 0, &mut duni, ds);
+                    put_weighted_bi(&p0, &p1, w, h, bd, log2wd, 1 << denom, 1 << denom, 0, 0, &mut dbi, ds);
+                    let (mut uni0, mut bi0) = (vec![0u16; ds * h], vec![0u16; ds * h]);
+                    put_uni(&p0, w, h, bd, &mut uni0, ds);
+                    put_bi(&p0, &p1, w, h, bd, &mut bi0, ds);
+                    assert_eq!((duni, dbi), (uni0, bi0), "default weights bd {bd} w {w} denom {denom}");
+                    for r in 0..h {
+                        for c in 0..w {
+                            let (a, b) = (p0[r * w + c] as i32, p1[r * w + c] as i32);
+                            let v = if log2wd >= 1 { ((a * w0 + (1 << (log2wd - 1))) >> log2wd) + o0 } else { a * w0 + o0 };
+                            assert_eq!(uni[r * ds + c] as i32, v.clamp(0, max), "uni bd {bd} w {w}");
+                            let v = (a * w0 + b * w1 + ((o0 + o1 + 1) << log2wd)) >> (log2wd + 1);
+                            assert_eq!(bi[r * ds + c] as i32, v.clamp(0, max), "bi bd {bd} w {w}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// First passes over 8-bit samples in 16-bit lanes equal the 32-bit sums, including the
     /// extreme sample patterns of every filter.
     #[test]
