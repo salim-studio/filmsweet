@@ -431,6 +431,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, which: Which)
     // ---- mini timeline / scrub bar
     let bar = Rect::from_min_size(pos2(rect.min.x + 14.0, settings_y + 28.0 + source_drag_h), vec2(rect.width() - 28.0, 22.0));
     let zoom_bar = Rect::from_min_size(pos2(bar.min.x, bar.max.y + 2.0), vec2(bar.width(), 13.0));
+    follow_playhead(app, which, origin, duration, time);
     time_zoom_bar(app, ui, zoom_bar, which, origin, duration, rate);
     mini_timeline(app, ui, bar, which, origin, time, duration, rate, mark_in, mark_out);
 
@@ -622,6 +623,32 @@ fn ruler_shown(zoom: Option<[f64; 2]>, origin: Tick, end: Tick) -> (Tick, Tick) 
     let len = end.0.saturating_sub(origin.0).max(0) as f64;
     let at = |f: f64| Tick(origin.0.saturating_add((f * len) as i64));
     (if s > 0.0 { at(s) } else { origin }, if e < 1.0 { at(e) } else { end })
+}
+
+/// While the monitor plays, a zoomed time ruler follows the playhead `time` the way the Timeline
+/// does (Settings ▸ Timeline ▸ Timeline Playback Auto-Scrolling): with page scrolling, a playhead
+/// running off the right edge or jumping before the left one brings it back near the left edge;
+/// with smooth scrolling it stays in the middle once it gets there. The range keeps its width.
+fn follow_playhead(app: &mut FilmcraftApp, which: Which, origin: Tick, end: Tick, time: Tick) {
+    let playing = if which == Which::Program { app.playback.playing } else { app.source_playback.clock.playing };
+    let mode = app.session.prefs.timeline.auto_scroll.as_str();
+    let zoom = monitor_view::view(app, which).time_zoom;
+    let len = end.0.saturating_sub(origin.0);
+    if !playing || mode == "noScroll" || zoom.is_none() || len <= 0 {
+        return;
+    }
+    let (s, e) = time_zoom_range(zoom);
+    let span = e - s;
+    let f = time.0.saturating_sub(origin.0) as f64 / len as f64;
+    let across = (f - s) / span;
+    let start = if mode == "smoothScroll" {
+        (!(0.0..=0.5).contains(&across)).then_some(f - span * 0.5)
+    } else {
+        (!(0.0..=0.95).contains(&across)).then_some(f - span * 0.05)
+    };
+    if let Some(ns) = start.map(|ns| ns.clamp(0.0, 1.0 - span)) {
+        monitor_view::view_mut(app, which).time_zoom = Some([ns, (ns + span).min(1.0)]);
+    }
 }
 
 /// The zoom scroll bar under the time ruler. Its thumb is the part of the clip or sequence
