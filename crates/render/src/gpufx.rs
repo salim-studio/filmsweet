@@ -1139,9 +1139,9 @@ mod tests {
                             .collect(),
                     };
                     FxOp::eval(&e, &cx, 4, 1).unwrap().apply(&mut img);
-                    for (pixel, inside) in img.px.chunks_exact(4).zip([false, true, true, false]) {
+                    for (pixel, inside) in img.px.as_chunks::<4>().0.iter().zip([false, true, true, false]) {
                         let value = if inside != invert { alpha } else { 0.0 };
-                        assert_eq!(pixel, [value, value, value, alpha], "softness={softness}, invert={invert}");
+                        assert_eq!(*pixel, [value, value, value, alpha], "softness={softness}, invert={invert}");
                     }
                 }
             }
