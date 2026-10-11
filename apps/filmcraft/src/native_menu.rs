@@ -19,12 +19,13 @@ fn accel(s: &str) -> Option<Accelerator> {
     mapped.parse().ok()
 }
 
-/// Updates native key equivalents when the active keyboard shortcuts change.
-pub type ShortcutUpdater = Box<dyn FnMut(&[Item])>;
+/// Updates native item labels, key equivalents and enablement when the menu tree changes.
+pub type MenuUpdater = Box<dyn FnMut(&[Item])>;
 
-pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, ShortcutUpdater) {
+pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, MenuUpdater) {
     let items = menu_items(app);
-    let mut native: Vec<(String, MenuItem)> = Vec::new();
+    // each native item with the menu entry it currently shows, so updates touch only what changed
+    let mut native: Vec<(Item, MenuItem)> = Vec::new();
     let mut titles: Vec<(String, Submenu)> = Vec::new();
     let bar = Menu::new();
     let app_menu = Submenu::new("FilmCraft", true);
@@ -33,8 +34,8 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
     titles.push(("Settings".into(), settings.clone()));
     for it in items.iter().filter(|i| i.id.starts_with("app.settings.")) {
         let label = it.label.trim_end_matches('…').to_string();
-        let mi = MenuItem::with_id(it.id.clone(), label, true, it.shortcut.as_deref().and_then(accel));
-        native.push((it.id.clone(), mi.clone()));
+        let mi = MenuItem::with_id(it.id.clone(), label, it.enabled, it.shortcut.as_deref().and_then(accel));
+        native.push((it.clone(), mi.clone()));
         let _ = settings.append(&mi);
     }
     let _ = app_menu.append_items(&[
@@ -57,8 +58,8 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
         // their first item appears
         let mut subs: Vec<(Vec<String>, Submenu)> = Vec::new();
         for it in mine {
-            let mi = MenuItem::with_id(it.id.clone(), &it.label, true, it.shortcut.as_deref().and_then(accel));
-            native.push((it.id.clone(), mi.clone()));
+            let mi = MenuItem::with_id(it.id.clone(), &it.label, it.enabled, it.shortcut.as_deref().and_then(accel));
+            native.push(((*it).clone(), mi.clone()));
             let mut parent = sub.clone();
             for depth in 1..it.path.len() {
                 let key = it.path[..=depth].to_vec();
@@ -91,7 +92,8 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
             ctx.request_repaint();
         }
     });
-    let update: ShortcutUpdater = Box::new(move |items: &[Item]| {
+    let mut shown_language = app.ui.language;
+    let update: MenuUpdater = Box::new(move |items: &[Item]| {
         let checked = |id: &str| items.iter().any(|it| it.id == id && it.checked == Some(true));
         let language = if checked("app.language.japanese") {
             filmcraft_ui_egui::i18n::Language::Ja
@@ -112,14 +114,25 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Sho
         } else {
             filmcraft_ui_egui::i18n::Language::En
         };
-        for (title, submenu) in &titles {
-            submenu.set_text(language.tr(title));
+        if language != shown_language {
+            shown_language = language;
+            for (title, submenu) in &titles {
+                submenu.set_text(language.tr(title));
+            }
         }
-        for (id, mi) in &native {
-            if let Some(it) = items.iter().find(|i| &i.id == id) {
-                mi.set_text(&it.label);
+        for (shown, mi) in &mut native {
+            let Some(it) = items.iter().find(|i| i.id == shown.id) else { continue };
+            if it.label != shown.label {
+                // Settings entries drop the trailing ellipsis, as when the menu was built
+                mi.set_text(if it.id.starts_with("app.settings.") { it.label.trim_end_matches('…') } else { &it.label });
+            }
+            if it.shortcut != shown.shortcut {
                 let _ = mi.set_accelerator(it.shortcut.as_deref().and_then(accel));
             }
+            if it.enabled != shown.enabled {
+                mi.set_enabled(it.enabled);
+            }
+            *shown = it.clone();
         }
     });
     (rx, update)
