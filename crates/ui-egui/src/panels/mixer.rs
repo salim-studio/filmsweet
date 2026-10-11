@@ -119,6 +119,10 @@ pub fn poll_meters(app: &mut FilmcraftApp, ui: &egui::Ui) -> HashMap<u64, Vec<[f
                 m[1] = m[1].max(l);
             }
         }
+    }
+    // After Stop, levels and peak holds still fall. Keep animating without pointer input until
+    // both reach the floor, then let the idle window sleep (#1062).
+    if live || st.values().flatten().any(|meter| meter.iter().any(|db| db.is_finite() && *db > -90.0)) {
         ui.ctx().request_repaint();
     }
     ui.data_mut(|d| d.insert_temp(id, (frame, st.clone())));
