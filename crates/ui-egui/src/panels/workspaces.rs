@@ -180,9 +180,13 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
         WorkspaceDialog::SaveAs { .. } => ("New Workspace", tl!("New Workspace")),
         WorkspaceDialog::Edit { .. } => ("Edit Workspaces", tl!("Edit Workspaces")),
     };
-    egui::Window::new(shown).id(egui::Id::new(title)).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| match &mut d {
+    egui::Window::new(shown)
+        .id(egui::Id::new(title))
+        .collapsible(false)
+        .resizable(false)
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
+        .show(ctx, |ui| match &mut d {
             WorkspaceDialog::SaveAs { name } => {
                 ui.horizontal(|ui| {
                     ui.label(tl!("Name:"));
@@ -245,8 +249,7 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
                     close |= r.clicked();
                 });
             }
-        },
-    );
+        });
     for (id, r, l) in elems {
         app.auto.add(&id, r, &l);
     }

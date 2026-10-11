@@ -294,6 +294,24 @@ pub fn dropdown_text(ui: &mut Ui, rect: Rect, text: &str, t: &Tokens, id: egui::
     resp
 }
 
+/// Where dialogs open: the centre of the app window. Dialogs use it as `default_pos` with a
+/// centre pivot instead of `Window::anchor`, which would pin them: egui makes anchored windows
+/// immovable, so they could not be dragged by the title bar.
+pub fn dialog_center(ctx: &egui::Context) -> egui::Pos2 {
+    ctx.content_rect().center()
+}
+
+/// `.pivot(CENTER_CENTER).default_pos(dialog_center(ctx))` in one call, for short window chains.
+pub trait CenteredDialog {
+    fn centered(self, ctx: &egui::Context) -> Self;
+}
+
+impl CenteredDialog for egui::Window<'_> {
+    fn centered(self, ctx: &egui::Context) -> Self {
+        self.pivot(Align2::CENTER_CENTER).default_pos(dialog_center(ctx))
+    }
+}
+
 /// Level meter bar (dBFS), vertical.
 pub fn meter_bar(painter: &egui::Painter, rect: Rect, db: f32, peak_db: f32, t: &Tokens) {
     // Premiere: green gradient (#579f51 → #70dc5d), yellow above −12 dB, red above −3 dB.
@@ -364,5 +382,37 @@ mod tests {
         let st = egui::text_edit::TextEditState::load(&ctx, id.with("edit")).unwrap_or_default();
         let range = st.cursor.char_range().map(|c| c.sorted_cursors());
         assert_eq!(range, Some([egui::text::CCursor::new(0), egui::text::CCursor::new(5)]));
+    }
+
+    /// Dialogs open centred and can be dragged by their title bar (anchored ones could not).
+    #[test]
+    fn dialogs_open_centered_and_drag() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        let frame = |events: Vec<egui::Event>| {
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let mut rect = egui::Rect::NOTHING;
+            let mut out = ctx.run_ui(input, |ui| {
+                let ctx = ui.ctx().clone();
+                let win = egui::Window::new("Dialog").collapsible(false).resizable(false);
+                if let Some(r) = win.pivot(egui::Align2::CENTER_CENTER).default_pos(super::dialog_center(&ctx)).show(&ctx, |ui| ui.label("body")) {
+                    rect = r.response.rect;
+                }
+            });
+            out.textures_delta.clear();
+            rect
+        };
+        frame(Vec::new());
+        let start = frame(Vec::new());
+        assert!((start.center() - screen.center()).length() < 1.0, "opens centred: {start:?}");
+        let grab = egui::pos2(start.center().x, start.min.y + 8.0);
+        let to = grab + egui::vec2(-200.0, -150.0);
+        let press = |p, pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(vec![egui::Event::PointerMoved(grab), press(grab, true)]);
+        frame(vec![egui::Event::PointerMoved(grab + egui::vec2(-100.0, -75.0))]);
+        frame(vec![egui::Event::PointerMoved(to)]);
+        frame(vec![press(to, false)]);
+        let end = frame(Vec::new());
+        assert!((end.center() - (start.center() + egui::vec2(-200.0, -150.0))).length() < 2.0, "moved with the drag: {start:?} -> {end:?}");
     }
 }
