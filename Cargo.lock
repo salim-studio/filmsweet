@@ -1891,6 +1891,7 @@ dependencies = [
  "filmcraft-frame",
  "filmcraft-geom",
  "filmcraft-interchange",
+ "filmcraft-isobmff",
  "filmcraft-media",
  "filmcraft-mxf",
  "filmcraft-project",
