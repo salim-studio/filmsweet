@@ -79,11 +79,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G4. Crashes at start-up, and no test CI on pull requests
 
-- **Have:** a graphics start-up fallback (#820): a start that dies before its window paints (a
-  driver crash in wgpu instance / device creation) leaves a marker in the data folder, and the next
-  launch moves on to DirectX 12 only (Windows), then a software adapter (WARP, lavapipe, llvmpipe)
-  with CPU compositing, and keeps the mode that works; a start-up error wgpu reports moves on in
-  the same process. An explicit `WGPU_BACKEND` stays in charge.
+- **Have:** a graphics start-up fallback (#820): after two starts in a row that died within 15 s
+  of launch without painting (a driver crash in wgpu instance / device creation; hangs, later
+  crashes and concurrent instances don't count), the next launch moves on to DirectX 12 only
+  (Windows), then a software adapter (WARP, lavapipe, llvmpipe) with CPU compositing, and keeps
+  the mode that works; a start-up error wgpu reports moves on in the same process. A fallback mode
+  shows a notice with Use Default Graphics; `--graphics default|dx12|software` picks a mode by
+  hand. An explicit `WGPU_BACKEND` stays in charge.
 - **Missing:** a launch that never fails, and CI that runs the gates.
 - **Evidence:** open issues: macOS 12 Monterey aborts on a missing VideoToolbox symbol (#468,
   #661, #655), Intel UHD graphics (`igvk64.dll`, #512), Windows 11 does not run or fails after setup
@@ -93,8 +95,7 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   contributors' local runs (main needed "green again after the batch merges" on 10-10).
 - **Impact:** a user who cannot start the app gets zero value; regressions land unnoticed.
 - **Done when:** weak-linked or runtime-loaded OS symbols on old macOS, ~~a software / safe-mode
-  start when the GPU adapter fails~~ (done, #820; a way back to the default mode from Settings is
-  still missing: today the marker file is deleted by hand), a PR workflow running `cargo xtask ci`
+  start when the GPU adapter fails~~ (done, #820), a PR workflow running `cargo xtask ci`
   on macOS, Windows and Linux, and a crash-report triage pass. **40–80 h.**
 
 ## G5. Hardware acceleration is partial
