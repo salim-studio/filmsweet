@@ -760,17 +760,27 @@ fn mini_timeline(
     app.auto.add(if which == Which::Program { "program.scrubBar" } else { "source.scrubBar" }, bar, "scrub bar");
     let interaction = crate::panels::source_range::interact(app, ui, bar, which, shown);
     let p = ui.painter();
-    // ticks: minor 4 pt, major 10 pt, ~20 pt spacing, at fixed times so they move with a scroll
-    let n = ((bar.width() / 20.0) as i32).max(2);
-    let step = dur / f64::from(n);
-    let first = ((shown.0 - origin).0 as f64 / step).ceil() as i64;
-    for i in first..=first.saturating_add(i64::from(n)) {
-        let x = bar.min.x + ((origin.0 as f64 + i as f64 * step - shown.0.0 as f64) / dur) as f32 * bar.width();
+    // ticks: minor 3.5 pt high, major 8 pt, on whole frames chosen as on the Timeline's ruler (minor
+    // at least 12 pt apart, major at least 110 pt), so they spread out and fill in as the ruler zooms
+    let frame_px = rate.frame_duration().0 as f64 / dur * f64::from(bar.width());
+    let base = rate.timecode_base();
+    let steps: Vec<i64> =
+        [1, 2, 5, 10, base / 2].into_iter().chain([1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600].map(|k| base.saturating_mul(k))).collect();
+    let major = steps.iter().copied().find(|s| *s > 0 && *s as f64 * frame_px >= 110.0).unwrap_or(base.saturating_mul(3600)).max(1);
+    // a step that divides the major one, so every major tick is on a minor one
+    let minor = steps.iter().copied().find(|s| *s > 0 && major % s == 0 && *s as f64 * frame_px >= 12.0).unwrap_or(major);
+    let mut f = rate.frame_at(shown.0) / minor * minor;
+    // (bounded: a ruler too short for its ticks shows the first few hundred)
+    for _ in 0..512 {
+        let x = bar.min.x + ((rate.tick_of(f).0 as f64 - shown.0.0 as f64) / dur) as f32 * bar.width();
         if x > bar.max.x + 0.5 {
             break;
         }
-        let h = if i % 5 == 0 { 8.0 } else { 3.5 };
-        p.line_segment([pos2(x, bar.max.y - h), pos2(x, bar.max.y)], Stroke::new(1.0, t.text_faint));
+        if x >= bar.min.x - 0.5 {
+            let h = if f % major == 0 { 8.0 } else { 3.5 };
+            p.line_segment([pos2(x, bar.max.y - h), pos2(x, bar.max.y)], Stroke::new(1.0, t.text_faint));
+        }
+        f = f.saturating_add(minor);
     }
     let a_t = interaction.range.map(|r| r.start).unwrap_or(mark_in.unwrap_or(origin));
     // Out includes its frame; both the shading and its bracket end at the following boundary.
