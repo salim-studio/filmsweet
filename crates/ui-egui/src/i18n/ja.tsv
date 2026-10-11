@@ -2793,8 +2793,8 @@
 	Ignore Audio	オーディオを無視
 	Ignore Video	ビデオを無視
 	Apply a cut at each detected cut point	検出したカット点ごとにカットを適用
-	Create a subclip for each detected cut point	検出したカット点ごとにサブクリップを作成
-	Generate clip markers at each detected cut point	検出したカット点ごとにクリップマーカーを生成
+	Create a bin of subclips from each detected cut point	検出したカット点ごとにサブクリップのビンを作成
+	Create a clip marker at each detected cut point	検出したカット点ごとにクリップマーカーを作成
 	Sensitivity:	感度:
 	Normalize Mix Track to:	ミックストラックのノーマライズ値:
 	Disabled clips	無効なクリップ
@@ -3487,6 +3487,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	クリックで選択します。何もない場所からドラッグすると範囲選択になります。Shift、Alt、Ctrl キーを併用すると、ほかのオプションも使えます。
 	Click to zoom in; Alt-click to zoom out.	クリックでズームイン、Alt+クリックでズームアウトします。
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	ドラッグ: 移動 · Alt+クリック: スムーズ/コーナー · Ctrl+クリック: 削除
+	Drag inward to round the corners	内側にドラッグして角を丸める
 	Include Alpha Channel	アルファチャンネルを含める
 	Sequence Settings	シーケンス設定
 	Color Management	カラーマネジメント
@@ -3544,3 +3545,9 @@
 	Edit Project Notes	プロジェクトメモを編集
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	このプロジェクトのメモ: やること、指示、フレーム番号など… プロジェクトと一緒に保存されます。
 	GPU acceleration is unavailable; preview renders on the CPU	GPU アクセラレーションを利用できません。プレビューは CPU でレンダリングされます
+	Safe graphics mode: {mode}	セーフグラフィックモード: {mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	以前の起動がデフォルトのグラフィックで失敗しました。グラフィックドライバーを更新すると、通常は解決します。
+	Use Default Graphics	デフォルトのグラフィックを使用
+	The default graphics are used from the next start.	次回の起動からデフォルトのグラフィックが使用されます。
+	DirectX 12 only	DirectX 12 のみ
+	software rendering	ソフトウェアレンダリング
