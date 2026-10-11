@@ -80,7 +80,7 @@ fn main() -> eframe::Result {
     let logger = logging::install();
     // lossy, so a value that is not Unicode is reported like any other bad port instead of ignored
     let env_port = std::env::var_os("FILMCRAFT_CONTROL_PORT").map(|p| p.to_string_lossy().into_owned());
-    let Launch { control_port, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, std::env::args().skip(1)) {
+    let Launch { control_port, control_input_only, files, demo, startup_flag, recover, data_dir } = match args::parse(env_port, std::env::args().skip(1)) {
         Ok(Cli::Run(l)) => l,
         Ok(Cli::Help) => {
             tell(args::USAGE, false);
@@ -237,6 +237,11 @@ fn main() -> eframe::Result {
             app.hooks.pick_folder_at =
                 Some(Box::new(|dir: &str| rfd::FileDialog::new().set_directory(dir).pick_folder().map(|p| p.to_string_lossy().into_owned())));
             app.hooks.open_path = Some(Box::new(open_path));
+            // Help menu, About and Discord links (#642): eframe is built without its `links`
+            // feature, so `ctx.open_url` does nothing on the desktop. Detached, so a launcher
+            // that waits for the browser never freezes the UI.
+            app.hooks.open_url = Some(Box::new(|url: &str| open::that_detached(url).map_err(|e| e.to_string())));
+            app.hooks.clipboard_media = Some(Box::new(clipboard_media));
             // Settings ▸ General ▸ Interface Language ▸ System Language (#218).
             app.hooks.cursor_screen_position = Some(Box::new(filmcraft_platform::cursor::cursor_screen_position));
             app.hooks.system_languages = Some(Box::new(|| sys_locale::get_locales().collect()));
@@ -267,7 +272,7 @@ fn main() -> eframe::Result {
             }
             if let Some(port) = control_port {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
-                app = app.with_control(rx);
+                app = if control_input_only { app.with_control_input_only(rx) } else { app.with_control(rx) };
             }
             Ok(Box::new(app))
         }),
@@ -281,6 +286,18 @@ fn main() -> eframe::Result {
         let _ = rfd::MessageDialog::new().set_title("FilmCraft").set_description(&msg).set_level(rfd::MessageLevel::Error).show();
     }
     started
+}
+
+/// Files copied in the file manager, else an image, on the system clipboard (Paste, #611).
+fn clipboard_media() -> Option<filmcraft_ui_egui::ClipboardMedia> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    if let Ok(files) = clipboard.get().file_list()
+        && !files.is_empty()
+    {
+        return Some(filmcraft_ui_egui::ClipboardMedia::Files(files.iter().map(|p| p.to_string_lossy().into_owned()).collect()));
+    }
+    let image = clipboard.get_image().ok()?;
+    Some(filmcraft_ui_egui::ClipboardMedia::Image { width: image.width, height: image.height, rgba: image.bytes.into_owned() })
 }
 
 /// Open a file in its default application, or reveal it in the file manager (Edit Original,
