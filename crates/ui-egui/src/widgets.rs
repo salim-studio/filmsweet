@@ -10,9 +10,11 @@ use crate::theme::Tokens;
 /// Returns (response, Some(new value) when changed).
 pub fn hot_number(ui: &mut Ui, id: egui::Id, value: f64, speed: f64, range: (f64, f64), decimals: usize, suffix: &str, t: &Tokens) -> (Response, Option<f64>) {
     let editing_id = id.with("editing");
+    let edit_id = id.with("edit");
+    let select_all_id = id.with("select-all");
     let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_id));
     if let Some(buf) = editing.as_mut() {
-        let r = ui.add(egui::TextEdit::singleline(buf).desired_width(56.0).font(Tokens::ui(12.0)));
+        let r = ui.add(egui::TextEdit::singleline(buf).id(edit_id).desired_width(56.0).font(Tokens::ui(12.0)));
         let mut out = None;
         if r.lost_focus() {
             if let Ok(v) = buf.trim().trim_end_matches(suffix).trim().parse::<f64>() {
@@ -22,6 +24,18 @@ pub fn hot_number(ui: &mut Ui, id: egui::Id, value: f64, speed: f64, range: (f64
         } else {
             let b = buf.clone();
             ui.data_mut(|d| d.insert_temp(editing_id, b));
+            // select the whole value once the field has focus (egui collapses a selection to a caret
+            // in a field that does not have it yet), so typing replaces it as in Premiere
+            let selected_now = r.has_focus() && ui.data_mut(|d| d.remove_temp::<bool>(select_all_id)).is_some();
+            if selected_now {
+                let mut st = egui::text_edit::TextEditState::load(ui.ctx(), edit_id).unwrap_or_default();
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(buf.chars().count()))));
+                st.store(ui.ctx(), edit_id);
+            }
+            // the focus and the selection show on the next frame, which nothing else would trigger
+            if !r.has_focus() || selected_now {
+                ui.ctx().request_repaint();
+            }
             r.request_focus();
         }
         return (r, out);
@@ -54,7 +68,11 @@ pub fn hot_number(ui: &mut Ui, id: egui::Id, value: f64, speed: f64, range: (f64
         }
     }
     if resp.clicked() {
-        ui.data_mut(|d| d.insert_temp(editing_id, format!("{value:.decimals$}")));
+        ui.data_mut(|d| {
+            d.insert_temp(editing_id, format!("{value:.decimals$}"));
+            d.insert_temp(select_all_id, true);
+        });
+        ui.ctx().request_repaint();
     }
     (resp, out)
 }
@@ -306,4 +324,35 @@ pub fn meter_bar(painter: &egui::Painter, rect: Rect, db: f32, peak_db: f32, t: 
         [pos2(rect.min.x, py), pos2(rect.max.x, py)],
         Stroke::new(1.0, if peak_db > -0.5 { t.danger } else { Color32::from_rgb(0xf0, 0xf0, 0x4f) }),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::ThemeKind;
+
+    fn frame(ctx: &egui::Context, events: Vec<egui::Event>, id: egui::Id) {
+        let t = Tokens::for_kind(ThemeKind::Dark);
+        let input = egui::RawInput { events, ..Default::default() };
+        let _ = ctx.run_ui(input, |ui| {
+            hot_number(ui, id, 123.5, 1.0, (0.0, 1000.0), 1, "", &t);
+        });
+    }
+
+    #[test]
+    fn clicking_a_hot_number_selects_its_whole_value() {
+        let ctx = egui::Context::default();
+        let id = egui::Id::new("hot");
+        let pos = egui::pos2(14.0, 12.0);
+        let button = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        frame(&ctx, vec![egui::Event::PointerMoved(pos)], id);
+        frame(&ctx, vec![button(true)], id);
+        frame(&ctx, vec![button(false)], id);
+        for _ in 0..4 {
+            frame(&ctx, vec![], id);
+        }
+        let st = egui::text_edit::TextEditState::load(&ctx, id.with("edit")).unwrap_or_default();
+        let range = st.cursor.char_range().map(|c| c.sorted_cursors());
+        assert_eq!(range, Some([egui::text::CCursor::new(0), egui::text::CCursor::new(5)]));
+    }
 }

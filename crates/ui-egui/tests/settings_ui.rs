@@ -516,3 +516,38 @@ fn playhead_drag_snaps_to_cuts() {
     let ph = d.harness.state().session.playhead();
     assert!(ph > cut, "moves off the cut freely: {ph:?} vs {cut:?}");
 }
+
+/// #1090: a press on the ruler moves the playhead there at once, before the pointer moves or the
+/// button comes up, as in Premiere Pro.
+#[test]
+fn playhead_jumps_to_a_press_on_the_ruler() {
+    let mut d = Driver::demo();
+    d.frames(2);
+    let seq = d.harness.state().session.active_sequence().unwrap().clone();
+    let v1 = &seq.video_tracks[0];
+    let cut = v1.items[1].start;
+    let id = v1.items[1].id.0;
+    let rect = |d: &mut Driver, id: &str| -> [f64; 4] {
+        let v = d.ok("ui.elements", json!({"prefix": id}));
+        let e = v.as_array().unwrap().iter().find(|e| e["id"] == id).unwrap_or_else(|| panic!("no element {id}")).clone();
+        let r: Vec<f64> = e["rect"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
+        [r[0], r[1], r[2], r[3]]
+    };
+    let clip = rect(&mut d, &format!("timeline.clip.{id}"));
+    let ruler = rect(&mut d, "timeline.ruler");
+    d.exec("playhead.set", json!({"time": 0}));
+    d.frames(2);
+    assert_eq!(d.harness.state().session.playhead().0, 0);
+    let p = egui::pos2((clip[0] + 40.0) as f32, (ruler[1] + ruler[3] / 2.0) as f32);
+    let button = |d: &mut Driver, pressed: bool| {
+        d.harness.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        d.frames(2);
+    };
+    d.harness.input_mut().events.push(egui::Event::PointerMoved(p));
+    d.frames(1);
+    button(&mut d, true);
+    let ph = d.harness.state().session.playhead();
+    assert!(ph > cut, "the playhead is under the pressed button: {ph:?} vs {cut:?}");
+    button(&mut d, false);
+    assert_eq!(d.harness.state().session.playhead(), ph, "the release leaves it there");
+}
