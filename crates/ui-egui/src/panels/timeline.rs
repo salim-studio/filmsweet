@@ -94,6 +94,9 @@ pub enum Drag {
         start_track: TrackId,
         offset: Tick,
         track_delta: i32,
+        /// #1104: the pointer is in the empty space past the last track of the dragged clips' kind:
+        /// the drop moves them onto a new track there.
+        new_track: Option<(TrackKind, Rect)>,
         /// Option is held: the drop copies the clips instead of moving them (as of the last
         /// drag frame, so letting go of both at once still copies).
         copy: bool,
@@ -2137,7 +2140,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 }
                 if resp.drag_started() {
                     let clips = app.session.state.selection.clone();
-                    Some(Drag::Move { clips, grab_tick: t, start_track: track, offset: Tick::ZERO, track_delta: 0, copy: mods.alt })
+                    Some(Drag::Move { clips, grab_tick: t, start_track: track, offset: Tick::ZERO, track_delta: 0, new_track: None, copy: mods.alt })
                 } else {
                     None
                 }
@@ -2238,7 +2241,19 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     (Some(c), Some(s)) if c.kind == s.kind => c.index as i32 - s.index as i32,
                     _ => 0,
                 };
-                Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, copy: mods.alt })
+                // #1104: past the last track of the clips' kind, a new track (only for clips of one track)
+                let new_track = start_row
+                    .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(t, _)| t == start_track)))
+                    .and_then(|s| {
+                        let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
+                        new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
+                    });
+                if let Some((_, band)) = new_track {
+                    let (x0, x1) = (layout.x_of((first + offset).max(Tick::ZERO)), layout.x_of((last + offset).max(Tick::ZERO)));
+                    let r = Rect::from_min_max(pos2(x0, band.min.y + 1.0), pos2(x1, band.max.y - 1.0));
+                    ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Inside);
+                }
+                Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, new_track, copy: mods.alt })
             }
             Drag::Trim { clip, edge, mode, from, .. } => seq.find_item(clip).map(|(_, it)| {
                 let base = if edge == filmcraft_edit::Edge::In { it.start } else { it.end() };
@@ -2305,10 +2320,12 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         && let Some(d) = app.tl.drag.take()
     {
         let r = match d {
-            Drag::Move { clips, offset, track_delta, copy, .. } if offset != Tick::ZERO || track_delta != 0 => {
+            Drag::Move { clips, offset, track_delta, new_track, copy, .. } if offset != Tick::ZERO || track_delta != 0 || new_track.is_some() => {
+                // #1104: dropped past the last track, the clips go onto a new one
+                let to = |tid| new_track.map_or_else(|| json!(shift_track(seq, tid, track_delta).unwrap_or(tid).0), |_| json!("new"));
                 let moves: Vec<Value> = clips
                     .iter()
-                    .filter_map(|c| seq.find_item(*c).map(|(tid, it)| json!({"clip": c.0, "track": shift_track(seq, tid, track_delta).unwrap_or(tid).0, "time": (it.start + offset).max(Tick::ZERO).0})))
+                    .filter_map(|c| seq.find_item(*c).map(|(tid, it)| json!({"clip": c.0, "track": to(tid), "time": (it.start + offset).max(Tick::ZERO).0})))
                     .collect();
                 // Option held while dropping copies (Premiere: Option-drag duplicates)
                 Some(app.session.execute("timeline.move", json!({"moves": moves, "insert": mods.command, "linked": false, "copy": copy || mods.alt})))
