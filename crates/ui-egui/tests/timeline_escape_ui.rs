@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::{Sender, channel};
 
-use egui::{Pos2, pos2};
+use egui::pos2;
 use egui_kittest::Harness;
 use filmcraft_engine::Session;
 use filmcraft_project::ClipId;
