@@ -108,7 +108,8 @@ pub fn show_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .default_width(440.0)
-        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             if pre != "sync" {
                 ui.horizontal(|ui| {
@@ -456,7 +457,8 @@ pub fn show_edit_cameras(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .default_width(420.0)
-        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.label(RichText::new(tl!("Cameras shown in the Multi-Camera view (uncheck to hide).")).weak().small());
             egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {

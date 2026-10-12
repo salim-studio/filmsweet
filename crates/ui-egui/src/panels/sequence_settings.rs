@@ -491,7 +491,8 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .collapsible(false)
         .resizable(false)
         .default_width(620.0)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.set_width(620.0);
             ui.horizontal(|ui| {

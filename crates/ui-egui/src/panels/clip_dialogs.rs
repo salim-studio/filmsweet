@@ -30,7 +30,8 @@
 //! - Quit (asked when the window is closed with unsaved changes, see [`intercept_quit`])
 //!   `quit.save`, `quit.dontSave`, `quit.cancel`.
 
-use egui::{Align2, RichText};
+use crate::widgets::CenteredDialog as _;
+use egui::RichText;
 use filmcraft_project::{AudioChannelMap, AudioChannels, ItemKind, TrackKind};
 use serde_json::{Value, json};
 
@@ -311,7 +312,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let can_save = app.session.path.is_some() || app.hooks.pick_save.is_some();
     // the title is translated; the window keeps one id whatever the interface language
     let id = egui::Id::new(("clip-dialog", pre));
-    egui::Window::new(title).id(id).collapsible(false).resizable(false).default_width(360.0).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+    egui::Window::new(title).id(id).collapsible(false).resizable(false).default_width(360.0).centered(ctx).show(ctx, |ui| {
         let p = &mut d.params;
         match d.command.as_str() {
             "edit.pasteAttributes" | "edit.removeAttributes" => {

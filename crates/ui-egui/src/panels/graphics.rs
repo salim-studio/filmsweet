@@ -21,6 +21,7 @@
 //! `program.layer.<clip>.<layer>.corner.<n>`,
 //! `program.textEdit`, `graphics.*` in the panels.
 
+use crate::widgets::CenteredDialog as _;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use filmcraft_geom::{Affine, Vec2};
 use filmcraft_project::graphic::{self, LayerContent, LayerSpec, eval_layer, layer_display_name, layer_indices};
@@ -1823,7 +1824,7 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let mut ok = false;
     let name = |paragraph: bool| if paragraph { tl!("Paragraph Text") } else { tl!("Point Text") };
     let id = egui::Id::new("gfx-text-properties");
-    egui::Window::new(tl!("Text Properties")).id(id).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+    egui::Window::new(tl!("Text Properties")).id(id).collapsible(false).resizable(false).centered(ctx).show(ctx, |ui| {
         ui.label(tl!("Text Layer Type"));
         let r = egui::ComboBox::from_id_salt("gfx-text-type").selected_text(name(d.paragraph)).width(190.0).show_ui(ui, |ui| {
             for paragraph in [false, true] {

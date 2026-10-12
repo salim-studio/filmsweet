@@ -806,7 +806,8 @@ pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .id(egui::Id::new("mb-edit-columns"))
         .collapsible(false)
         .resizable(false)
-        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             let mut mv: Option<(usize, isize)> = None;
             for c in mb::ALL_COLUMNS {

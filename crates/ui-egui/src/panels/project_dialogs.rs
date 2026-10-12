@@ -3,7 +3,7 @@
 //! and Save Arrangement…. Drafts live in `UiState::project_panel.dialog` (serde, so agents fill
 //! them with `ui.set`); OK runs one engine command.
 
-use egui::Align2;
+use crate::widgets::CenteredDialog as _;
 use serde_json::{Value, json};
 
 use crate::FilmcraftApp;
@@ -25,7 +25,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
         ProjectDialog::FreeformOptions { .. } => tl!("Freeform View Options"),
         ProjectDialog::SaveArrangement { .. } => tl!("Save Arrangement"),
     };
-    let mut win = egui::Window::new(title).id(egui::Id::new("project-dialog")).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]);
+    let mut win = egui::Window::new(title).id(egui::Id::new("project-dialog")).collapsible(false).resizable(false).centered(ctx);
     // a fixed size keeps the two-list dialog from shifting while its lists settle
     if matches!(d, ProjectDialog::MetadataDisplay { .. }) {
         win = win.fixed_size(egui::vec2(480.0, 470.0));
