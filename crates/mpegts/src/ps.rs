@@ -126,13 +126,13 @@ pub(crate) fn scan<S: ByteSource + ?Sized>(src: &S, mpeg1: bool) -> Result<File>
     let mut scr: Option<(i64, i64)> = None;
     let mut resyncs = 0u64;
     while pos + 4 <= len {
-        let head = win.get(pos, 32)?.to_vec();
-        let Some(plen) = packet_len(&head) else {
+        let head = win.get(pos, 32)?;
+        let Some(plen) = packet_len(head) else {
             // resynchronise on the next pack header or PES start code
             resyncs += 1;
             let mut p = pos + 1;
             let found = loop {
-                let w = win.get(p, 1 << 16)?.to_vec();
+                let w = win.get(p, 1 << 16)?;
                 if w.len() < 4 {
                     break None;
                 }
@@ -169,7 +169,7 @@ pub(crate) fn scan<S: ByteSource + ?Sized>(src: &S, mpeg1: bool) -> Result<File>
             scr = Some(scr.map_or((v, v), |(a, b): (i64, i64)| (a.min(v), b.max(v))));
         } else if id == 0xBC {
             // program stream map: elementary stream id → stream_type
-            let body = win.get(pos, plen)?.to_vec();
+            let body = win.get(pos, plen)?;
             if body.len() >= 12 {
                 let info = u16::from_be_bytes([body[8], body[9]]) as usize;
                 let mut i = 10 + info;
@@ -184,11 +184,11 @@ pub(crate) fn scan<S: ByteSource + ?Sized>(src: &S, mpeg1: bool) -> Result<File>
                 }
             }
         } else if id == 0xBD || (0xC0..=0xEF).contains(&id) || id == 0xFD {
-            let pkt = win.get(pos, plen)?.to_vec();
+            let pkt = win.get(pos, plen)?;
             if pkt.len() < plen {
                 break; // truncated
             }
-            if let Some(h) = pes::parse(&pkt) {
+            if let Some(h) = pes::parse(pkt) {
                 let payload = &pkt[h.header_len.min(plen)..];
                 let (sub, skip) = if id == 0xBD {
                     match payload.first() {
@@ -249,14 +249,14 @@ pub(crate) fn read<S: ByteSource + ?Sized>(src: &S, st: &Stream, u: &Unit, out: 
     let len = src.len();
     let mut win = Win::new(src);
     while out.len() < need && pos + 4 <= len {
-        let head = win.get(pos, 32)?.to_vec();
-        let Some(plen) = packet_len(&head) else {
+        let head = win.get(pos, 32)?;
+        let Some(plen) = packet_len(head) else {
             // corrupt: stop at what we have
             return Ok(());
         };
         if head[3] == stream_id {
-            let pkt = win.get(pos, plen)?.to_vec();
-            if let Some(h) = pes::parse(&pkt) {
+            let pkt = win.get(pos, plen)?;
+            if let Some(h) = pes::parse(pkt) {
                 let payload = &pkt[h.header_len.min(pkt.len())..];
                 let matches = stream_id != 0xBD || payload.first().copied() == sub_id;
                 if matches {
