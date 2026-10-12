@@ -231,6 +231,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
 
 fn settings_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let Some(Some(mut d)) = ctx.data(|m| m.get_temp::<Option<Draft>>(draft_id())) else { return };
+    crate::widgets::revert_drag_on_escape(ctx, egui::Id::new("voiceover-settings-before-drag"), &mut d);
     let mut elems: Vec<(String, Rect, String)> = Vec::new();
     let mut close = false;
     let mut apply = false;
@@ -288,11 +289,11 @@ fn settings_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
             elems.push(("voiceover.countdown".into(), r.rect, "Countdown Sound Cues".into()));
             ui.end_row();
             ui.label(tl!("Pre-roll:"));
-            let r = ui.add(egui::DragValue::new(&mut d.prefs.preroll_seconds).speed(0.1).range(0.0..=60.0).suffix(tl!(" seconds")));
+            let r = ui.add(crate::widgets::number_drag(&mut d.prefs.preroll_seconds).speed(0.1).range(0.0..=60.0).suffix(tl!(" seconds")));
             elems.push(("voiceover.preroll".into(), r.rect, format!("{}", d.prefs.preroll_seconds)));
             ui.end_row();
             ui.label(tl!("Post-roll:"));
-            let r = ui.add(egui::DragValue::new(&mut d.prefs.postroll_seconds).speed(0.1).range(0.0..=60.0).suffix(tl!(" seconds")));
+            let r = ui.add(crate::widgets::number_drag(&mut d.prefs.postroll_seconds).speed(0.1).range(0.0..=60.0).suffix(tl!(" seconds")));
             elems.push(("voiceover.postroll".into(), r.rect, format!("{}", d.prefs.postroll_seconds)));
             ui.end_row();
         });
@@ -337,7 +338,7 @@ fn settings_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
             Err(error) => app.ui.status = error.to_string(),
         }
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::widgets::escape_closes(ctx) {
         close = true;
     }
     if apply {
