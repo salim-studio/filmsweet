@@ -203,6 +203,41 @@ fn openexr_sequences() {
     }
 }
 
+/// Compressed OpenEXR sequences (#874): the export setting reaches every still, which shrinks
+/// and (ffmpeg as the external oracle) decodes to the same pixels as the uncompressed file.
+#[test]
+fn openexr_sequences_compress() {
+    let (p, seq, m) = matte([0.2, 0.6, 1.0, 0.5], 64, 36, None);
+    let mut files = Vec::new();
+    for c in ExrCompression::ALL {
+        let dir = Scratch::new(&format!("seq-exr-{c:?}"));
+        let mut s = ExportSettings { format: Format::ExrSequence, path: dir.path("c.exr"), alpha: true, exr_compression: c, ..Default::default() };
+        s.range = Some(TimeRange::new(Tick::ZERO, FrameRate::FPS_24.tick_of(1)));
+        export(&p, seq, &s, &m, &Progress::default()).unwrap();
+        let path = dir.0.join("c000.exr");
+        let bytes = std::fs::read(&path).unwrap();
+        let at = bytes.windows(24).position(|w| w == b"compression\0compression\0").unwrap() + 28;
+        assert_eq!(bytes[at], [0, 1, 2, 3][files.len()], "{c:?}");
+        files.push((c, path, bytes.len(), dir));
+    }
+    let plain = files[0].2;
+    for (c, _, len, _) in &files[1..] {
+        assert!(*len < plain / 2, "{c:?}: {len} bytes vs {plain} uncompressed");
+    }
+    let Some(ffmpeg) = filmcraft_testkit::ffmpeg_or_skip("compressed OpenEXR sequences") else { return };
+    let decode = |path: &Path| {
+        let out =
+            std::process::Command::new(&ffmpeg).args(["-v", "error", "-i"]).arg(path).args(["-f", "rawvideo", "-pix_fmt", "gbrapf32le", "-"]).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        out.stdout
+    };
+    let want = decode(&files[0].1);
+    assert_eq!(want.len(), 64 * 36 * 16);
+    for (c, path, _, _) in &files[1..] {
+        assert!(decode(path) == want, "{c:?} decodes differently");
+    }
+}
+
 /// `alpha` keeps straight alpha in PNG and TIFF sequences; off (the default) flattens over black (#160).
 #[test]
 fn image_sequences_keep_alpha_when_asked() {
@@ -403,6 +438,126 @@ fn aac_export_rejects_unsupported_explicit_sample_rates() {
 }
 
 #[test]
+fn flac_is_lossless_against_wav() {
+    let (p, seq, m) = matte([0.0, 0.0, 0.0, 1.0], 64, 36, Some(-6.0));
+    let dir = Scratch::new("flac");
+    let range = Some(TimeRange::new(Tick::ZERO, Tick(3 * TICKS_PER_SECOND / 2)));
+    let audio = AudioSettings { channels: 2, bits: 24, ..Default::default() };
+    let (wav, flac) = (dir.path("a.wav"), dir.path("a.flac"));
+    let w = ExportSettings { format: Format::Wav, path: wav.clone(), range, audio: audio.clone(), ..Default::default() };
+    export(&p, seq, &w, &m, &Progress::default()).unwrap();
+    let f = ExportSettings { format: Format::Flac, path: flac.clone(), range, audio, ..Default::default() };
+    let prog = Progress::default();
+    let r = export(&p, seq, &f, &m, &prog).unwrap();
+    assert_eq!(r.frames, 72_000, "1.5 s at 48 kHz");
+    // one progress step per second of audio
+    assert_eq!((prog.total.load(Ordering::Relaxed), prog.done.load(Ordering::Relaxed)), (2, 2));
+    let (wb, fb) = (std::fs::read(&wav).unwrap(), std::fs::read(&flac).unwrap());
+    assert_eq!(&fb[..4], b"fLaC");
+    assert!(fb.len() * 2 < wb.len(), "a tone compresses: FLAC {} bytes, WAV {}", fb.len(), wb.len());
+    // STREAMINFO was filled in at the end: total samples
+    let si = &fb[8..42];
+    assert_eq!((u64::from(si[13] & 0x0F) << 32) | u64::from(u32::from_be_bytes(si[14..18].try_into().unwrap())), 72_000);
+
+    // the same samples through FilmCraft's own readers
+    let decode = |name: &str, bytes: Vec<u8>| filmcraft_codecs::open_bytes(name, bytes.into()).unwrap().audio(0, 72_000, 48_000).unwrap();
+    let (a, b) = (decode("a.wav", wb), decode("a.flac", fb));
+    assert_eq!(a.channels.len(), 2);
+    for (ca, cb) in a.channels.iter().zip(&b.channels) {
+        assert_eq!(ca.len(), cb.len());
+        let worst = ca.iter().zip(cb).map(|(x, y)| (x - y).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 1e-6, "differs by {worst}");
+        assert!(ca.iter().any(|v| v.abs() > 0.1), "the tone is there");
+    }
+    // and bit for bit through ffmpeg
+    if let Some(ffmpeg) = filmcraft_testkit::ffmpeg_or_skip("flac export") {
+        let raw = |path: &str| {
+            let out = std::process::Command::new(&ffmpeg).args(["-v", "error", "-i", path, "-f", "s32le", "-c:a", "pcm_s32le", "-"]).output().unwrap();
+            assert!(out.status.success() && out.stderr.is_empty(), "{}", String::from_utf8_lossy(&out.stderr));
+            out.stdout
+        };
+        let (a, b) = (raw(&wav), raw(&flac));
+        assert_eq!(a.len(), 72_000 * 2 * 4);
+        assert!(a == b, "FLAC must decode to the WAV's samples exactly");
+    }
+    if let Some(j) = ffprobe_json(&["-show_streams"], &flac) {
+        let st = &j["streams"][0];
+        assert_eq!((st["codec_name"].as_str(), st["sample_rate"].as_str(), st["bits_per_raw_sample"].as_str()), (Some("flac"), Some("48000"), Some("24")));
+    }
+}
+
+#[test]
+fn flac_audio_in_mp4_and_mov() {
+    let (p, seq, m) = matte([0.2, 0.4, 0.6, 1.0], 64, 36, Some(-6.0));
+    let dir = Scratch::new("flac-in");
+    // 1.5 s at 48 kHz: 17 full FLAC frames of 4096 samples and a last one of 2368
+    let range = Some(TimeRange::new(Tick::ZERO, Tick(3 * TICKS_PER_SECOND / 2)));
+    let audio = AudioSettings { codec: AudioCodec::Flac, bits: 24, ..Default::default() };
+    let wav = dir.path("ref.wav");
+    export(&p, seq, &ExportSettings { format: Format::Wav, path: wav.clone(), range, audio: audio.clone(), ..Default::default() }, &m, &Progress::default())
+        .unwrap();
+    for (format, mux, name) in
+        [(Format::H264, Multiplexer::Mp4, "a.mp4"), (Format::H264, Multiplexer::Mov, "b.mov"), (Format::ProRes, Multiplexer::Mp4, "c.mov")]
+    {
+        let path = dir.path(name);
+        let s = ExportSettings { format, multiplexer: mux, path: path.clone(), range, audio: audio.clone(), ..Default::default() };
+        assert_eq!(s.audio_codec(), AudioCodec::Flac, "{name}");
+        assert!(s.summary(64, 36, FrameRate::FPS_24, 48_000, Tick(TICKS_PER_SECOND)).audio.starts_with("FLAC (lossless) 24-bit"), "{name}");
+        export(&p, seq, &s, &m, &Progress::default()).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        // `dfLa` was rewritten at the end: STREAMINFO with frame sizes, total samples and the MD5
+        let at = bytes.windows(4).position(|w| w == b"dfLa").unwrap() + 4 + 4 + 4;
+        let si = &bytes[at..at + 34];
+        assert_eq!(bytes[at - 4], 0x80, "{name}: STREAMINFO is the last metadata block");
+        assert!(si[4..10].iter().any(|&b| b != 0), "{name}: frame sizes");
+        assert_eq!(u32::from_be_bytes(si[14..18].try_into().unwrap()), 72_000, "{name}: total samples");
+        assert!(si[18..34].iter().any(|&b| b != 0), "{name}: MD5");
+        // FilmCraft's own importer reads the FLAC track back, sample-accurately long
+        let src = filmcraft_codecs::open_bytes(name, bytes.into()).unwrap();
+        let a = src.audio(0, 72_000, 48_000).unwrap();
+        assert!(a.channels.iter().all(|c| c.len() == 72_000) && a.channels[0].iter().any(|v| v.abs() > 0.1), "{name}");
+        if let Some(j) = ffprobe_json(&["-show_streams", "-count_packets"], &path) {
+            let st = j["streams"].as_array().unwrap().iter().find(|s| s["codec_type"] == "audio").unwrap().clone();
+            assert_eq!((st["codec_name"].as_str(), st["sample_rate"].as_str(), st["channels"].as_u64()), (Some("flac"), Some("48000"), Some(2)), "{name}");
+            assert_eq!(st["nb_read_packets"].as_str(), Some("18"), "{name}: one FLAC frame per packet");
+            assert_eq!(st["duration_ts"].as_u64(), Some(72_000), "{name}: the short last frame is timed exactly");
+        }
+        // the audio decodes to the WAV export's samples bit for bit
+        if let Some(ffmpeg) = filmcraft_testkit::ffmpeg_or_skip("flac in containers") {
+            let raw = |path: &str| {
+                let out = std::process::Command::new(&ffmpeg)
+                    .args(["-v", "error", "-i", path, "-map", "0:a", "-f", "s32le", "-c:a", "pcm_s32le", "-"])
+                    .output()
+                    .unwrap();
+                assert!(out.status.success() && out.stderr.is_empty(), "{name}: {}", String::from_utf8_lossy(&out.stderr));
+                out.stdout
+            };
+            assert!(raw(&path) == raw(&wav), "{name}: FLAC must decode to the WAV's samples exactly");
+        }
+    }
+    // MXF stays PCM whatever is asked for
+    let mxf = ExportSettings { format: Format::MxfOp1a, audio: audio.clone(), ..Default::default() };
+    assert_eq!(mxf.audio_codec(), AudioCodec::Pcm);
+}
+
+#[test]
+fn flac_settings_round_trip_and_summary() {
+    let s: ExportSettings = serde_json::from_value(serde_json::json!({"format": "flac"})).unwrap();
+    assert_eq!((s.format, s.audio_codec(), s.audio.flac_level, s.has_video()), (Format::Flac, AudioCodec::Flac, 5, false));
+    assert_eq!((s.extension(), Format::from_name("FLAC"), Format::Flac.id()), ("flac", Some(Format::Flac), "flac"));
+    // settings saved before FLAC read the default level
+    let old: AudioSettings = serde_json::from_value(serde_json::json!({"bits": 24})).unwrap();
+    assert_eq!(old.flac_level, 5);
+    let sum = ExportSettings { format: Format::Flac, ..Default::default() }.summary(64, 36, FrameRate::FPS_24, 48_000, Tick(TICKS_PER_SECOND));
+    assert!(sum.audio.starts_with("FLAC (lossless) 16-bit, level 5, 48000 Hz"), "{}", sum.audio);
+    assert_eq!(sum.video, "No video");
+    // estimated below PCM
+    let pcm = ExportSettings { format: Format::Wav, ..Default::default() }.estimate_bytes(64, 36, FrameRate::FPS_24, 48_000, Tick(TICKS_PER_SECOND));
+    let flac = ExportSettings { format: Format::Flac, ..Default::default() }.estimate_bytes(64, 36, FrameRate::FPS_24, 48_000, Tick(TICKS_PER_SECOND));
+    assert!(flac < pcm, "{flac} < {pcm}");
+}
+
+#[test]
 fn invalid_export_allocations_are_rejected_before_rendering() {
     let (project, sequence, _) = matte([1.0, 0.0, 0.0, 1.0], 64, 36, None);
     for size in [(0, 36), (64, 0), (u32::MAX, u32::MAX), (32768, 16384), (40000, 16)] {
@@ -518,7 +673,7 @@ fn loudness_normalization_hits_target_and_true_peak() {
         assert!((i - target).abs() < 0.5, "target {target}: measured {i:.2} LUFS");
         assert!(tp <= -0.9, "true peak {tp:.2} dBTP");
         let rep = prog.loudness.lock().unwrap().unwrap();
-        assert!((rep.measured_lufs - (target - rep.gain_db)).abs() < 1e-6);
+        assert!((rep.measured_lufs + rep.gain_db - target).abs() < 0.1, "unlimited tone needs no correction");
     }
     // a target the peaks cannot reach: the limiter holds the true-peak ceiling
     let path = dir.path("hot.wav");
@@ -798,7 +953,7 @@ fn h265_is_a_format_that_needs_a_registered_encoder() {
     }
     assert_eq!(Format::from_name(Format::Hevc.id()), Some(Format::Hevc));
     assert_eq!((Format::Hevc.extension(), Format::Hevc.label()), ("mp4", "H.265 (HEVC)"));
-    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 20);
+    assert!(Format::ALL.contains(&Format::Hevc) && Format::ALL.len() == 21);
     let s: ExportSettings = serde_json::from_value(serde_json::json!({"format": "hevc"})).unwrap();
     assert_eq!(s.format, Format::Hevc);
     assert_eq!(serde_json::to_value(&s).unwrap()["format"], "hevc");
@@ -862,6 +1017,39 @@ fn extreme_bitrates_do_not_overflow_encoder_setup() {
 }
 
 #[test]
+fn tiff_size_estimate_tracks_alpha_and_real_output() {
+    let (project, sequence, sources) = matte([0.0, 0.0, 1.0, 0.5], 320, 180, None);
+    let rate = FrameRate::FPS_24;
+    let duration = rate.tick_of(1);
+    for alpha in [false, true] {
+        let dir = Scratch::new(&format!("tiff-size-{alpha}"));
+        let mut settings = ExportSettings { format: Format::TiffSequence, path: dir.path("frame.tif"), alpha, ..Default::default() };
+        settings.range = Some(TimeRange::new(Tick::ZERO, duration));
+        settings.validate().unwrap();
+
+        let expected = 320_u64 * 180 * if alpha { 4 } else { 3 };
+        let summary = settings.summary(320, 180, rate, 48_000, duration);
+        assert_eq!(summary.estimated_bytes, expected, "alpha={alpha}");
+        assert_eq!(settings.estimate_bytes(320, 180, rate, 48_000, duration), expected);
+        let result = export(&project, sequence, &settings, &sources, &Progress::default()).unwrap();
+        assert_eq!(result.frames, 1);
+        let paths = files_in(&dir.0);
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        let actual_bytes = std::fs::metadata(dir.0.join(&paths[0])).unwrap().len();
+        assert!(actual_bytes.abs_diff(summary.estimated_bytes) < 1024, "alpha={alpha}: estimate={} actual={actual_bytes}", summary.estimated_bytes);
+    }
+
+    // Other uncompressed formats already have the correct channel policy.
+    for format in [Format::BmpSequence, Format::TgaSequence] {
+        let rgb = ExportSettings { format, alpha: false, ..Default::default() };
+        let rgba = ExportSettings { format, alpha: true, ..Default::default() };
+        assert_eq!(rgb.estimate_bytes(320, 180, rate, 48_000, duration), 320 * 180 * 3);
+        let expected = if format == Format::BmpSequence { 3 } else { 4 };
+        assert_eq!(rgba.estimate_bytes(320, 180, rate, 48_000, duration), 320 * 180 * expected);
+    }
+}
+
+#[test]
 fn gpu_rendering_is_off_by_default() {
     assert_eq!(ExportSettings::default().gpu_rendering, crate::GpuRendering::Off);
     // settings saved before the field existed get the default too
@@ -869,4 +1057,81 @@ fn gpu_rendering_is_off_by_default() {
     assert_eq!(s.gpu_rendering, crate::GpuRendering::Off);
     let auto: ExportSettings = serde_json::from_value(serde_json::json!({"format": "h264", "gpuRendering": "auto"})).unwrap();
     assert_eq!(auto.gpu_rendering, crate::GpuRendering::Auto);
+}
+
+/// Brief large peaks over a quiet bed exercise loudness lost during limiter release.
+struct CrestSource(filmcraft_media::SharedSource, Arc<std::sync::atomic::AtomicUsize>);
+impl MediaSource for CrestSource {
+    fn info(&self) -> &filmcraft_media::MediaInfo {
+        self.0.info()
+    }
+    fn video_frame(&self, req: FrameRequest) -> filmcraft_media::Result<Arc<filmcraft_frame::VideoFrame>> {
+        self.0.video_frame(req)
+    }
+    fn audio(&self, start: i64, frames: usize, sample_rate: u32) -> filmcraft_media::Result<filmcraft_frame::AudioBuffer> {
+        self.1.fetch_add(1, Ordering::Relaxed);
+        let samples: Vec<f32> = (0..frames)
+            .map(|i| {
+                let at = start + i as i64;
+                let phase = at.rem_euclid(sample_rate as i64 / 4);
+                let amplitude = if phase < sample_rate as i64 / 500 { 0.9 } else { 0.08 };
+                amplitude * (std::f32::consts::TAU * 1000.0 * at as f32 / sample_rate as f32).sin()
+            })
+            .collect();
+        Ok(filmcraft_frame::AudioBuffer { sample_rate, channels: vec![samples.clone(), samples] })
+    }
+}
+
+#[test]
+fn loudness_normalization_corrects_limiter_loss_and_bounds_impossible_targets() {
+    use std::cell::Cell;
+    let (p, seq, mut sources) = matte([0.0, 0.0, 0.0, 1.0], 64, 36, Some(-6.0));
+    let reads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    for source in sources.0.values_mut() {
+        *source = Arc::new(CrestSource(source.clone(), reads.clone()));
+    }
+    let range = TimeRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND));
+    let mut settings = ExportSettings::default();
+    settings.effects.loudness = LoudnessNormalization { enabled: true, target_lufs: -14.0, true_peak_dbtp: -2.0 };
+    for target in [-14.0, 2.0] {
+        settings.effects.loudness.target_lufs = target;
+        let mut audio = audio_out::AudioOut::new(p.clone(), seq, &settings, range).unwrap();
+        let chunks = Cell::new(0);
+        audio
+            .measure(&settings, &sources, &|| {
+                chunks.set(chunks.get() + 1);
+                false
+            })
+            .unwrap();
+        let report = audio.loudness.unwrap();
+        let result = audio.rest(&sources).unwrap();
+        let (integrated, peak) = lufs(&result, 48_000);
+        eprintln!("target {target}: output {integrated:.3} LUFS, {peak:.3} dBTP, gain {:.3}, chunks {}", report.gain_db, chunks.get());
+        assert!(chunks.get() <= 5, "one raw pass plus at most four limited trials");
+        assert_eq!(result[0].len(), 48_000, "measuring must rewind output and limiter latency");
+        assert!(peak <= -1.8, "limiting must remain enabled: {peak}");
+        if target == -14.0 {
+            assert!((integrated - target).abs() < 0.15, "achieved {integrated}");
+            assert!(report.gain_db > target - report.measured_lufs + 0.3, "fixture must require limiter correction");
+        } else {
+            assert!(integrated < target - 1.0, "impossible target sacrifices loudness, not peak ceiling");
+        }
+    }
+    // Cancel after raw measurement and one limited trial, before further refinement.
+    // Record source reads at cancellation to prove no further mixing occurs.
+    let mut audio = audio_out::AudioOut::new(p, seq, &settings, range).unwrap();
+    let chunks = Cell::new(0);
+    let reads_at_cancel = Cell::new(None);
+    let cancel = || {
+        chunks.set(chunks.get() + 1);
+        if chunks.get() > 2 {
+            reads_at_cancel.set(Some(reads.load(Ordering::Relaxed)));
+            true
+        } else {
+            false
+        }
+    };
+    assert!(matches!(audio.measure(&settings, &sources, &cancel), Err(ExportError::Cancelled)));
+    assert_eq!(chunks.get(), 3);
+    assert_eq!(reads_at_cancel.get(), Some(reads.load(Ordering::Relaxed)));
 }
