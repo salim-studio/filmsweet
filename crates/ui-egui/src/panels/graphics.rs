@@ -836,6 +836,10 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
                 if resp.double_clicked() {
                     if let Some(v) = views.iter().find(|v| v.is_text() && v.hit(p)) {
                         start_edit_at(app, ui, v, p, &mut actions);
+                        // double-click selects all the text so typing replaces it, as in Premiere
+                        if let (Some(tp), Some(e)) = (text_of(&v.spec), app.ui.gfx_edit.as_mut()) {
+                            (e.anchor, e.caret) = (0, tp.text.len());
+                        }
                     }
                 } else if let Some(v) = views.iter().find(|v| v.hit(p)) {
                     if app.ui.gfx_edit.is_some() {
@@ -963,6 +967,21 @@ fn start_edit_at(app: &mut FilmcraftApp, ui: &egui::Ui, v: &LayerView, p: Pos2, 
     app.ui.focused = crate::dock::PanelKind::Program;
     let _ = ui;
     actions.push(("graphics.selectLayer".into(), json!({"clip": v.clip.0, "layers": [v.layer]})));
+}
+
+/// Edit ▸ Select All while text is edited on the monitor selects all of that text, not the
+/// timeline clips: on macOS the native menu takes Cmd+A before the text sees the key (#1102).
+/// False when no text is being edited.
+pub(crate) fn select_all_edited_text(app: &mut FilmcraftApp) -> bool {
+    let Some((clip, layer)) = app.ui.gfx_edit.as_ref().map(|e| (e.clip, e.layer)) else { return false };
+    let t = app.session.playhead();
+    let Some((_, it)) = app.session.active_sequence().and_then(|q| q.find_item(ClipId(clip))) else { return false };
+    let Some(ItemKind::Graphic { width, height, .. }) = app.session.project.item(it.item).map(|p| &p.kind) else { return false };
+    let Some(effect) = layer_indices(&it.effects).get(layer).and_then(|&i| it.effects.get(i)) else { return false };
+    let Some(len) = eval_layer(effect, it.source_time_at(t), (*width, *height)).as_ref().and_then(text_of).map(|tp| tp.text.len()) else { return false };
+    let Some(ed) = app.ui.gfx_edit.as_mut() else { return false };
+    (ed.anchor, ed.caret) = (0, len);
+    true
 }
 
 /// Keyboard handling while a text layer is being edited.
