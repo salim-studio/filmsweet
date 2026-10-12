@@ -191,7 +191,7 @@ impl FilmcraftApp {
         let mut actions = vec![];
         let mut targets = vec![];
         for group in &groups {
-            let chrome = dock::draw_group_chrome_details(ui, group, self.ui.focused, &seqs, &t, &mut self.auto);
+            let chrome = dock::draw_group_chrome_details(ui, group, &seqs, &t, &mut self.auto);
             if let Some(target) = target(group, chrome.tabs, true) {
                 targets.push(target);
             }
@@ -204,6 +204,9 @@ impl FilmcraftApp {
             if let Some(panel) = group.panels.get(group.active).copied() {
                 self.panel_body(ui, panel, group.content);
             }
+        }
+        for group in &groups {
+            dock::paint_group_focus(ui, group, self.ui.focused, &t);
         }
         let floating_order = self.floating_order(&ctx);
         for index in floating_order.into_iter().filter(|_| maximized.is_none()) {
@@ -255,6 +258,7 @@ impl FilmcraftApp {
         }
         self.panel_drag(&ctx, &targets);
         panels::panel_menu_popup(self, ui);
+        self.cancel_value_drag(ui.ctx());
     }
 
     fn floating_group(&mut self, ctx: &egui::Context, index: usize, seqs: &dock::SeqTabs, actions: &mut Vec<DockAction>) -> Option<DropTarget<PanelKind>> {
@@ -279,7 +283,7 @@ impl FilmcraftApp {
                 panels: floating.panels.clone(),
                 active: floating.active,
             };
-            let chrome = dock::draw_group_chrome_details(ui, &group, self.ui.focused, seqs, &t, &mut self.auto);
+            let chrome = dock::draw_group_chrome_details(ui, &group, seqs, &t, &mut self.auto);
             actions.extend(chrome.actions);
             if let Some(active) = group.panels.get(group.active).copied() {
                 self.panel_body(ui, active, group.content);
@@ -307,6 +311,7 @@ impl FilmcraftApp {
             if next != rect {
                 let _ = self.dock_command(ctx, Action::MoveFloating { panel, rect: [next.min.x, next.min.y, next.width(), next.height()] });
             }
+            dock::paint_group_focus(ui, &group, self.ui.focused, &t);
             output = target(&group, chrome.tabs, false);
         });
         output
