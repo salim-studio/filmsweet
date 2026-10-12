@@ -497,6 +497,27 @@ fn range_and_chapter_markers() {
 }
 
 #[test]
+fn unknown_marker_colours_are_rejected_not_stored_as_green() {
+    // #857: `markers.add {color:"Red"}` used to succeed and store Green
+    let mut s = demo();
+    let before = s.project.to_json();
+    for cmd in ["markers.add", "markers.addRange", "markers.addChapter", "markers.addFlashCue"] {
+        for color in [json!("Red"), json!("NotAColor"), json!(3)] {
+            let err = s.execute(cmd, json!({"frame": 10, "color": color})).unwrap_err().to_string();
+            assert!(err.contains("Rose"), "{cmd}: the error lists the accepted names: {err}");
+            assert_eq!(s.project.to_json(), before, "{cmd} {color} must not add a marker");
+        }
+    }
+    let id = s.execute("markers.add", json!({"frame": 10, "color": "rose"})).unwrap()["marker"].as_u64().unwrap();
+    let colour = |s: &Session| s.active_sequence().unwrap().markers.iter().find(|m| m.id.0 == id).unwrap().color;
+    assert_eq!(colour(&s), Label::Rose);
+    assert!(s.execute("markers.edit", json!({"marker": id, "color": "Red"})).is_err());
+    assert_eq!(colour(&s), Label::Rose, "a bad colour leaves the marker unchanged");
+    s.execute("markers.edit", json!({"marker": id, "color": "Teal"})).unwrap();
+    assert_eq!(colour(&s), Label::Teal);
+}
+
+#[test]
 fn ripple_sequence_markers_follow_ripple_edits() {
     let mut s = demo();
     s.execute("markers.clearAll", json!({})).unwrap();
@@ -624,6 +645,29 @@ fn place_on_new_tracks_adds_them_in_one_undo_step() {
 
     // a placement that fails after the tracks were added: nothing changes
     assert!(s.execute("timeline.place", json!({"item": item, "track": "new", "audioTrack": "A99", "time": 0})).is_err());
+    assert_eq!(*s.active_sequence().unwrap(), before);
+    assert_eq!(s.history.undo.len(), undo);
+}
+
+/// #1104: a clip dragged into the empty space past the last track moves onto a new track (with
+/// `"new"`), one undo step; a move that fails leaves no new track behind.
+#[test]
+fn move_to_new_track_adds_it_in_one_undo_step() {
+    let (mut s, item) = fresh();
+    let clips = place(&mut s, item, "V1", 0, 0, 10);
+    let before = s.active_sequence().unwrap().clone();
+    let nv = before.video_tracks.len();
+    let undo = s.history.undo.len();
+    s.execute("timeline.move", json!({"moves": [{"clip": clips[0], "track": "new", "time": 0}], "linked": false})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks.len(), nv + 1);
+    assert_eq!(q.video_tracks[nv].items.iter().map(|i| i.id.0).collect::<Vec<_>>(), [clips[0]], "the clip is on the new top video track");
+    assert!(q.video_tracks[0].items.is_empty());
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(*s.active_sequence().unwrap(), before);
+
+    assert!(s.execute("timeline.move", json!({"moves": [{"clip": 999_999, "track": "new", "time": 0}]})).is_err());
     assert_eq!(*s.active_sequence().unwrap(), before);
     assert_eq!(s.history.undo.len(), undo);
 }
