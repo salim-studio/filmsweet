@@ -3551,3 +3551,10 @@
 	The default graphics are used from the next start.	次回の起動からデフォルトのグラフィックが使用されます。
 	DirectX 12 only	DirectX 12 のみ
 	software rendering	ソフトウェアレンダリング
+	Label Color Presets	ラベルカラープリセット
+	{name} (Modified)	{name} (変更あり)
+	Revert to the preset's colors and names	プリセットのカラーと名前に戻す
+	Import a preset file…	プリセットファイルを読み込み…
+	Export the labels to a preset file…	ラベルをプリセットファイルに書き出し…
+	Show the presets folder	プリセットフォルダーを表示
+	Delete this preset	このプリセットを削除
