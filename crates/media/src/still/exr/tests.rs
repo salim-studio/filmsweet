@@ -276,3 +276,17 @@ fn hostile_files_are_errors_not_panics() {
         }
     }
 }
+
+/// A tiny header naming many channels on a very wide line used to size each chunk buffer at
+/// hundreds of GB (`Vec::with_capacity` aborts the process); it is refused instead.
+#[test]
+fn huge_scan_lines_are_refused_before_allocating() {
+    let names: Vec<String> = (0..MAX_CHANNELS - 1).map(|i| format!("A{i:04}")).collect();
+    let mut chans: Vec<Chan> = names.iter().map(|n| (&*n.clone().leak(), 2)).collect();
+    chans.push(("R", 2));
+    let f = exr_file(&chans, [0, 0, 0, 0], [0, 0, 0, 0], 3, pattern);
+    let at = f.windows(10).position(|w| w == b"dataWindow").unwrap() + 10 + 1 + 6 + 4;
+    let mut g = f.clone();
+    g[at..at + 16].copy_from_slice(&box2i([0, 0, (1 << 26) - 1, 0]));
+    assert!(decode("h.exr", &g).is_err());
+}

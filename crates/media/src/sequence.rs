@@ -3,11 +3,12 @@
 //! - [`Numbered`] splits a file name around its last run of digits; [`sequence_frames`] lists the
 //!   frames from the chosen file's number up to the highest number present (gaps are `None`).
 //! - [`ImageSequenceSource`] decodes frames on demand through a [`FrameLoader`] (the host's file
-//!   access) with the still decoders (PNG, JPEG, TIFF, BMP, WebP, GIF, Targa, DPX; OpenEXR as linear
-//!   float frames), keeps recently used frames in a byte-budgeted [`FrameCache`], and shows the
-//!   nearest earlier frame for a missing or undecodable one (the nearest later frame before the
-//!   first).
-//! - The frame rate is the caller's (Settings ▸ Media ▸ Indeterminate Media Timebase).
+//!   access) with the still decoders (PNG, JPEG, TIFF, BMP, WebP, GIF, Targa, DPX; OpenEXR and DNG
+//!   camera raw as linear float frames), keeps recently used frames in a byte-budgeted
+//!   [`FrameCache`], and shows the nearest earlier frame for a missing or undecodable one (the
+//!   nearest later frame before the first).
+//! - The frame rate is the caller's (Settings ▸ Media ▸ Indeterminate Media Timebase), except for
+//!   CinemaDNG: a frame rate and start time code in the first frame's tags are the sequence's.
 
 use std::sync::Arc;
 
@@ -135,8 +136,12 @@ impl ImageSequenceSource {
         let bytes = loader(&first).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound { MediaError::Offline(format!("{first}: {e}")) } else { MediaError::Io(format!("{first}: {e}")) }
         })?;
-        let (frame, has_alpha, pixel_format) = decode_frame(&first, &bytes)?;
+        let (frame, has_alpha, pixel_format, timing) = decode_frame(&first, &bytes)?;
         let (w, h) = (frame.width, frame.height);
+        let (rate, start_timecode) = match timing {
+            Some(info) => crate::still::dng::sequence_timing(&info, rate),
+            None => (rate, None),
+        };
         let ext = first.rsplit('.').next().unwrap_or("image").to_ascii_uppercase();
         let n = frames.len() as i64;
         let info = MediaInfo {
@@ -157,7 +162,7 @@ impl ImageSequenceSource {
             }),
             audio_streams: Vec::new(),
             container: "Image Sequence".into(),
-            start_timecode: None,
+            start_timecode,
             file_size: None,
         };
         let cache = FrameCache::new(256 << 20);
@@ -216,16 +221,21 @@ impl MediaSource for ImageSequenceSource {
     }
 }
 
-/// Decode one frame file: OpenEXR as linear floats, every other format through the still decoders
-/// as RGBA8. Returns the frame, whether it has alpha, and its pixel format for the media info.
-fn decode_frame(name: &str, bytes: &[u8]) -> Result<(VideoFrame, bool, String)> {
+/// Decode one frame file: OpenEXR and DNG camera raw as linear floats (DNG with its metadata, for
+/// the sequence's timing), every other format through the still decoders as RGBA8. Returns the
+/// frame, whether it has alpha, and its pixel format for the media info.
+fn decode_frame(name: &str, bytes: &[u8]) -> Result<(VideoFrame, bool, String, Option<filmcraft_dng::Info>)> {
     if crate::still::exr::sniff(bytes) {
         let d = crate::still::exr::decode(name, bytes)?;
-        return Ok((d.frame, d.has_alpha, d.pixel_format));
+        return Ok((d.frame, d.has_alpha, d.pixel_format, None));
+    }
+    if crate::still::dng::sniff(bytes) {
+        let d = crate::still::dng::decode(name, bytes)?;
+        return Ok((d.frame, false, d.pixel_format, Some(d.info)));
     }
     let img = crate::still::decode_raster(name, bytes)?;
     let pixel_format = if img.has_alpha { "RGBA 8-bit" } else { "RGB 8-bit" }.to_string();
-    Ok((VideoFrame::rgba8(img.width, img.height, img.rgba), img.has_alpha, pixel_format))
+    Ok((VideoFrame::rgba8(img.width, img.height, img.rgba), img.has_alpha, pixel_format, None))
 }
 
 #[cfg(test)]

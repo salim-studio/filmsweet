@@ -29,6 +29,10 @@ const MAX_PIXELS: u64 = 1 << 26;
 /// Most attributes / channels we read from a header.
 const MAX_ATTRIBUTES: usize = 4096;
 const MAX_CHANNELS: usize = 1024;
+/// Largest uncompressed chunk (scan lines × every channel) accepted. A real chunk is a few MB
+/// (16 lines of a 16K-wide, 8-channel float image is 8 MB); a hostile header naming a thousand
+/// channels on a 64M-pixel-wide line would otherwise ask for hundreds of GB.
+const MAX_CHUNK_BYTES: usize = 256 << 20;
 
 /// Whether `b` starts like an OpenEXR file.
 pub fn sniff(b: &[u8]) -> bool {
@@ -302,7 +306,8 @@ fn unpredict(mut t: Vec<u8>) -> Vec<u8> {
 
 /// OpenEXR run-length decoding into exactly `expected` bytes.
 fn unrle(src: &[u8], expected: usize) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(expected);
+    let mut out = Vec::new();
+    out.try_reserve_exact(expected).ok()?;
     let mut i = 0;
     while let Some(&c) = src.get(i) {
         let c = c as i8;
@@ -364,6 +369,9 @@ pub fn decode(name: &str, b: &[u8]) -> Result<Decoded> {
         line = c.ty.size().checked_mul(dw).and_then(|n| line.checked_add(n)).ok_or_else(|| bad("line size".into()))?;
     }
     let lpc = h.compression.lines_per_chunk(h.code);
+    if line.checked_mul(lpc).is_none_or(|n| n > MAX_CHUNK_BYTES) {
+        return Err(MediaError::Unsupported(format!("{name}: EXR scan lines too large ({} channels, {dw} wide)", h.channels.len())));
+    }
     let table = h.end;
     let px_len = dw.checked_mul(dh).and_then(|n| n.checked_mul(4)).ok_or_else(|| bad("size".into()))?;
     let mut px = vec![0f32; px_len];

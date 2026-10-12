@@ -29,7 +29,8 @@ pub fn zlib(src: &[u8], expected: usize) -> Result<Vec<u8>, Error> {
 /// Inflate raw DEFLATE data, producing at most `limit` bytes (more is an error).
 pub fn inflate(src: &[u8], limit: usize) -> Result<Vec<u8>, Error> {
     let mut bits = Bits { src, pos: 0, buf: 0, cnt: 0 };
-    let mut out = Vec::with_capacity(limit);
+    let mut out = Vec::new();
+    out.try_reserve_exact(limit).map_err(|_| "output too large to allocate")?;
     let mut fixed: Option<(Huffman, Huffman)> = None;
     loop {
         let last = bits.take(1)? == 1;
