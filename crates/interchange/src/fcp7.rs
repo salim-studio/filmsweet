@@ -517,6 +517,14 @@ impl<'a, 'i> Imp<'a, 'i, '_> {
             && let Ok(ch) = u16::try_from(idx - 1)
         {
             ti.source_channels = vec![ch];
+            // The two halves of a split stereo file play on their own side, as the stereo clip did (#371):
+            // a mono clip is centred (both sides at unity), so the halves would otherwise sum on both
+            // sides, +3 dB for uncorrelated channels, +6 dB for dual mono. An `audiopan` filter
+            // (read below) still overrides this.
+            let stereo = matches!(&self.b.p.item(item).map(|i| &i.kind), Some(ItemKind::Media(m)) if m.info.audio().is_some_and(|a| a.channels == 2));
+            if stereo && ch <= 1 {
+                set_param(&mut ti, "panner", "balance", Param::new(ParamValue::Float(if ch == 0 { -100.0 } else { 100.0 })));
+            }
         }
         if let Some(mode) = child_text(c, "compositemode") {
             match BLEND_XML.iter().find(|(n, _)| n.eq_ignore_ascii_case(mode)) {
@@ -1212,7 +1220,9 @@ impl Exp<'_, '_> {
                 self.float_param(c, "volume", "level", "Level", 0.0, 3.98109, rate, move |v| db_to_gain(v + g), "level");
                 self.close_effect();
             }
-            if param_modified(c, "panner", "balance") {
+            // A one-channel clip says where it is panned even when centred: without Audio Pan the
+            // importer pans the halves of a split stereo file to their sides (#371).
+            if param_modified(c, "panner", "balance") || c.source_channels.len() == 1 {
                 self.open_effect("Audio Pan", "audiopan", "audiopan", "audiopan", "audio", true);
                 self.float_param(c, "panner", "balance", "Pan", -1.0, 1.0, rate, |v| v / 100.0, "pan");
                 self.close_effect();
