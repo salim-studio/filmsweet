@@ -628,3 +628,26 @@ fn place_on_new_tracks_adds_them_in_one_undo_step() {
     assert_eq!(*s.active_sequence().unwrap(), before);
     assert_eq!(s.history.undo.len(), undo);
 }
+
+/// #1104: a clip dragged into the empty space past the last track moves onto a new track (with
+/// `"new"`), one undo step; a move that fails leaves no new track behind.
+#[test]
+fn move_to_new_track_adds_it_in_one_undo_step() {
+    let (mut s, item) = fresh();
+    let clips = place(&mut s, item, "V1", 0, 0, 10);
+    let before = s.active_sequence().unwrap().clone();
+    let nv = before.video_tracks.len();
+    let undo = s.history.undo.len();
+    s.execute("timeline.move", json!({"moves": [{"clip": clips[0], "track": "new", "time": 0}], "linked": false})).unwrap();
+    let q = s.active_sequence().unwrap();
+    assert_eq!(q.video_tracks.len(), nv + 1);
+    assert_eq!(q.video_tracks[nv].items.iter().map(|i| i.id.0).collect::<Vec<_>>(), [clips[0]], "the clip is on the new top video track");
+    assert!(q.video_tracks[0].items.is_empty());
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(*s.active_sequence().unwrap(), before);
+
+    assert!(s.execute("timeline.move", json!({"moves": [{"clip": 999_999, "track": "new", "time": 0}]})).is_err());
+    assert_eq!(*s.active_sequence().unwrap(), before);
+    assert_eq!(s.history.undo.len(), undo);
+}
