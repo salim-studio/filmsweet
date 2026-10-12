@@ -94,6 +94,9 @@ fn packet_len(b: &[u8]) -> Option<usize> {
                 let stuff = (*b.get(13)? & 7) as usize;
                 Some(14 + stuff)
             } else if b[4] >> 4 == 2 {
+                // MPEG-1 pack header: start code, 5-byte SCR, 3-byte mux rate. A file cut inside
+                // it is not a pack header yet (`scan` reads the SCR from the first 9 bytes).
+                b.get(..12)?;
                 Some(12)
             } else {
                 None

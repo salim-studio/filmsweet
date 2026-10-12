@@ -276,6 +276,50 @@ fn truncation_and_mutation_never_panic() {
     }
 }
 
+/// Opens `data` and reads every unit; errors are fine, panics are not.
+fn open_and_read_all(data: &[u8]) {
+    let data = data.to_vec();
+    if let Ok(f) = open(&data) {
+        for (s, st) in f.streams.iter().enumerate() {
+            for i in 0..st.units.len() {
+                let _ = f.read_unit(&data, s, i);
+            }
+        }
+    }
+}
+
+#[test]
+fn program_stream_cut_inside_a_pack_header_never_panics() {
+    // MPEG-1 pack header cut after the 4-byte start code + 3 bytes (once panicked in `scan`).
+    open_and_read_all(&[0, 0, 1, 0xBA, 0x21, 0, 0]);
+    for n in 4..=12 {
+        let mpeg1 = [0u8, 0, 1, 0xBA, 0x21, 0, 1, 0, 1, 0x80, 0, 1];
+        open_and_read_all(&mpeg1[..n]);
+    }
+}
+
+#[test]
+fn program_stream_truncation_at_every_length_never_panics() {
+    let frames: Vec<Vec<u8>> = (0..3).map(|k| mpeg2_frame(if k == 0 { 1 } else { 2 }, k as u16, false, 300)).collect();
+    let es: Vec<u8> = frames.concat();
+    for mpeg1 in [false, true] {
+        let mut out = Vec::new();
+        for (k, chunk) in es.chunks(500).enumerate() {
+            if mpeg1 {
+                out.extend([0, 0, 1, 0xBA, 0x21, 0, 1, 0, 1, 0x80, 0, 1]);
+            } else {
+                out.extend([0, 0, 1, 0xBA, 0x44, 0, 4, 0, 4, 1, 1, 0x89, 0xC3, 0xF8]);
+            }
+            out.extend(pes(0xE0, Some(3600 * k as i64), None, chunk, true));
+        }
+        out.extend([0, 0, 1, 0xB9]);
+        assert!(open(&out).is_ok(), "the untruncated stream opens (mpeg1: {mpeg1})");
+        for cut in 0..=out.len() {
+            open_and_read_all(&out[..cut]);
+        }
+    }
+}
+
 #[test]
 fn timestamps_unwrap_across_the_33_bit_wrap() {
     let mut u = Unwrap::default();
