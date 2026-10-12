@@ -360,6 +360,13 @@ fn user_presets_persist_with_favourites_import_and_export() {
     assert_eq!(favs, 2);
     let hits = s.execute("export.presets.list", json!({"query": "prores"})).unwrap()["presets"].as_array().unwrap().len();
     assert_eq!(hits, 8, "seven QuickTime ProRes presets and MXF OP1a ProRes 422 HQ");
+    // #1371: the query also matches the format id and the normalised label
+    let h264_only = s.execute("export.presets.list", json!({"format": "h264"})).unwrap()["presets"].as_array().unwrap().len();
+    let mut count = |q: &str| s.execute("export.presets.list", json!({"query": q})).unwrap()["presets"].as_array().unwrap().len();
+    assert!(count("h264") > 0, "format id `h264` finds the H.264 presets");
+    assert!(count("h264") >= h264_only, "every h264 preset is found by its format id");
+    assert_eq!(count("h.264"), count("H.264"));
+    assert!(count("h.264") >= h264_only);
     // persisted: a fresh session with the same data directory sees both
     let mut s2 = demo();
     s2.export_presets.set_dir(&dir.0);

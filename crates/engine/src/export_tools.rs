@@ -953,8 +953,14 @@ fn preset_json(s: &Session, pr: &ExportPreset, full: bool) -> Value {
     v
 }
 
+/// Lower-cased alphanumerics only, so `h264`, `h.264` and `H.264` compare equal.
+fn squash_alnum(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
 fn presets_list(s: &mut Session, p: &Value) -> Result<Value> {
     let query = str_p(p, "query").unwrap_or("").to_ascii_lowercase();
+    let squashed = squash_alnum(&query);
     let cat = str_p(p, "category").map(str::to_ascii_lowercase);
     let fav = bool_p(p, "favorites").unwrap_or(false);
     let fmt = str_p(p, "format").and_then(Format::from_name);
@@ -967,6 +973,10 @@ fn presets_list(s: &mut Session, p: &Value) -> Result<Value> {
                 || x.name.to_ascii_lowercase().contains(&query)
                 || x.description.to_ascii_lowercase().contains(&query)
                 || x.category.to_ascii_lowercase().contains(&query)
+                // The format id (`h264`) and label (`H.264`) are equivalent spellings.
+                || (!squashed.is_empty()
+                    && (squash_alnum(x.settings.format.id()).contains(&squashed)
+                        || squash_alnum(x.settings.format.label()).contains(&squashed)))
         })
         .filter(|x| cat.as_ref().is_none_or(|c| x.category.to_ascii_lowercase() == *c))
         .filter(|x| !fav || s.export_presets.is_favorite(&x.name))
