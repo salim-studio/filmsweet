@@ -10,7 +10,7 @@ Portuguese (Brazil), Russian, Simplified Chinese.
 
 Edit ▸ Language (also Settings ▸ General, `general.interfaceLanguage`) switches the interface and
 persists across restarts; System Language (the default) follows the OS's or browser's preferred
-languages and falls back to English. Commands `app.language.<english|japanese|spanish|portuguese|ukrainian|chinese|german|russian|french|indonesian>`
+languages and falls back to English. Commands `app.language.<english|japanese|spanish|portuguese|ukrainian|chinese|german|russian|french|indonesian|italian>`
 are reachable over the control channel. One catalog per language,
 `crates/ui-egui/src/i18n/<code>.tsv` (format in the header of `es.tsv`); UI code wraps strings in
 `tl!("…")` / `tlf!("…{name}", name)`, and registry names (effects and their parameters, settings,
@@ -53,9 +53,10 @@ whole interface, one PR) at ~4–8 h per language for the catalog plus tests.
 | German | de | 371 (10.6%) | menus only | Latin | yes (#630) | menus only | 5–9 h + review |
 | Korean | ko | 0 (0%) | — | needs Hangul fonts in craft-fonts and IME testing | — | none (requested #508) | 10–20 h + review |
 | Vietnamese | vi | 0 (0%) | — | Latin with stacked diacritics (font coverage to check) | — | none | 6–12 h + review |
+| *Other shipped:* Italian | it | 3,573 (same entries as Spanish, plus the macOS Settings item); must cover the core menus, no entry without a Spanish one | as Spanish | Latin (bundled fonts) | not recorded; welcome | partial | review |
 | *Other shipped:* Ukrainian | uk | 351 (10.0%) | menus only | Cyrillic (bundled) | not recorded | menus only | 5–9 h |
 
-Premiere also ships Italian and Russian, which we don't (6–10 h each).
+Premiere also ships Italian, which we now cover like Spanish, and Russian (6–10 h).
 
 **Localization dimension:** 6 of the 12 key languages near-complete (English, Spanish, Japanese,
 Simplified Chinese, French, Portuguese (Brazil)), 1 menus-only, 5 none; against Premiere's 10 languages
