@@ -1867,6 +1867,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-dng"
+version = "0.6.0"
+dependencies = [
+ "filmcraft-dng",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-dnx"
 version = "0.6.0"
 dependencies = [
@@ -1897,6 +1906,7 @@ dependencies = [
  "filmcraft-captions",
  "filmcraft-codecs",
  "filmcraft-color",
+ "filmcraft-dng",
  "filmcraft-edit",
  "filmcraft-export",
  "filmcraft-format",
@@ -2100,6 +2110,7 @@ name = "filmcraft-media"
 version = "0.6.0"
 dependencies = [
  "filmcraft-color",
+ "filmcraft-dng",
  "filmcraft-frame",
  "filmcraft-time",
  "image",
