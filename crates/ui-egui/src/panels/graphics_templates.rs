@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::FilmcraftApp;
+use crate::native_dialogs::FileDialog;
 use crate::theme::Tokens;
 
 /// One candidate property in the Export As Motion Graphics Template dialog.
@@ -439,8 +440,8 @@ pub fn template_controls(
             ControlKind::Position => {
                 let v = pv.and_then(|v| v.as_vec2()).unwrap_or_default();
                 let (mut x, mut y) = (v.x, v.y);
-                let rx = vui.add(egui::DragValue::new(&mut x).speed(1.0).prefix("X "));
-                let ry = vui.add(egui::DragValue::new(&mut y).speed(1.0).prefix("Y "));
+                let rx = vui.add(crate::widgets::number_drag(&mut x).speed(1.0).prefix("X "));
+                let ry = vui.add(crate::widgets::number_drag(&mut y).speed(1.0).prefix("Y "));
                 autos.push((format!("{id}.x"), rx.rect, c.name.clone()));
                 autos.push((format!("{id}.y"), ry.rect, c.name.clone()));
                 if rx.changed() || ry.changed() {
@@ -461,7 +462,7 @@ pub fn responsive_time(app: &FilmcraftApp, ui: &mut egui::Ui, clip: ClipId, it: 
     for (key, label, v) in [("intro", tl!("Intro Duration"), m.intro), ("outro", tl!("Outro Duration"), m.outro)] {
         let mut vui = row_label(ui, label, &t);
         let mut f = frames(v);
-        let r = vui.add(egui::DragValue::new(&mut f).speed(0.2).range(0.0..=100_000.0).suffix(" fr"));
+        let r = vui.add(crate::widgets::number_drag(&mut f).speed(0.2).range(0.0..=100_000.0).suffix(" fr"));
         autos.push((format!("graphics.time.{key}"), r.rect, label.into()));
         if r.changed() {
             actions.push(("graphics.setResponsiveTime".into(), json!({"clip": clip.0, format!("{key}Frames"): f.round()})));
@@ -506,7 +507,7 @@ pub fn responsive_time(app: &FilmcraftApp, ui: &mut egui::Ui, clip: ClipId, it: 
     ] {
         let mut vui = row_label(ui, label, &t);
         let mut f = frames(v);
-        let r = vui.add(egui::DragValue::new(&mut f).speed(0.2).range(0.0..=100_000.0).suffix(" fr"));
+        let r = vui.add(crate::widgets::number_drag(&mut f).speed(0.2).range(0.0..=100_000.0).suffix(" fr"));
         autos.push((format!("graphics.roll.{key}"), r.rect, label.into()));
         if r.changed() {
             actions.push(("graphics.setRoll".into(), json!({"clip": clip.0, format!("{key}Frames"): f.round()})));
@@ -589,10 +590,18 @@ pub fn route(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, params: &Val
     let empty = params.as_object().is_none_or(|m| m.is_empty());
     match id {
         "graphics.template.install" if params.get("path").is_none() => {
-            let path = app.hooks.pick_open_file.as_mut().and_then(|f| f(tl!("FilmCraft Graphics Template"), &["fcgt"]))?;
-            let r = app.session.execute(id, json!({"path": path})).map_err(|e| e.to_string());
-            invalidate(ctx);
-            Some(r)
+            let (id, ctx) = (id.to_string(), ctx.clone());
+            Some(app.pick(FileDialog::open_file(tl!("FilmCraft Graphics Template"), &["fcgt"]), move |app, paths| {
+                let Some(path) = paths.into_iter().next() else { return Ok(Value::Null) };
+                let r = app.session.execute(&id, json!({"path": path})).map_err(|e| e.to_string());
+                // The Browse panel's Install… button calls this directly and drops the result
+                // (#611); report a refused file here, so every caller shows why nothing happened.
+                if let Err(e) = &r {
+                    app.ui.status = e.clone();
+                }
+                invalidate(&ctx);
+                r
+            }))
         }
         "graphics.template.export" | "file.exportGraphicsTemplate" if empty => {
             let clip = filmcraft_engine::graphics::target_clip(&app.session, &Value::Null);

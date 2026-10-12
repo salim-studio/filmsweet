@@ -200,7 +200,8 @@ impl ExrCompression {
     }
 }
 
-/// Audio codec. `Auto` = AAC in MP4 and AAC Audio, PCM in QuickTime / WAV / AIFF.
+/// Audio codec. `Auto` = AAC in MP4 and AAC Audio, PCM in QuickTime / WAV / AIFF, FLAC in FLAC.
+/// MP4 and QuickTime can also carry FLAC; MXF is always PCM.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AudioCodec {
@@ -208,6 +209,8 @@ pub enum AudioCodec {
     Auto,
     Aac,
     Pcm,
+    /// Lossless compression (the FLAC format).
+    Flac,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -220,13 +223,15 @@ pub struct AudioSettings {
     pub channels: u32,
     /// AAC bitrate.
     pub bitrate_kbps: u32,
-    /// PCM sample size: 16 or 24.
+    /// PCM and FLAC sample size: 16 or 24.
     pub bits: u16,
+    /// FLAC compression level, 0 (fastest) to 8 (smallest). Every level is lossless.
+    pub flac_level: u8,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
-        AudioSettings { codec: AudioCodec::Auto, sample_rate: None, channels: 2, bitrate_kbps: 320, bits: 16 }
+        AudioSettings { codec: AudioCodec::Auto, sample_rate: None, channels: 2, bitrate_kbps: 320, bits: 16, flac_level: 5 }
     }
 }
 
@@ -471,8 +476,11 @@ impl ExportSettings {
     /// The audio codec actually used.
     pub fn audio_codec(&self) -> AudioCodec {
         match (self.format, self.audio.codec) {
+            (Format::Flac, _) => AudioCodec::Flac,
             (Format::Wav | Format::Aiff | Format::MxfOp1a | Format::MxfOpAtom, _) => AudioCodec::Pcm,
             (Format::Aac, _) => AudioCodec::Aac,
+            // MP4 and QuickTime both carry FLAC (`fLaC` + `dfLa`)
+            (_, AudioCodec::Flac) => AudioCodec::Flac,
             (f, _) if f.is_mp4_with(self.multiplexer) => AudioCodec::Aac,
             (_, AudioCodec::Auto) if self.format.is_mp4_video() => AudioCodec::Aac,
             (_, AudioCodec::Auto) => AudioCodec::Pcm,
@@ -526,7 +534,8 @@ impl ExportSettings {
             }
             Format::Mjpeg | Format::JpegSequence => px * 8.0 * (0.4 + self.quality as f64 / 100.0 * 2.0) * fps / 8.0,
             Format::PngSequence => px * 4.0 * 0.45 * 8.0 * fps,
-            Format::TiffSequence | Format::BmpSequence => px * if self.format == Format::BmpSequence { 3.0 } else { 4.0 } * 8.0 * fps,
+            Format::BmpSequence => px * 3.0 * 8.0 * fps,
+            Format::TiffSequence => px * if self.keeps_alpha() { 4.0 } else { 3.0 } * 8.0 * fps,
             Format::TgaSequence => px * if self.keeps_alpha() { 4.0 } else { 3.0 } * 8.0 * fps,
             // 10-bit RGB in one 32-bit word per pixel
             Format::DpxSequence => px * 4.0 * 8.0 * fps,
@@ -536,12 +545,15 @@ impl ExportSettings {
                 px * if self.keeps_alpha() { 8.0 } else { 6.0 } * 8.0 * fps * k
             }
             Format::Gif => px * 0.6 * 8.0 * fps,
-            Format::Wav | Format::Aiff | Format::MxfOp1a | Format::MxfOpAtom => 0.0,
+            Format::Wav | Format::Aiff | Format::Flac | Format::MxfOp1a | Format::MxfOpAtom => 0.0,
         };
         let audio_bps = if self.has_audio() || self.format.is_audio_only() {
+            let pcm = r.sample_rate as f64 * r.channels as f64 * if self.audio.bits >= 24 { 24.0 } else { 16.0 };
             match self.audio_codec() {
                 AudioCodec::Aac => self.audio.bitrate_kbps as f64 * 1000.0,
-                _ => r.sample_rate as f64 * r.channels as f64 * if self.audio.bits >= 24 { 24.0 } else { 16.0 },
+                // typical of music and dialogue; noise compresses less, silence far more
+                AudioCodec::Flac => pcm * 0.6,
+                _ => pcm,
             }
         } else {
             0.0
@@ -637,6 +649,12 @@ impl ExportSettings {
             };
             match self.audio_codec() {
                 AudioCodec::Aac => format!("AAC, {} kbps, {} Hz, {ch}", self.audio.bitrate_kbps, r.sample_rate),
+                AudioCodec::Flac => format!(
+                    "FLAC (lossless) {}-bit, level {}, {} Hz, {ch}",
+                    if self.audio.bits >= 24 { 24 } else { 16 },
+                    self.audio.flac_level.min(8),
+                    r.sample_rate
+                ),
                 _ => format!("Uncompressed {}-bit PCM, {} Hz, {ch}", if self.audio.bits >= 24 { 24 } else { 16 }, r.sample_rate),
             }
         } else {
