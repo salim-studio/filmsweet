@@ -294,10 +294,7 @@ fn parse_time(s: &str, tm: Timing) -> Option<Tick> {
             }
             whole.0 as i128 + decimal_ticks("0", vf, fd)?
         }
-        "t" => {
-            let n: i128 = vi.parse().ok()?;
-            n * tps / tm.tick_rate.max(1) as i128
-        }
+        "t" => decimal_ticks(vi, vf, tps)? / tm.tick_rate.max(1) as i128,
         _ => return None,
     };
     i64::try_from(t).ok().map(Tick)
@@ -629,6 +626,23 @@ mod tests {
         assert_eq!(doc.cues.len(), 1);
         assert_eq!(doc.cues[0].text, "Good");
         assert!(!doc.warnings.is_empty());
+    }
+
+    #[test]
+    fn fractional_tick_offsets_keep_exact_caption_times() {
+        for format in [crate::Format::Ttml, crate::Format::Dfxp] {
+            let xml = r#"<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttp="http://www.w3.org/ns/ttml#parameter" ttp:tickRate="10"><body><div><p begin="1.5t" end="12.5t">Hello</p></div></body></tt>"#;
+            let doc = crate::parse(xml.as_bytes(), format).unwrap();
+            assert_eq!(doc.cues.len(), 1);
+            assert_eq!(doc.cues[0].start, Tick(TICKS_PER_SECOND * 3 / 20));
+            assert_eq!(doc.cues[0].end, Tick(TICKS_PER_SECOND * 5 / 4));
+            assert!(doc.warnings.is_empty());
+        }
+        let timing = Timing { tick_rate: 3, ..tm(FrameRate::FPS_25) };
+        assert_eq!(parse_time("0.5t", timing), Some(Tick(TICKS_PER_SECOND / 6)));
+        for expr in ["1.xt", "1.1234567890123t", "999999999999999.5t"] {
+            assert_eq!(parse_time(expr, timing), None, "{expr}");
+        }
     }
 
     #[test]
