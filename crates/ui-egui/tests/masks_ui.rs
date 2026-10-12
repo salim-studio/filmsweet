@@ -77,6 +77,10 @@ impl Driver {
         self.ok("ui.drag", json!({"from": {"x": x, "y": y}, "to": {"x": x + dx, "y": y + dy}, "steps": 6}));
         self.frames(2);
     }
+    fn has(&mut self, id: &str) -> bool {
+        let v = self.ok("ui.elements", json!({"prefix": id}));
+        v.as_array().is_some_and(|a| a.iter().any(|e| e["id"] == id))
+    }
     fn masks(&mut self) -> Vec<Value> {
         self.exec("masks.list", json!({}))["masks"].as_array().unwrap().clone()
     }
@@ -214,6 +218,33 @@ fn create_and_edit_masks_on_the_monitor() {
     let pen = m.iter().find(|x| x["effectId"] == "opacity").unwrap();
     assert_eq!(pen["pathKeyframes"].as_array().unwrap().len(), 2, "{pen}");
     d.shot("mask-tracked");
+}
+
+/// The selected mask's outline and handles are drawn on the Program monitor only while its clip
+/// is selected, as Motion's box is: selecting another clip, or none, hides them (#1341).
+#[test]
+fn mask_handles_follow_the_clip_selection() {
+    let mut d = Driver::demo();
+    let seq = d.exec("sequence.inspect", json!({}));
+    let items = seq["video"][0]["items"].as_array().unwrap().clone();
+    let (id, start, dur) = (items[0]["clip"].as_u64().unwrap(), items[0]["start"].as_i64().unwrap(), items[0]["duration"].as_i64().unwrap());
+    let other = items[1]["clip"].as_u64().unwrap();
+    d.exec("playhead.set", json!({"time": start + dur / 2}));
+    d.exec("timeline.select", json!({"clips": [id]}));
+    d.exec("masks.add", json!({"clip": id, "effect": "opacity", "shape": "ellipse"}));
+    d.frames(3);
+    assert!(d.has("program.mask.vertex.0"), "handles of the selected clip's mask");
+    d.shot("mask-clip-selected");
+    for clips in [json!([other]), json!([])] {
+        d.exec("timeline.select", json!({"clips": clips}));
+        d.frames(3);
+        assert!(!d.has("program.mask.vertex.0"), "no handles with {clips} selected");
+        assert!(!d.has("program.mask.body"), "no outline with {clips} selected");
+        d.shot(&format!("mask-clip-deselected-{}", clips.as_array().map_or(0, Vec::len)));
+    }
+    d.exec("timeline.select", json!({"clips": [id]}));
+    d.frames(3);
+    assert!(d.has("program.mask.vertex.0"), "the handles come back with the clip");
 }
 
 /// Shift held while placing pen points snaps each new segment to 45° steps from the previous
