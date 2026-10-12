@@ -577,3 +577,26 @@ fn recording_a_shortcut_skips_the_modifier_key_presses() {
     assert!(got.contains("Alt+Shift+J"), "{got}");
     assert!(got.contains("Cmd+K"), "{got}");
 }
+
+#[test]
+fn eyedropper_picks_a_key_color_on_a_selected_clip() {
+    // #1023: the selected clip's transform handles covered the Program picture and took the click
+    let mut d = Driver::demo();
+    let clip = track_clips(&d.sequence(), 0)[0]["clip"].clone();
+    d.exec("timeline.select", json!({"clips": [clip]}));
+    d.exec("effects.apply", json!({"effect": "Color Key"}));
+    d.ok("ui.panel.show", json!({"panel": "EffectControls"}));
+    d.frames(4);
+    let color = |d: &mut Driver| d.sequence()["video"][0]["items"][0]["effects"][0]["params"]["color"]["value"].clone();
+    let before = color(&mut d);
+    d.ok("ui.click", json!({"id": "effectControls.color_key.color.eyedropper"}));
+    d.frames(2);
+    d.ok("ui.click", json!({"id": "program.picture"}));
+    for _ in 0..200 {
+        if color(&mut d) != before {
+            break;
+        }
+        d.frames(1);
+    }
+    assert_ne!(color(&mut d), before, "the eyedropper filled Key Color from the Program picture");
+}
