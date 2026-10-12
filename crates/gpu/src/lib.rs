@@ -1011,7 +1011,7 @@ impl GpuCompositor {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        wait_mapped(&self.device)?;
         rx.recv().ok()?.ok()?;
         let data = slice.get_mapped_range().ok()?;
         let mut out = Vec::with_capacity((w * h * 4) as usize);
@@ -1074,7 +1074,7 @@ impl GpuCompositor {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        wait_mapped(&self.device)?;
         rx.recv().ok()?.ok()?;
         export_renderer::timing::add_map_wait(t.elapsed());
         let t = std::time::Instant::now();
@@ -1117,7 +1117,7 @@ impl GpuCompositor {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        wait_mapped(&self.device)?;
         rx.recv().ok()?.ok()?;
         let data = slice.get_mapped_range().ok()?;
         let mut out = Vec::with_capacity((w * h * 4) as usize);
@@ -1128,6 +1128,15 @@ impl GpuCompositor {
         buf.unmap();
         Some((*w, *h, out))
     }
+}
+
+/// Wait for the last submission and its `map_async` callbacks.
+///
+/// Export readback used `PollType::wait_indefinitely`. On radv that can never return after a
+/// failed hardware-encode attempt (#1058), so the export never finishes. Eight seconds is longer
+/// than a healthy map; a timeout returns `None` and the CPU renderer takes the frame.
+fn wait_mapped(device: &wgpu::Device) -> Option<()> {
+    device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(8)) }).ok().map(|_| ())
 }
 
 /// Shader source: kind (0 RGBA8 sRGB, 1 linear premultiplied RGBA, 2 YUV), sampling scales, dimensions, color.
