@@ -127,7 +127,7 @@ impl AnimatedSource {
             if decoded > MAX_DECODED_BYTES {
                 break;
             }
-            has_alpha = has_alpha || rgba.chunks_exact(4).any(|p| p.get(3).is_some_and(|&a| a < 255));
+            has_alpha = has_alpha || rgba.as_chunks::<4>().0.iter().any(|p| p[3] < 255);
             pictures.push((w, h, rgba));
             durations.push(ticks);
         }
