@@ -817,9 +817,11 @@ impl AudioFileSource {
         let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes.clone())), Default::default());
         let mut hint = Hint::new();
         hint.with_extension(&ext);
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
-            .map_err(|e| CodecError::Unsupported(e.to_string()))?;
+        // gapless: trim the encoder delay/padding that MP3 (LAME/Xing tag) files declare, so audio lands on the timeline where other editors put it.
+        // MP3 only: the other formats' timing (AAC priming in MP4 edit lists, …) is handled elsewhere and checked against ffmpeg.
+        let fmt_opts = FormatOptions { enable_gapless: ext == "mp3", ..FormatOptions::default() };
+        let probed =
+            symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &MetadataOptions::default()).map_err(|e| CodecError::Unsupported(e.to_string()))?;
         let mut format = probed.format;
         let track = format.default_track().ok_or_else(|| CodecError::Unsupported("no audio track".into()))?.clone();
         let rate = track.codec_params.sample_rate.unwrap_or(48_000);
@@ -1211,5 +1213,56 @@ mod mpeg_audio_tests {
                 assert!(out[0].iter().all(|&s| s == 0.0), "layer {layer}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod gapless_tests {
+    use super::*;
+
+    const FRAME_LEN: usize = 417;
+    const AUDIO_FRAMES: usize = 10;
+
+    /// CRC-16 as used by the LAME tag (polynomial 0x8005, reflected, start 0).
+    fn crc16(data: &[u8]) -> u16 {
+        let mut crc = 0u16;
+        for &b in data {
+            crc ^= b as u16;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { (crc >> 1) ^ 0xA001 } else { crc >> 1 };
+            }
+        }
+        crc
+    }
+
+    /// Silent mono 44.1 kHz 128 kbps MPEG-1 layer III file: an Info frame carrying a LAME tag with
+    /// an encoder delay of 576 samples and no padding, then ten frames of silence.
+    fn tagged_mp3() -> Vec<u8> {
+        let header = [0xFF, 0xFB, 0x90, 0xC0];
+        let mut info = vec![0u8; FRAME_LEN];
+        info[..4].copy_from_slice(&header);
+        info[21..25].copy_from_slice(b"Info");
+        info[25..29].copy_from_slice(&0x0Fu32.to_be_bytes());
+        info[29..33].copy_from_slice(&(AUDIO_FRAMES as u32).to_be_bytes());
+        info[33..37].copy_from_slice(&((FRAME_LEN * (AUDIO_FRAMES + 1)) as u32).to_be_bytes());
+        info[141..150].copy_from_slice(b"LAME3.100");
+        // encoder delay 576 (12 bits), padding 0 (12 bits)
+        info[162..165].copy_from_slice(&[0x24, 0x00, 0x00]);
+        let crc = crc16(&info[..175]);
+        info[175..177].copy_from_slice(&crc.to_be_bytes());
+        let mut file = info;
+        for _ in 0..AUDIO_FRAMES {
+            let mut f = vec![0u8; FRAME_LEN];
+            f[..4].copy_from_slice(&header);
+            file.extend_from_slice(&f);
+        }
+        file
+    }
+
+    /// #1137: the LAME tag's encoder delay (576) plus the decoder delay (529) is cut from the start.
+    #[test]
+    fn mp3_encoder_delay_is_trimmed() {
+        let src = AudioFileSource::decode("tagged.mp3", Arc::from(tagged_mp3())).unwrap();
+        assert_eq!(src.samples[0].len(), AUDIO_FRAMES * 1152 - (576 + 529));
     }
 }
