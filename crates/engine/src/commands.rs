@@ -2498,7 +2498,7 @@ fn build() -> Vec<CommandSpec> {
             s,
             &json!({"side": "next", "ripple": false})
         )),
-        cmd!("timeline.roll", "Rolling Edit", [], None, r#"{"left":id,"right":id,"delta":ticks|"deltaFrames":i64}"#, has_seq, |s, p| {
+        cmd!("timeline.roll", "Rolling Edit", [], None, r#"{"left":id,"right":id,"delta":ticks|"deltaFrames":i64,"followLinks"?:bool}"#, has_seq, |s, p| {
             let (l, r) = (
                 clip_p(p, "left").ok_or_else(|| bad("timeline.roll", "need `left`"))?,
                 clip_p(p, "right").ok_or_else(|| bad("timeline.roll", "need `right`"))?,
@@ -2509,7 +2509,8 @@ fn build() -> Vec<CommandSpec> {
                 .map(Tick)
                 .or_else(|| p.get("deltaFrames").and_then(Value::as_i64).map(|f| s.sequence_rate().tick_of(f)))
                 .unwrap_or_default();
-            let follow = s.state.linked_selection;
+            // `followLinks: false` rolls only this pair: Trim mode already lists linked partners as edit points of their own
+            let follow = s.state.linked_selection && p.get("followLinks").and_then(Value::as_bool).unwrap_or(true);
             let (x, n, linked) = s.edit_sequence("Rolling Edit", |q, ctx, _| {
                 let pairs = linked_roll_pairs(q, l, r, follow);
                 let linked = pairs.len() > 1;

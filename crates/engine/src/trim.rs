@@ -208,7 +208,7 @@ fn trim_all_raw(s: &mut Session, delta_for: &dyn Fn(&Sequence, &EditPoint) -> Op
         let r = match ep.kind {
             TrimKind::Roll => {
                 let Some((l, r)) = roll_pair(seq, ep) else { continue };
-                s.execute("timeline.roll", json!({"left": l.0, "right": r.0, "delta": delta.0}))?
+                s.execute("timeline.roll", json!({"left": l.0, "right": r.0, "delta": delta.0, "followLinks": false}))?
             }
             k => s.execute(
                 "timeline.trim",
