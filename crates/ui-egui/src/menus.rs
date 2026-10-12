@@ -224,10 +224,6 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         if let Err(e) = saved {
             app.ui.status = tlf!("The language changed but could not be saved: {e}", e);
         }
-        let items = menu_items(app);
-        if let Some(hook) = app.hooks.shortcuts_changed.as_mut() {
-            hook(&items);
-        }
         ctx.request_repaint();
         return Ok(json!(app.ui.language));
     }
@@ -641,7 +637,7 @@ fn encode_png(width: usize, height: usize, rgba: Vec<u8>) -> Result<Vec<u8>, Str
 }
 
 /// A menu tree entry for display / `ui.menu.list`.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct MenuItem {
     pub id: String,
     pub label: String,

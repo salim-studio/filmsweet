@@ -335,7 +335,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         {
             let (rx, update) = native_menu::install(&app, cc.egui_ctx.clone());
             app.command_inbox = Some(rx);
-            app.hooks.shortcuts_changed = Some(update);
+            app.hooks.menu_changed = Some(update);
             app.ui.show_menu_bar = false;
         }
         if let Some(port) = control_port {
