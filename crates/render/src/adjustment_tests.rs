@@ -184,3 +184,37 @@ fn nested_adjustment_layers_stay_in_their_sequence() {
     };
     assert_eq!(img.get(5, 5), plain.get(5, 5));
 }
+
+#[test]
+fn transform_shutter_on_an_adjustment_layer_spans_one_sequence_frame() {
+    // A 60 fps sequence: at 360° the shutter is one 60 fps frame, so the frames just outside
+    // the move stay sharp (they were blurred with a 24 fps shutter, #1088).
+    use filmcraft_project::{Interpolation, Keyframe};
+    let r60 = FrameRate::FPS_60;
+    let mut s = scene(2);
+    s.p.sequence_mut(s.seq).unwrap().settings.frame_rate = r60;
+    let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
+    let below = place(&mut s.p, s.seq, 0, red);
+    clip(&mut s, below).effect_mut("motion").unwrap().params.get_mut("scale").unwrap().value = ParamValue::Float(25.0);
+    let adj = adjustment(&mut s.p, s.seq, 1);
+    fx(&mut s, adj, "transform");
+    let key = |sec: f64, x: f64| {
+        let mut k = Keyframe::new(Tick::from_seconds_f64(sec), ParamValue::Vec2(filmcraft_geom::Vec2::new(x, 90.0)));
+        k.interp = Interpolation::Linear;
+        k
+    };
+    let e = clip(&mut s, adj).effect_mut("transform").unwrap();
+    e.params.get_mut("shutter_angle").unwrap().value = ParamValue::Float(360.0);
+    e.params.get_mut("position").unwrap().keyframes = vec![key(0.5, 160.0), key(1.0, 260.0)];
+    let mut diff = |frame: i64| {
+        let mut at = |shutter: bool| {
+            clip(&mut s, adj).effect_mut("transform").unwrap().params.get_mut("shutter_override").unwrap().value = ParamValue::Bool(shutter);
+            render_sequence(&s.p, s.seq, r60.tick_of(frame), RenderOptions::default(), &s.map)
+        };
+        let (sharp, blurred) = (at(false), at(true));
+        sharp.px.iter().zip(&blurred.px).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max)
+    };
+    assert!(diff(29) < 1e-4, "frame before the move is blurred");
+    assert!(diff(61) < 1e-4, "frame after the move is blurred");
+    assert!(diff(45) > 1e-2, "moving frame is sharp");
+}
