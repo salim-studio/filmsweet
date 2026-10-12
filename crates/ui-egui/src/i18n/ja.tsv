@@ -3552,6 +3552,12 @@
 	Edit Project Notes	プロジェクトメモを編集
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	このプロジェクトのメモ: やること、指示、フレーム番号など… プロジェクトと一緒に保存されます。
 	GPU acceleration is unavailable; preview renders on the CPU	GPU アクセラレーションを利用できません。プレビューは CPU でレンダリングされます
+
+	Appearance Settings…	外観設定…
+
+	Add to favorites	お気に入りに追加
+
+	Remove from favorites	お気に入りから削除
 	Compression	圧縮
 	ZIP (1 scan line)	ZIP（1 スキャンライン）
 	ZIP (16 scan lines)	ZIP（16 スキャンライン）
