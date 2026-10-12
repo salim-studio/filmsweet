@@ -63,6 +63,33 @@ fn keyframe_exists(it: &TrackItem, k: &KeyframeRef) -> bool {
     param.is_some_and(|p| p.keyframes.iter().any(|kf| kf.time == k.time))
 }
 
+/// Edit ▸ Select All (⌘A) with Effect Controls focused selects every keyframe the panel shows
+/// instead of the Timeline's clips (#1241). False when the panel is not focused or shows none.
+pub(crate) fn select_all_keyframes(app: &mut FilmcraftApp) -> bool {
+    if app.ui.focused != crate::dock::PanelKind::EffectControls {
+        return false;
+    }
+    let mut keys = Vec::new();
+    for (clip, it, _) in selected_clips(app) {
+        for (effect, e) in it.effects.iter().enumerate() {
+            let key = |param: &str, mask, time| KeyframeRef { clip: clip.0, effect, param: param.to_string(), mask, time };
+            for (param, p) in &e.params {
+                keys.extend(p.keyframes.iter().map(|kf| key(param, None, kf.time)));
+            }
+            for (m, mask) in e.masks.iter().enumerate() {
+                for param in filmcraft_project::mask::MASK_PARAMS {
+                    keys.extend(mask.param(param).into_iter().flat_map(|p| &p.keyframes).map(|kf| key(param, Some(m), kf.time)));
+                }
+            }
+        }
+    }
+    if keys.is_empty() {
+        return false;
+    }
+    app.ui.keyframe_selection = keys;
+    true
+}
+
 fn selected_clip(app: &FilmcraftApp) -> Option<(ClipId, TrackItem, TrackKind)> {
     selected_clips(app).into_iter().next()
 }
