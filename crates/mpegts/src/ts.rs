@@ -6,14 +6,29 @@ use crate::es::Splitter;
 use crate::pes::{self, PesHeader};
 use crate::{ByteSource, Codec, Error, File, Format, Result, Stream, StreamId, Unit, Unwrap, read_some};
 
+/// Byte-wise table for the MSB-first CRC-32 (polynomial 0x04C11DB7): entry `i` is the CRC register
+/// after shifting the byte `i` through eight bit steps.
+const CRC_TABLE: [u32; 256] = {
+    let mut t = [0u32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let mut crc = (i as u32) << 24;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = if crc & 0x8000_0000 != 0 { (crc << 1) ^ 0x04C1_1DB7 } else { crc << 1 };
+            bit += 1;
+        }
+        t[i] = crc;
+        i += 1;
+    }
+    t
+};
+
 /// CRC-32 of PSI sections (MSB-first, polynomial 0x04C11DB7, initial value all ones; Annex A).
 pub(crate) fn crc32_mpeg(data: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;
     for &b in data {
-        crc ^= (b as u32) << 24;
-        for _ in 0..8 {
-            crc = if crc & 0x8000_0000 != 0 { (crc << 1) ^ 0x04C1_1DB7 } else { crc << 1 };
-        }
+        crc = (crc << 8) ^ CRC_TABLE[((crc >> 24) as u8 ^ b) as usize];
     }
     crc
 }
