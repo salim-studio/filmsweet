@@ -19,7 +19,13 @@ struct Win<'a, S: ByteSource + ?Sized> {
 
 impl<'a, S: ByteSource + ?Sized> Win<'a, S> {
     fn new(src: &'a S) -> Self {
-        Self { src, buf: Vec::new(), start: 0, #[cfg(test)] zero_filled: 0 }
+        Self {
+            src,
+            buf: Vec::new(),
+            start: 0,
+            #[cfg(test)]
+            zero_filled: 0,
+        }
     }
     /// The bytes [pos, pos + n) (fewer at the end of the file).
     fn get(&mut self, pos: u64, n: usize) -> Result<&[u8]> {
@@ -318,7 +324,22 @@ mod tests {
             let mut new = Win::new(d.as_slice());
             let mut old = OldWin { src: &d, buf: Vec::new(), start: 0, zero_filled: 0 };
             let len64 = len as u64;
-            let mut positions = vec![0, 1, 31, 32, 1 << 19, 1 << 20, (1 << 20) - 1, (1 << 20) + 1, 2 << 20, len64.saturating_sub(40), len64.saturating_sub(1), len64, len64 + 1, len64 + 100];
+            let mut positions = vec![
+                0,
+                1,
+                31,
+                32,
+                1 << 19,
+                1 << 20,
+                (1 << 20) - 1,
+                (1 << 20) + 1,
+                2 << 20,
+                len64.saturating_sub(40),
+                len64.saturating_sub(1),
+                len64,
+                len64 + 1,
+                len64 + 100,
+            ];
             positions.extend((0..40).map(|k| len64.saturating_sub(100) + k * 3));
             for &pos in &positions {
                 for n in [0usize, 1, 4, 32, 33, 1000, 65_541, 1 << 20, (1 << 20) + 1, 2 << 20] {
