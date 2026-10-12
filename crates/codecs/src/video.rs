@@ -1174,7 +1174,7 @@ impl RawVideoDecoder {
             width: self.width,
             height: self.height,
             data: filmcraft_frame::PixelData::Yuv8 { planes: [Arc::new(y), Arc::new(u), Arc::new(v)], chroma, alpha: None },
-            color: vui_color(self.width, self.height, 2, 2, false),
+            color: vui_color(self.width, self.height, 2, 2, 2, false),
             par: (1, 1),
             pts: filmcraft_time::Tick::ZERO,
         }
