@@ -345,8 +345,23 @@ pub(crate) fn item_p(p: &Value, k: &str) -> Option<ItemId> {
 fn move_clips(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "timeline.move";
     let mut listed: Vec<(ClipId, TrackId, Tick)> = Vec::new();
+    let mut new_moves = Vec::new();
     for m in p.get("moves").and_then(Value::as_array).into_iter().flatten() {
-        let track = track_p(s, m, "track", CMD)?;
+        let track = if str_p(m, "track").is_some_and(|t| t.eq_ignore_ascii_case("new")) {
+            let clip = clip_p(m, "clip").ok_or_else(|| bad(CMD, "new track needs a clip"))?;
+            let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+            let (source, _) = q.find_item(clip).ok_or(edit::EditError::NoItem(clip))?;
+            if q.track(source).is_some_and(|t| t.locked) {
+                return Err(edit::EditError::Locked.into());
+            }
+            if m.get("time").and_then(Value::as_i64).is_none() {
+                return Err(bad(CMD, "new track needs a time"));
+            }
+            new_moves.push((clip, source));
+            Some(source)
+        } else {
+            track_p(s, m, "track", CMD)?
+        };
         if let (Some(clip), Some(track), Some(time)) = (clip_p(m, "clip"), track, m.get("time").and_then(Value::as_i64)) {
             listed.push((clip, track, Tick(time)));
         }
@@ -391,16 +406,48 @@ fn move_clips(s: &mut Session, p: &Value) -> Result<Value> {
         q.into_iter().flat_map(|q| q.all_tracks()).flat_map(|t| t.items.iter().map(move |i| (i.id.0, t.id, i.start, i.end(), i.item))).collect()
     };
     let before = spots(s);
+    // Allocate destinations in the same transaction as the move: an invalid edit leaves
+    // neither empty tracks nor history entries. Each source track keeps its clips together.
+    let prepare = |q: &mut filmcraft_project::Sequence, ctx: &mut edit::EditCtx<'_>| -> Result<Vec<(ClipId, TrackId, Tick)>> {
+        let sources: Vec<_> = q.all_tracks().filter(|t| new_moves.iter().any(|m| m.1 == t.id)).map(|t| (t.id, t.kind, t.channels)).collect();
+        for kind in [TrackKind::Video, TrackKind::Audio] {
+            let added = sources.iter().filter(|s| s.1 == kind).count();
+            if added > 0 && q.tracks(kind).len().saturating_add(added) > crate::sequence_tools::MAX_TRACKS {
+                return Err(bad(CMD, "new tracks exceed the sequence track limit"));
+            }
+        }
+        let mut destinations = Vec::new();
+        for (source, kind, channels) in sources {
+            let tracks = if kind == TrackKind::Video { &mut q.video_tracks } else { &mut q.audio_tracks };
+            let prefix = if kind == TrackKind::Video { "Video" } else { "Audio" };
+            let id = TrackId(ctx.alloc());
+            let mut track = Track::new(id, kind, format!("{prefix} {}", tracks.len() + 1));
+            track.channels = channels;
+            tracks.push(track);
+            destinations.push((source, id));
+        }
+        Ok(moves
+            .iter()
+            .map(|&(clip, track, time)| {
+                let dest = new_moves.iter().find(|m| m.0 == clip).and_then(|m| destinations.iter().find(|d| d.0 == m.1)).map_or(track, |d| d.1);
+                (clip, dest, time)
+            })
+            .collect())
+    };
     let copied = if copy {
         let label = if ins { "Copy (Insert)" } else { "Copy" };
         s.edit_sequence(label, |q, ctx, st| {
-            let ids = edit::copy_items(q, &moves, ins, ctx)?;
+            let destinations = prepare(q, ctx)?;
+            let ids = edit::copy_items(q, &destinations, ins, ctx)?;
             st.selection = ids.clone();
             st.transition_selection.clear();
             Ok(ids)
         })?
     } else {
-        s.edit_sequence(if ins { "Move (Insert)" } else { "Move" }, |q, ctx, _| Ok(edit::move_items(q, &moves, ins, ctx)?))?;
+        s.edit_sequence(if ins { "Move (Insert)" } else { "Move" }, |q, ctx, _| {
+            let destinations = prepare(q, ctx)?;
+            Ok(edit::move_items(q, &destinations, ins, ctx)?)
+        })?;
         Vec::new()
     };
     // An overwrite shortens, splits or removes whatever already sits where a clip lands, and a
@@ -2528,12 +2575,7 @@ fn build() -> Vec<CommandSpec> {
             None,
             r#"{"moves":[{"clip":id,"track":id|"V2"|"new" (after the last of its kind),"time":ticks}],"insert":bool,"linked":bool?,"copy":bool?}"#,
             has_seq,
-            |s, p| {
-                if crate::sequence_tools::move_wants_new_track(p) {
-                    return crate::sequence_tools::move_to_new_tracks(s, p);
-                }
-                move_clips(s, p)
-            }
+            move_clips
         ),
         cmd!(
             "timeline.trim",
