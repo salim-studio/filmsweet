@@ -43,6 +43,8 @@ pub struct TlState {
     pub drag: Option<Drag>,
     /// What the primary button went down on in the Timeline (#259); see [`Pressed`].
     pub pressed: Option<Pressed>,
+    /// A drag or press aborted with Escape; ignores release until the button comes up (#580).
+    pub cancelled: bool,
     /// Last layout (for hit-testing from the control channel).
     pub layout: Option<Layout>,
     /// Snap indicator x (screen) this frame.
@@ -89,7 +91,9 @@ pub struct Pressed {
 
 #[derive(Clone, Debug)]
 pub enum Drag {
-    Scrub,
+    Scrub {
+        initial: Tick,
+    },
     Move {
         clips: Vec<ClipId>,
         grab_tick: Tick,
@@ -155,6 +159,8 @@ pub enum Drag {
     },
     Pan {
         last: Pos2,
+        start_scroll: f64,
+        start_v: f32,
     },
     /// Box selection, shown live: `before` is the selection when the drag began, which Shift or
     /// Ctrl (`add`) keep; the release commits one `timeline.select`.
@@ -168,6 +174,7 @@ pub enum Drag {
         /// Where the pointer was pressed, and the view's left edge (seconds) at that moment.
         grab: f32,
         start: f64,
+        start_pps: f64,
         mode: u8,
     },
 }
@@ -1599,9 +1606,19 @@ fn zoom_scrollbar(app: &mut FilmcraftApp, ui: &mut egui::Ui, bar: Rect, seq_seco
         } else {
             0
         };
-        app.tl.drag = Some(Drag::ZoomBar { grab: pos.x, start: app.ui.timeline.target_scroll, mode });
+        app.tl.drag = Some(Drag::ZoomBar { grab: pos.x, start: app.ui.timeline.target_scroll, start_pps: app.ui.timeline.target_pps, mode });
     }
-    if let Some(Drag::ZoomBar { grab, start, mode }) = app.tl.drag.clone()
+    if matches!(app.tl.drag, Some(Drag::ZoomBar { .. }))
+        && ui.input(|i| i.key_pressed(egui::Key::Escape))
+        && let Some(Drag::ZoomBar { start, start_pps, .. }) = app.tl.drag.take()
+    {
+        let v = &mut app.ui.timeline;
+        v.target_scroll = start;
+        v.scroll = start;
+        v.target_pps = start_pps;
+        v.pps = start_pps;
+    }
+    if let Some(Drag::ZoomBar { grab, start, mode, .. }) = app.tl.drag.clone()
         && resp.dragged()
     {
         let v = &mut app.ui.timeline;
@@ -2091,11 +2108,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     // ---- what the button went down on (#259): kept from the press frame until it comes up
     if ctx.input(|i| !i.pointer.any_down() && !i.pointer.any_released()) {
         app.tl.pressed = None;
+        app.tl.cancelled = false;
     }
     if resp.is_pointer_button_down_on()
         && ctx.input(|i| i.pointer.primary_pressed())
         && let Some(p) = ctx.input(|i| i.pointer.press_origin())
     {
+        app.tl.cancelled = false;
         let grab = grab_at(seq, layout, p, tool, mods, roll_ripple);
         // the playhead jumps to a press on the ruler at once, not only once the pointer has moved (#1090)
         if matches!(grab, Grab::Other(Hit::Ruler)) {
@@ -2179,7 +2198,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     }
 
     // ---- press: act on what was under the pointer when the button went down (#259)
-    if resp.drag_started() || (resp.clicked() && app.tl.drag.is_none()) {
+    if !app.tl.cancelled && (resp.drag_started() || (resp.clicked() && app.tl.drag.is_none())) {
         let pressed = match app.tl.pressed.take() {
             Some(pr) => pr,
             // a press and release in the same frame is never stored: it happened where egui says
@@ -2196,8 +2215,8 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             g => g,
         };
         let started = match (tool, grab) {
-            (_, Grab::Other(Hit::Ruler)) => Some(Drag::Scrub),
-            (Tool::Hand, _) => Some(Drag::Pan { last: p }),
+            (_, Grab::Other(Hit::Ruler)) => Some(Drag::Scrub { initial: app.session.playhead() }),
+            (Tool::Hand, _) => Some(Drag::Pan { last: p, start_scroll: app.ui.timeline.target_scroll, start_v: app.ui.timeline.v_scroll }),
             (Tool::Zoom, _) => {
                 if resp.clicked() {
                     let f = if mods.alt { 1.0 / 2.0 } else { 2.0 };
@@ -2341,7 +2360,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             (_, Grab::Other(Hit::Empty { .. } | Hit::None)) => None,
         };
         if let Some(d) = started {
-            if matches!(d, Drag::Scrub) {
+            if matches!(d, Drag::Scrub { .. }) {
                 scrub_playhead(app, seq, layout, p, mods.shift);
             }
             if resp.drag_started() {
@@ -2350,37 +2369,59 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         }
     }
 
-    // ---- Escape abandons the drag: the release commits nothing and the clips stay put (#580)
-    if app.tl.drag.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        // the live box (#1028) already changed the selection: put back the one the drag began with
-        if let Some(Drag::Marquee { before, .. }) = app.tl.drag.take() {
-            app.session.state.selection = before;
+    // Escape cancels an ongoing drag or press (#580): the release commits nothing
+    if (app.tl.drag.is_some() || app.tl.pressed.is_some()) && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if let Some(d) = app.tl.drag.take() {
+            match d {
+                Drag::Scrub { initial } => {
+                    app.session.set_playhead(initial);
+                }
+                Drag::Volume(v) => {
+                    if v.changed() {
+                        let _ = app.session.execute("edit.undo", json!({}));
+                    }
+                }
+                Drag::Pan { start_scroll, start_v, .. } => {
+                    let v = &mut app.ui.timeline;
+                    v.target_scroll = start_scroll;
+                    v.scroll = start_scroll;
+                    v.v_scroll = start_v;
+                }
+                // the live box (#1028) already changed the selection: put back the one the drag began with
+                Drag::Marquee { before, .. } => {
+                    app.session.state.selection = before;
+                }
+                _ => {}
+            }
         }
+        app.tl.pressed = None;
+        app.tl.cancelled = true;
     }
 
     // ---- drag
-    if resp.dragged()
+    if !app.tl.cancelled
+        && resp.dragged()
         && let Some(p) = resp.interact_pointer_pos()
         && let Some(d) = app.tl.drag.clone()
     {
         let t_here = layout.tick_at(p.x);
         let new = match d {
-            Drag::Scrub => {
+            Drag::Scrub { initial } => {
                 let mut tt = rate.snap_nearest(t_here.max(Tick::ZERO));
                 // Shift snaps; Settings ▸ Timeline ▸ "Snap playhead in Timeline when Snap is enabled"
                 if mods.shift || app.session.prefs.timeline.snap_playhead {
                     tt = snap_playhead(app, seq, layout, tt);
                 }
                 app.session.set_playhead(tt);
-                Some(Drag::Scrub)
+                Some(Drag::Scrub { initial })
             }
-            Drag::Pan { last } => {
+            Drag::Pan { last, start_scroll, start_v } => {
                 let dx = p.x - last.x;
                 let v = &mut app.ui.timeline;
                 v.target_scroll = (v.target_scroll - dx as f64 / v.pps).max(0.0);
                 v.scroll = v.target_scroll;
                 app.ui.timeline.v_scroll += p.y - last.y;
-                Some(Drag::Pan { last: p })
+                Some(Drag::Pan { last: p, start_scroll, start_v })
             }
             Drag::Move { clips, grab_tick, start_track, .. } => {
                 let raw = rate.snap_nearest(t_here - grab_tick);
@@ -2478,51 +2519,55 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
     }
 
     // ---- release: commit exactly one command
-    if resp.drag_stopped()
-        && let Some(d) = app.tl.drag.take()
-    {
-        let r = match d {
-            Drag::Move { clips, offset, track_delta, new_track, copy, .. } if offset != Tick::ZERO || track_delta != 0 || new_track.is_some() => {
-                // #1104: dropped past the last track, the clips go onto a new one
-                let to = |tid| new_track.map_or_else(|| json!(shift_track(seq, tid, track_delta).unwrap_or(tid).0), |_| json!("new"));
-                let moves: Vec<Value> = clips
-                    .iter()
-                    .filter_map(|c| seq.find_item(*c).map(|(tid, it)| json!({"clip": c.0, "track": to(tid), "time": (it.start + offset).max(Tick::ZERO).0})))
-                    .collect();
-                // Option held while dropping copies (Premiere: Option-drag duplicates)
-                Some(app.session.execute("timeline.move", json!({"moves": moves, "insert": mods.command, "linked": false, "copy": copy || mods.alt})))
-            }
-            Drag::Trim { clip, edge, mode, delta, .. } if delta != Tick::ZERO => Some(app.session.execute(
-                "timeline.trim",
-                json!({"clip": clip.0, "edge": if edge == filmcraft_edit::Edge::In {"in"} else {"out"}, "mode": if mode == filmcraft_edit::TrimMode::Ripple {"ripple"} else {"regular"}, "delta": delta.0}),
-            )),
-            Drag::Stretch { clip, edge, delta, .. } if delta != Tick::ZERO => Some(app.session.execute("timeline.rateStretch", json!({"clip": clip.0, "edge": if edge == filmcraft_edit::Edge::In {"in"} else {"out"}, "delta": delta.0}))),
-            Drag::Remix { clip, delta, .. } if delta != Tick::ZERO => {
-                let d = seq.find_item(clip).map(|(_, it)| it.duration + delta).unwrap_or(Tick::ZERO);
-                Some(app.session.execute("clip.remix", json!({"clip": clip.0, "duration": d.0})))
-            }
-            Drag::Roll { left, right, delta, .. } if delta != Tick::ZERO => Some(app.session.execute("timeline.roll", json!({"left": left.0, "right": right.0, "delta": delta.0}))),
-            Drag::Slip { clip, delta } if delta != Tick::ZERO => Some(app.session.execute("timeline.slip", json!({"clip": clip.0, "delta": delta.0}))),
-            Drag::Slide { clip, delta } if delta != Tick::ZERO => Some(app.session.execute("timeline.slide", json!({"clip": clip.0, "delta": delta.0}))),
-            Drag::Transition { id, start, duration, .. } => {
-                let moved = seq.all_tracks().find_map(|tr| tr.transitions.iter().find(|x| x.id == id)).is_some_and(|x| (x.start, x.duration) != (start, duration));
-                moved.then(|| app.session.execute("sequence.setTransition", json!({"transition": id.0, "start": start.0, "duration": duration.0})))
-            }
-            Drag::Marquee { start, before, add } => {
-                app.session.state.selection = before;
-                // egui ends a drag on Escape: that cancels the box, as in the Project panel
-                match resp.interact_pointer_pos() {
-                    Some(end) if !ctx.input(|i| i.key_pressed(egui::Key::Escape)) => {
-                        let ids: Vec<u64> = marquee_clips(seq, layout, Rect::from_two_pos(start, end)).iter().map(|c| c.0).collect();
-                        Some(app.session.execute("timeline.select", json!({"clips": ids, "add": add})))
-                    }
-                    _ => None,
+    if resp.drag_stopped() {
+        // a drag Escape cancelled (#580) commits nothing
+        let cancelled = std::mem::take(&mut app.tl.cancelled);
+        if !cancelled && let Some(d) = app.tl.drag.take() {
+            let r = match d {
+                Drag::Move { clips, offset, track_delta, new_track, copy, .. } if offset != Tick::ZERO || track_delta != 0 || new_track.is_some() => {
+                    // #1104: dropped past the last track, the clips go onto a new one
+                    let to = |tid| new_track.map_or_else(|| json!(shift_track(seq, tid, track_delta).unwrap_or(tid).0), |_| json!("new"));
+                    let moves: Vec<Value> = clips
+                        .iter()
+                        .filter_map(|c| seq.find_item(*c).map(|(tid, it)| json!({"clip": c.0, "track": to(tid), "time": (it.start + offset).max(Tick::ZERO).0})))
+                        .collect();
+                    // Option held while dropping copies (Premiere: Option-drag duplicates)
+                    Some(app.session.execute("timeline.move", json!({"moves": moves, "insert": mods.command, "linked": false, "copy": copy || mods.alt})))
                 }
+                Drag::Trim { clip, edge, mode, delta, .. } if delta != Tick::ZERO => Some(app.session.execute(
+                    "timeline.trim",
+                    json!({"clip": clip.0, "edge": if edge == filmcraft_edit::Edge::In {"in"} else {"out"}, "mode": if mode == filmcraft_edit::TrimMode::Ripple {"ripple"} else {"regular"}, "delta": delta.0}),
+                )),
+                Drag::Stretch { clip, edge, delta, .. } if delta != Tick::ZERO => Some(app.session.execute("timeline.rateStretch", json!({"clip": clip.0, "edge": if edge == filmcraft_edit::Edge::In {"in"} else {"out"}, "delta": delta.0}))),
+                Drag::Remix { clip, delta, .. } if delta != Tick::ZERO => {
+                    let d = seq.find_item(clip).map(|(_, it)| it.duration + delta).unwrap_or(Tick::ZERO);
+                    Some(app.session.execute("clip.remix", json!({"clip": clip.0, "duration": d.0})))
+                }
+                Drag::Roll { left, right, delta, .. } if delta != Tick::ZERO => Some(app.session.execute("timeline.roll", json!({"left": left.0, "right": right.0, "delta": delta.0}))),
+                Drag::Slip { clip, delta } if delta != Tick::ZERO => Some(app.session.execute("timeline.slip", json!({"clip": clip.0, "delta": delta.0}))),
+                Drag::Slide { clip, delta } if delta != Tick::ZERO => Some(app.session.execute("timeline.slide", json!({"clip": clip.0, "delta": delta.0}))),
+                Drag::Transition { id, start, duration, .. } => {
+                    let moved = seq.all_tracks().find_map(|tr| tr.transitions.iter().find(|x| x.id == id)).is_some_and(|x| (x.start, x.duration) != (start, duration));
+                    moved.then(|| app.session.execute("sequence.setTransition", json!({"transition": id.0, "start": start.0, "duration": duration.0})))
+                }
+                Drag::Marquee { start, before, add } => {
+                    app.session.state.selection = before;
+                    // egui ends a drag on Escape: that cancels the box, as in the Project panel
+                    match resp.interact_pointer_pos() {
+                        Some(end) if !ctx.input(|i| i.key_pressed(egui::Key::Escape)) => {
+                            let ids: Vec<u64> = marquee_clips(seq, layout, Rect::from_two_pos(start, end)).iter().map(|c| c.0).collect();
+                            Some(app.session.execute("timeline.select", json!({"clips": ids, "add": add})))
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some(Err(e)) = r {
+                app.ui.status = e.to_string();
             }
-            _ => None,
-        };
-        if let Some(Err(e)) = r {
-            app.ui.status = e.to_string();
+        } else {
+            app.tl.drag = None;
         }
     }
 
