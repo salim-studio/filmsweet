@@ -258,6 +258,18 @@ pub fn scroll_to_reveal(ph: f64, scroll: f64, pps: f64, width: f64) -> Option<f6
     (px < 0.0 || px > width).then(|| (ph - width * 0.05 / pps).max(0.0))
 }
 
+/// Explicit navigation reveals the playhead even when its time has not changed (#1188).
+pub(crate) fn reveal_playhead(app: &mut FilmcraftApp, ctx: &egui::Context) {
+    let ph = app.session.playhead().seconds();
+    let v = &mut app.ui.timeline;
+    if let Some(scroll) = scroll_to_reveal(ph, v.target_scroll, v.target_pps, f64::from(app.last_timeline_width)) {
+        v.scroll = scroll;
+        v.target_scroll = scroll;
+        app.tl.zoom_anchor = None;
+        ctx.request_repaint();
+    }
+}
+
 /// Zoom about a time (keeps it under the same screen x).
 pub fn zoom_about(v: &mut TimelineView, factor: f64, anchor_secs: f64, width: f32) {
     let old = v.target_pps;
