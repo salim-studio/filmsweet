@@ -51,7 +51,9 @@ issues now document. That is new evidence, not drift: see [Calibration](#calibra
 - **Effects (measured by tests).** `premiere_26_video_effects_catalogue`,
   `premiere_audio_set_is_complete_and_foldered` and `premiere_26_transition_tree` check the
   catalogue against Premiere's Effects panel: video effects 93/93 (+Legacy, Obsolete), audio
-  effects 53/53, video transitions 84/84 (+21 Legacy), audio transitions 3/3.
+  effects 53/53, video transitions 84/84 (+21 Legacy), audio transitions 3/3. `cargo xtask
+  parity --area effects|transitions` measures the shipped catalogue against a reference list too
+  (presence and folder placement, [G7](gaps.md#g7-no-measured-parity-tool-in-ci)).
 - **The installed app (file names and listings only, per [AGENTS.md](../AGENTS.md) §2; nothing
   inside the bundle was opened or read).** `Contents/Resources/*.lproj`: de, en, es, fr, it, ja,
   ko, pt, ru, zh_CN (10 UI languages). `Contents/MediaIO/systempresets/` folder names are
@@ -139,8 +141,8 @@ Evidence for the cross-cutting rows:
 
 - **Hardware ~45%.** Hardware decode exists on all three desktop OSs (VideoToolbox; Media
   Foundation / D3D11 incl. VP9 and AV1; VA-API and NVDEC for H.264 / HEVC on Linux). Hardware
-  encode: VideoToolbox H.264 / HEVC 8-bit; NVENC H.264 and HEVC incl. Main 10 HDR (Windows,
-  Linux). Missing against Premiere: Intel Quick Sync and AMD encoders, 10-bit HEVC on macOS,
+  encode: VideoToolbox H.264 / HEVC 8-bit; NVENC H.264 (Windows, Linux) and HEVC incl. Main 10 HDR
+  (Windows). Missing against Premiere: Intel Quick Sync and AMD encoders, 10-bit HEVC on macOS,
   ProRes hardware, zero-copy upload, ~48 of Premiere's accelerated effects, external video I/O,
   control surfaces. Detail: [hardware-parity.md](hardware-parity.md).
 - **Performance ~55%.** 4K H.264 / HEVC play with no dropped frames with hardware decoding (M4
