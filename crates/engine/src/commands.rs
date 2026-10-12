@@ -2035,7 +2035,14 @@ fn build() -> Vec<CommandSpec> {
             }
             remove_transitions(s, &ids, "Clear Transition")
         }),
-        cmd!("sequence.closeGap", "Close Gap", ["Sequence"], None, r#"{"track":"V1"|id,"time":ticks}"#, has_seq, |s, p| {
+        cmd!("sequence.closeGap", "Close Gap", ["Sequence"], None, r#"{"track":"V1"|id?,"time":ticks?}"#, has_seq, |s, p| {
+            // Shortcuts and menus have no parameters. Resolve that form from the selected gap
+            // (#1135); explicit requests keep their existing track/time validation.
+            if p.as_object().is_some_and(|p| p.is_empty()) {
+                let gap = s.state.gap_selection.ok_or_else(|| bad("sequence.closeGap", "select a gap or provide `track`"))?;
+                ripple_delete_gap(s, gap)?;
+                return Ok(Value::Null);
+            }
             let tr = track_p(s, p, "track", "sequence.closeGap")?.ok_or_else(|| bad("sequence.closeGap", "need `track`"))?;
             let t = time_p(s, p, "").unwrap_or(s.playhead());
             close_gap(s, tr, t)?;
