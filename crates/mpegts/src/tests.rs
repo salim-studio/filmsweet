@@ -286,3 +286,99 @@ fn timestamps_unwrap_across_the_33_bit_wrap() {
     assert_eq!(u.unwrap(near + 1000), near + 1000);
     assert_eq!(u.unwrap(4200), (1 << 33) + 4200);
 }
+
+/// A `ByteSource` that counts the bytes requested through `read_at`.
+struct Counting<'a> {
+    data: &'a [u8],
+    read: std::cell::Cell<u64>,
+}
+
+impl ByteSource for Counting<'_> {
+    fn len(&self) -> u64 {
+        self.data.len() as u64
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        self.read.set(self.read.get() + buf.len() as u64);
+        self.data.read_at(offset, buf)
+    }
+}
+
+#[test]
+fn bad_adaptation_fields_do_not_amplify_reads() {
+    // aligned packets whose adaptation_field_length (255) overruns the packet: the packet grid is
+    // intact, so this must cost one pass over the file, not one block read per packet
+    let mut data = Vec::new();
+    for _ in 0..3000 {
+        data.extend([0x47, 0x11, 0x00, 0x30]);
+        data.extend(std::iter::repeat_n(0xFF, 184));
+    }
+    let src = Counting { data: &data, read: Default::default() };
+    let f = open(&src).unwrap();
+    assert!(f.warnings.iter().any(|w| w.contains("adaptation field")), "{:?}", f.warnings);
+    assert!(!f.warnings.iter().any(|w| w.contains("lost packet sync")), "{:?}", f.warnings);
+    let read = src.read.get();
+    assert!(read <= 4 * data.len() as u64, "read {read} bytes of a {}-byte file", data.len());
+}
+
+#[test]
+fn garbage_without_sync_does_not_amplify_reads() {
+    // a sync byte every 189 bytes: five-in-a-row never lines up, every 0x47 is a false candidate
+    let mut data = Vec::new();
+    for _ in 0..3000 {
+        data.extend([0x47]);
+        data.extend(std::iter::repeat_n(0x11, 188));
+    }
+    let head: Vec<u8> = (0..188 * 8).map(|i| if i % 188 == 0 { 0x47 } else { 0 }).collect();
+    let mut all = head;
+    all.extend(data);
+    let src = Counting { data: &all, read: Default::default() };
+    let f = open(&src).unwrap();
+    assert!(f.warnings.iter().any(|w| w.contains("lost packet sync")), "{:?}", f.warnings);
+    let read = src.read.get();
+    assert!(read <= 4 * all.len() as u64, "read {read} bytes of a {}-byte file", all.len());
+}
+
+#[test]
+fn transport_stream_resyncs_after_garbage() {
+    const BLOCK_PACKETS: usize = 4096;
+    for m2ts in [false, true] {
+        let ps = if m2ts { 192 } else { 188 };
+        // garbage in front of the stream (shorter than 8 packets) and, at a few places around the
+        // first block boundary, between two frames; lengths that are not a multiple of the packet
+        for (delta, glen) in [(0usize, 100usize), (1, 37), (2, 188), (3, 301), (5, 5), (8, 1000)] {
+            let edge = (BLOCK_PACKETS - delta) * ps;
+            let mut mux = TsMux::new(m2ts);
+            mux.out.extend([0x11, 0x47, 0x22]); // garbage prefix with a lone 0x47
+            mux.psi(&[(0x02, 0x1011)]);
+            let mut expect = Vec::new();
+            let mut placed = false;
+            let mut k = 0usize;
+            while k < 3000 || !placed {
+                if !placed && mux.out.len() >= edge {
+                    // garbage between two PES packets, with lone sync bytes inside
+                    let mut g: Vec<u8> = (0..glen).map(|i| 0x10 + (i % 7) as u8).collect();
+                    if let Some(b) = g.get_mut(3) {
+                        *b = 0x47;
+                    }
+                    mux.out.extend(g);
+                    placed = true;
+                }
+                let f = mpeg2_frame(if k == 0 { 1 } else { 2 }, (k % 1000) as u16, false, 40 + k % 300);
+                mux.pes(0x1011, &pes(0xE0, Some(90_000 + 3600 * k as i64), None, &f, false));
+                expect.push(f);
+                k += 1;
+            }
+            assert!(mux.out.len() > (BLOCK_PACKETS + 4) * ps, "stream must cross a block boundary");
+            let data = mux.out;
+            let f = open(&data).unwrap();
+            assert!(f.warnings.iter().any(|w| w.contains("lost packet sync")), "{:?}", f.warnings);
+            let v = f.find(Kind::Video, |_| true).unwrap();
+            let s = &f.streams[v];
+            assert_eq!(s.units.len(), expect.len(), "m2ts {m2ts} delta {delta} glen {glen}");
+            for (i, fr) in expect.iter().enumerate() {
+                assert_eq!(&f.read_unit(&data, v, i).unwrap(), fr, "unit {i} (m2ts {m2ts} delta {delta} glen {glen})");
+                assert_eq!(s.units[i].pts, Some(90_000 + 3600 * i as i64));
+            }
+        }
+    }
+}
