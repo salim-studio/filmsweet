@@ -180,7 +180,8 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   substream, 1–6 blocks per syncframe, spectral extension. MP1 / MP2 (MPEG audio Layer I / II):
   own decoder (#809) in raw files, MP4 and MOV (#800), MPEG-TS / PS and Matroska, including the
   bit rate / mode combinations ISO/IEC 11172-3 disallows but ffmpeg writes (its mono default is
-  384 kbit/s). OpenEXR stills and image
+  384 kbit/s). Radiance HDR (`.hdr`) stills and image sequences (#1407): RGBE as linear float, flat
+  and run-length scan lines, any axis order. OpenEXR stills and image
   sequences (#828): scan-line, uncompressed / RLE / ZIPS / ZIP, half / float / uint, RGB(A) or
   luminance, decoded to linear float frames and bit-exact against ffmpeg.
 - **Missing:** free-format MPEG audio, MP1 in Matroska (`A_MPEG/L1`), E-AC-3 adaptive hybrid
@@ -190,7 +191,7 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   incl. R3D NE, ARRIRAW, Sony RAW / X-OCN, Canon RAW, BRAW, ProRes RAW; #345, #383), JPEG 2000 /
   JPEG XS MXF, the rest of CinemaDNG (lossy / JPEG XL DNG, MXF-wrapped, opcode lists, Raw
   settings; DNG frames and folders import since #1065); stills: PSD, EXR beyond scan-line RLE / ZIP (PIZ, PXR24, B44, DWA,
-  tiled, multi-part, deep), HEIF / HEIC, Radiance HDR,
+  tiled, multi-part, deep), HEIF / HEIC,
   AI / EPS, and the rarer DPX layout, run-length encoding (Targa and DPX stills and sequences import
   since #821, packed 10/12-bit and Y'CbCr DPX since #841, deeper than 8 bits kept at 8); transparent
   video (#402); Sony start timecode in `rtmd` (#460); stereo 3D flag (#500); MKV multi-audio (#601).
