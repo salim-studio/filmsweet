@@ -2922,6 +2922,10 @@
 	Sample Size	Tamaño de muestra
 	16 bit	16 bits
 	24 bit	24 bits
+	32 bit	32 bits
+	32 bit float	32 bits de coma flotante
+	FLAC stores whole-number samples only	FLAC solo guarda muestras enteras
+	MXF export writes integer PCM only	La exportación MXF solo escribe PCM entero
 	Size / Opacity	Tamaño / opacidad
 	Image Overlay	Superposición de imagen
 	PNG or JPEG file	Archivo PNG o JPEG
