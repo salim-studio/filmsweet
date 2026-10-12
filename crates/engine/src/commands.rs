@@ -3654,6 +3654,11 @@ fn set_transition(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn apply_transition(s: &mut Session, p: &Value, kind: TrackKind) -> Result<Value> {
+    if p.get("clip").is_none()
+        && let Some(r) = crate::sequence_extras::apply_to_selection(s, p, kind)?
+    {
+        return Ok(r);
+    }
     let (track, tr) = preview_transition(s, p, kind)?;
     let label = format!("Apply {}", tr.effect.def().map_or("Transition", |d| d.name));
     let id = s.edit_sequence(&label, |q, ctx, _| Ok(edit::add_transition(q, track, tr, ctx)?))?;
