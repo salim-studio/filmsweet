@@ -868,12 +868,7 @@ fn tiff_size_estimate_tracks_alpha_and_real_output() {
     let duration = rate.tick_of(1);
     for alpha in [false, true] {
         let dir = Scratch::new(&format!("tiff-size-{alpha}"));
-        let mut settings = ExportSettings {
-            format: Format::TiffSequence,
-            path: dir.path("frame.tif"),
-            alpha,
-            ..Default::default()
-        };
+        let mut settings = ExportSettings { format: Format::TiffSequence, path: dir.path("frame.tif"), alpha, ..Default::default() };
         settings.range = Some(TimeRange::new(Tick::ZERO, duration));
         settings.validate().unwrap();
 
