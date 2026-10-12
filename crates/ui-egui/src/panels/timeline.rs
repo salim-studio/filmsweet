@@ -819,7 +819,8 @@ fn draw_clip(
     let base = label_color(app, it.label);
     let inr = in_range(app, it);
     let fill = if !it.enabled {
-        t.disabled_clip_bg
+        // Keep the configured label hue when disabled, with an opaque darker fill (#1190).
+        Color32::from_rgb(base.r() / 2, base.g() / 2, base.b() / 2)
     } else if inr {
         lighten(base, 0.12)
     } else if selected {
