@@ -1,5 +1,7 @@
 # Architecture
 
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** trivial (status line, revision history and roadmap link added; content checked against the crate list) · **Target:** Adobe Premiere Pro 2026 (26.5.2)
+
 FilmCraft is a Cargo workspace of small crates with strictly enforced layering. The engine is
 headless: every feature can be reached without a window, and the egui UI is one client among the
 CLI, the JSON control channel and the MCP server.
@@ -455,7 +457,7 @@ stereo / mono track ──5.1 panner───┼─► 5.1 submix / 5.1 Mix ─�
 
 ### 5.1.2 Voice-over recording
 
-**Voice-over recording** (`engine::voiceover`, `audio.voiceover.*`). The record point R is the playhead, or the In point when In/Out are set (punch-in; punch-out at Out). Playback starts the pre-roll before it (C = max(0, R − pre-roll)) and the input is captured from C. When the UI's audio clock really starts, `audio.voiceover.sync` restarts the capture there. `audio.voiceover.stop` keeps the audio from R to min(stop, Out), writes a mono 32-bit float WAV `<Name> <n>.wav` (Scratch Disks ▸ Captured, else next to the project, else the data or temporary directory), imports it and overwrites it onto the record track at R as one undo step. The record track is the given one, else the record-armed one, else the first targeted one. Input goes through the `AudioInput` trait: cpal in the desktop app (`apps/filmcraft/src/audio_in.rs`, on its own thread), and `SyntheticInput` headless, which produces exactly the samples the timeline asks for so recordings land sample-accurately. Voice-Over Record Settings (Source, Input channel, Name, Countdown Sound Cues, Pre-/Post-roll) are preferences (`voiceOver`). The track header's microphone records or stops, and a right-click opens the settings dialog. Countdown beeps (1 kHz, 100 ms, each whole second of pre-roll and at R) are mixed into playback, an overlay counts down, and playback stops at Out + post-roll.
+**Voice-over recording** (`engine::voiceover`, `audio.voiceover.*`). The record point R is the playhead, or the In point when In/Out are set (punch-in; punch-out at Out). Playback starts the pre-roll before it (C = max(0, R − pre-roll)) and the input is captured from C. When the UI's audio clock really starts, `audio.voiceover.sync` restarts the capture there. `audio.voiceover.stop` keeps the audio from R to min(stop, Out), writes a mono 32-bit float WAV `<Name> <n>.wav` (Scratch Disks ▸ Captured, else next to the project, else the data or temporary directory), imports it and overwrites it onto the record track at R as one undo step. The record track is the given one, else the record-armed one, else the first targeted one. Input goes through the `AudioInput` trait: cpal in the desktop app (`apps/filmcraft/src/audio_in.rs`, on its own thread), and `SyntheticInput` headless, which produces exactly the samples the timeline asks for so recordings land sample-accurately. Voice-Over Record Settings (Source, Input channel, Name, Countdown Sound Cues, Pre-/Post-roll) are preferences (`voiceOver`). The track header's microphone records or stops, and a right-click opens the settings dialog. Countdown beeps (1 kHz, 100 ms, each whole second of pre-roll and at R) are mixed into playback, an overlay counts down, and playback stops at Out + post-roll. A take records anywhere, also on the empty timeline past the end of the sequence: starting it never returns the playhead to the beginning, and playback keeps going past the end until the take is stopped.
 
 ### 5.1.2a Text to Speech (narrations)
 
@@ -527,7 +529,8 @@ with different vertex counts hold). Feather, Opacity and Expansion are ordinary 
 - **GPU.** `filmcraft-gpu::GpuMask` evaluates the same coverage and mix in WGSL (compute), tested
   to agree with the CPU within 3·10⁻⁶. Layers with masks are CPU-rendered images in frame plans.
 - **Editing.** `masks.*` commands (add / remove / set / moveVertex / translate / addVertex /
-  removeVertex / toggleVertexSmooth / select / list); keyframe commands take `"mask": n`. The
+  removeVertex / toggleVertexSmooth / roundCorners / select / list; `masks.add` takes a
+  `cornerRadius` for a rounded rectangle); keyframe commands take `"mask": n`. The
   Program monitor overlay drags vertices, Bézier handles, the whole mask and the feather /
   expansion handles; drags merge into one undo step.
 - **Tracking** (`render::track`, `masks.track`): Shi–Tomasi features inside the mask, pyramidal
@@ -662,9 +665,11 @@ file.exportMedia {path, preset?, settings?, format?, range?, …}     export.qui
 | `prores` | `filmcraft-prores` (Proxy / LT / 422 / HQ) | MOV |
 | `dnxhr` | `filmcraft-dnx` (LB / SQ / HQ / HQX) | MOV (`AVdh`) |
 | `mjpeg` | built in | MOV |
+| `aac` | `filmcraft-aac` (AAC-LC, the audio settings' bitrate) | audio only: MPEG-4 audio `.m4a` (`isobmff`, priming in an edit list), or raw ADTS when the path ends in `.aac` |
 | `mxf-op1a` | DNxHR (default), ProRes or H.264 (Annex B, long GOP), `mxfVideoCodec`; PCM 16/24-bit | MXF OP1a (`filmcraft-mxf` writer: frame-wrapped, index with temporal offsets, start timecode) |
 | `mxf-opatom` | as `mxf-op1a` | Avid-style MXF OP-Atom: clip-wrapped picture at `path`, one mono PCM file per channel (`<stem>_A1.mxf` …, `Report::extra_files`) |
-| `png`, `tiff`, `bmp` | `image` | numbered stills `<name>000.<ext>`, `<name>001.<ext>` … |
+| `png`, `tiff`, `bmp`, `jpg` | `image` | numbered stills `<name>000.<ext>`, `<name>001.<ext>` … |
+| `tga`, `dpx`, `exr` | built in (`raster.rs`: uncompressed Targa 24/32-bit; DPX 10-bit RGB, SMPTE ST 268; OpenEXR half-float linear RGB(A), uncompressed scan lines) | numbered stills, as above |
 | `gif`, `wav`, `aiff` | built in / `image` | GIF / RIFF WAVE (`WAVE_FORMAT_EXTENSIBLE` for 5.1) / AIFF (16- or 24-bit PCM) |
 
 - **Reproducible.** The same project and settings give the same file on every machine. Frames render
@@ -694,7 +699,9 @@ Video encoders implement `export::VideoEncoder`. Codec crates plug in with `regi
 
 Timelines can be exchanged as EDL, FCP7 XML, FCPXML, OTIO, AAF or OMF. `file.import` detects these
 formats and merges the result into the project as one undoable step (AAF / OMF embedded audio is
-written next to the document first), and `file.exportInterchange`, `file.exportEdl`,
+written next to the document first). `file.import {replace: true}` starts from an empty project
+with the same name (`file.newProject`) so a headless import→export round-trip contains only the
+imported timeline. `file.exportInterchange`, `file.exportEdl`,
 `file.exportFcpxml`, `file.exportOtio`, `file.exportAaf` and `file.exportOmf` write them.
 `file.exportInterchange {format}` takes `edl`, `xml` (the default), `fcpxml`, `otio`, `aaf` or `omf`;
 any other value is a parameter error and nothing is written. For AAF and
@@ -727,7 +734,8 @@ All of these dispatch the same command ids.
 - **Panels with engine data** (M8.9 / M12.6): Lumetri Scopes (`scopes.read` returns the same
   scopes as numbers), Metadata (`metadata.get` / `metadata.set`, one undo step per edit, stored in
   `ProjectItem::metadata`), Events (`events.list` / `events.clear`), Progress (`jobs.list` /
-  `jobs.cancel`). Timecode and Reference Monitor are frontend-only views. Their settings are
+  `jobs.cancel`), Project Notes (`project.notes` / `project.setNotes`, plain text in
+  `Project::notes`, schema v15; one typing session is one undo step). Timecode and Reference Monitor are frontend-only views. Their settings are
   `UiState::panels` (`ui.set {"panels": {...}}`).
 - **Project panel and Media Browser** (M12.7). View settings (List / Icon / Freeform, thumbnail
   and font size, Preview Area, Hover Scrub), the List view's columns, widths and sort, and ten view
@@ -752,4 +760,10 @@ The layer table reserves names for crates that don't exist yet: `riff`, `mjpeg`,
 other OS integration stays in `apps/filmcraft`.)
 Until they exist, that work lives elsewhere: keyframes and effect definitions in `project`, effects
 and the audio mix in `render`, playback in `ui-egui`, and OS integration (cpal, rfd,
-native menus) in `apps/filmcraft`. [ROADMAP.md](../ROADMAP.md) has the milestone status.
+native menus) in `apps/filmcraft`. [roadmap.md](roadmap.md) has the milestone status and [gaps.md](gaps.md) what is missing.
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-10 | trivial | Status line and revision history added (craftrules progress-docs standard); milestone link points at docs/roadmap.md |
