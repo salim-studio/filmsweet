@@ -345,3 +345,5 @@ impl Unwrap {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod work_tests;
