@@ -567,6 +567,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if let Err(e) = &r {
         app.ui.status = e.clone();
     }
+    if r.is_ok() && matches!(id, "playhead.start" | "playhead.end") {
+        crate::panels::timeline::reveal_playhead(app, ctx);
+    }
     if r.is_ok() && matches!(id, "edit.copy" | "edit.cut") {
         remember_stale_clipboard_media(app);
         put_clip_names_on_system_clipboard(app, ctx);
