@@ -2162,8 +2162,24 @@ fn build() -> Vec<CommandSpec> {
             Ok(json!({"item": item.0}))
         }),
         // ================= Markers =================
-        cmd!("markers.markIn", "Mark In", ["Markers"], Some("I"), r#"{"time":ticks?,"frame":i64?,"seconds":f64?,"timecode":str?,"target":"program|source"}"#, always, |s, p| mark(s, p, true)),
-        cmd!("markers.markOut", "Mark Out", ["Markers"], Some("O"), r#"{"time":ticks?,"frame":i64?,"seconds":f64?,"timecode":str?,"target":"program|source"}"#, always, |s, p| mark(s, p, false)),
+        cmd!(
+            "markers.markIn",
+            "Mark In",
+            ["Markers"],
+            Some("I"),
+            r#"{"time":ticks?,"frame":i64?,"seconds":f64?,"timecode":str?,"target":"program|source"}"#,
+            always,
+            |s, p| mark(s, p, true)
+        ),
+        cmd!(
+            "markers.markOut",
+            "Mark Out",
+            ["Markers"],
+            Some("O"),
+            r#"{"time":ticks?,"frame":i64?,"seconds":f64?,"timecode":str?,"target":"program|source"}"#,
+            always,
+            |s, p| mark(s, p, false)
+        ),
         cmd!("markers.markClip", "Mark Clip", ["Markers"], Some("X"), "{}", has_seq, |s, _| {
             let t = s.playhead();
             let seq = s.active_sequence().ok_or(EngineError::NoSequence)?;
