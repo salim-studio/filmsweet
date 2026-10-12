@@ -21,3 +21,5 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 
 [dev-dependencies]
 filmcraft-dng = { workspace = true, features = ["writer"] }
+# APNG fixtures for the animated-image tests (the image crate does not encode APNG)
+png = "0.18"
