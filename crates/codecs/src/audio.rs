@@ -817,11 +817,11 @@ impl AudioFileSource {
         let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes.clone())), Default::default());
         let mut hint = Hint::new();
         hint.with_extension(&ext);
-        // gapless: trim the encoder delay/padding that MP3 (LAME/Xing tag) files declare, so audio lands on the timeline where other editors put it
-        let fmt_opts = FormatOptions { enable_gapless: true, ..FormatOptions::default() };
-        let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &fmt_opts, &MetadataOptions::default())
-            .map_err(|e| CodecError::Unsupported(e.to_string()))?;
+        // gapless: trim the encoder delay/padding that MP3 (LAME/Xing tag) files declare, so audio lands on the timeline where other editors put it.
+        // MP3 only: the other formats' timing (AAC priming in MP4 edit lists, …) is handled elsewhere and checked against ffmpeg.
+        let fmt_opts = FormatOptions { enable_gapless: ext == "mp3", ..FormatOptions::default() };
+        let probed =
+            symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &MetadataOptions::default()).map_err(|e| CodecError::Unsupported(e.to_string()))?;
         let mut format = probed.format;
         let track = format.default_track().ok_or_else(|| CodecError::Unsupported("no audio track".into()))?.clone();
         let rate = track.codec_params.sample_rate.unwrap_or(48_000);
