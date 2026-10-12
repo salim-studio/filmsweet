@@ -1,6 +1,6 @@
-//! Still images (PNG, JPEG, GIF, WebP, TIFF, BMP, Targa, DPX, DNG camera raw) as media sources.
-//! Animated PNG and GIF files open as movies instead ([`crate::animated`]); here they would show
-//! their first frame.
+//! Still images (PNG, JPEG, GIF, WebP, TIFF, BMP, Targa, DPX, OpenEXR, DNG camera raw) as media
+//! sources. Animated PNG and GIF files open as movies instead ([`crate::animated`]); here they would
+//! show their first frame.
 
 use std::sync::Arc;
 
@@ -10,6 +10,7 @@ use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use crate::{FrameRequest, MediaError, MediaInfo, MediaKind, MediaSource, Result, VideoStreamInfo};
 
 pub mod dng;
+pub mod exr;
 
 /// Default still duration (Premiere's preference default is 5 seconds).
 pub const DEFAULT_STILL_DURATION: Tick = Tick(5 * TICKS_PER_SECOND);
