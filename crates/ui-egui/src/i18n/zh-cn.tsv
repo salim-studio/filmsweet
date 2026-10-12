@@ -3548,6 +3548,9 @@
 	Delete Caption Track	删除字幕轨道
 	Delete Caption Tracks	删除多个字幕轨道
 	Delete Empty Caption Tracks	删除空字幕轨道
+	Compression	压缩
+	ZIP (1 scan line)	ZIP（1 条扫描线）
+	ZIP (16 scan lines)	ZIP（16 条扫描线）
 	Safe graphics mode: {mode}	安全图形模式：{mode}
 	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	上次启动时默认图形模式失败。更新显卡驱动程序通常可以解决此问题。
 	Use Default Graphics	使用默认图形
