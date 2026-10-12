@@ -616,11 +616,7 @@ fn percent_suffix_len(rest: &str) -> Option<usize> {
 /// Retain digit-by-digit reading of zero-prefixed integer portions, even when
 /// followed by a percent sign or decimal fraction.
 fn spoken_integer(value: u64, digits: &str) -> Vec<String> {
-    if has_leading_zero_str(digits) {
-        digits.chars().map(|c| english_digit_word(c).into()).collect()
-    } else {
-        english_cardinal(value)
-    }
+    if has_leading_zero_str(digits) { digits.chars().map(|c| english_digit_word(c).into()).collect() } else { english_cardinal(value) }
 }
 
 fn parse_continuation(rest: &str, used: usize, value: u64, digits: &str) -> Option<(Vec<Token>, usize)> {
