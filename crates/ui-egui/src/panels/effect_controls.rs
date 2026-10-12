@@ -1006,7 +1006,9 @@ pub(crate) fn run(app: &mut FilmcraftApp, ctx: &egui::Context, actions: Vec<(Str
             if p.get("merge").is_none() {
                 p["merge"] = json!(true);
             }
-            p["begin"] = json!(begun != press);
+            // only the first write of a frame begins the step: a handle that changes several
+            // parameters at once (position and anchor point) sends them together
+            p["begin"] = json!(begun != press && !wrote);
             wrote = true;
         }
         if let Err(e) = app.session.execute(&cmd, p) {
