@@ -84,9 +84,7 @@ fn selected_clips(app: &FilmcraftApp) -> Vec<(ClipId, TrackItem, TrackKind)> {
                 return None;
             }
             let link = it.link?;
-            seq.audio_tracks.iter().find_map(|t| {
-                t.items.iter().find(|i| i.link == Some(link)).map(|i| (i.id, i, TrackKind::Audio))
-            })
+            seq.audio_tracks.iter().find_map(|t| t.items.iter().find(|i| i.link == Some(link)).map(|i| (i.id, i, TrackKind::Audio)))
         });
         if let Some((ac, ai, ak)) = linked {
             out.push((ac, ai.clone(), ak));
