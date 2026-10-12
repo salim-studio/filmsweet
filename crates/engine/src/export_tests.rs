@@ -163,10 +163,11 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
         let Some(j) = probe(&out) else { continue };
         let fmt_name = j["format"]["format_name"].as_str().unwrap();
         match fmt.as_str() {
-            "wav" | "aiff" => {
+            "wav" | "aiff" | "flac" => {
                 let a = stream(&j, "audio").unwrap();
                 let bits = settings["audio"]["bits"].as_u64().unwrap();
                 let codec = match (fmt.as_str(), bits) {
+                    ("flac", _) => "flac",
                     ("wav", 24) => "pcm_s24le",
                     ("wav", _) => "pcm_s16le",
                     (_, 24) => "pcm_s24be",
@@ -176,6 +177,16 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
                 assert_eq!(a["sample_rate"], "48000", "{name}");
                 assert_eq!(a["channels"], 2, "{name}");
                 assert!((num(&j["format"]["duration"]) - 0.25).abs() < 0.01, "{name}: {}", j["format"]["duration"]);
+                continue;
+            }
+            "aac" => {
+                // AAC Audio: an MPEG-4 audio file, sound only
+                assert!(out.ends_with(".m4a"), "{name}: {out}");
+                assert!(fmt_name.contains("m4a"), "{name}: {fmt_name}");
+                assert_eq!(j["streams"].as_array().unwrap().len(), 1, "{name}");
+                let a = stream(&j, "audio").unwrap();
+                assert_eq!((a["codec_name"].as_str(), a["sample_rate"].as_str(), a["channels"].as_u64()), (Some("aac"), Some("48000"), Some(2)), "{name}");
+                assert!((num(&j["format"]["duration"]) - 0.25).abs() < 0.03, "{name}: {}", j["format"]["duration"]);
                 continue;
             }
             "gif" => {
@@ -282,6 +293,25 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
 /// H.264 bitrate control over three seconds of the demo: the adaptive Match Source preset
 /// targets width × height × fps × bpp, the 1080p delivery presets their fixed targets; ffprobe's
 /// measured video bitrate stays within the VBR maximum and close to the target.
+#[test]
+fn aac_audio_keeps_a_dot_aac_path_as_adts_and_adds_m4a_otherwise() {
+    let mut s = demo();
+    let dir = Scratch::new("aac-audio");
+    let range = json!({"range": "custom", "startSeconds": 1.0, "endSeconds": 1.25, "wait": true, "format": "aac"});
+    let run = |s: &mut Session, path: String| {
+        let mut p = range.clone();
+        p["path"] = json!(path);
+        s.execute("file.exportMedia", p).unwrap()["path"].as_str().unwrap().to_string()
+    };
+    let adts = run(&mut s, dir.path("Mix.aac"));
+    assert!(adts.ends_with("Mix.aac"), "{adts}");
+    let b = std::fs::read(&adts).unwrap();
+    assert_eq!((b[0], b[1]), (0xFF, 0xF1), "an ADTS header");
+    let m4a = run(&mut s, dir.path("Mix"));
+    assert!(m4a.ends_with("Mix.m4a"), "{m4a}");
+    assert_eq!(&std::fs::read(&m4a).unwrap()[4..8], b"ftyp");
+}
+
 #[test]
 fn h264_presets_hit_their_bitrates() {
     let mut s = demo();
@@ -637,4 +667,27 @@ fn default_export_dir_never_needs_a_real_filesystem() {
     // a saved project exports next to itself
     let s = Session { path: Some("/projects/show/edit.fcproj".into()), ..Default::default() };
     assert_eq!(crate::export_tools::default_export_dir(&s), std::path::PathBuf::from("/projects/show"));
+}
+
+#[test]
+fn unknown_settings_keys_are_errors_not_ignored() {
+    // A flat parameter put inside `settings` used to be dropped without a word: the export ran
+    // without loudness normalization. A misspelt nested key was dropped the same way.
+    let s = demo();
+    let err = crate::export_tools::settings_from_params(&s, &json!({"format": "h264", "settings": {"loudnessLufs": -14}}), "file.exportMedia").unwrap_err();
+    assert!(err.to_string().contains("`loudnessLufs`"), "{err}");
+    let err = crate::export_tools::settings_from_params(&s, &json!({"settings": {"effects": {"loudness": {"targetLoudness": -14}}}}), "file.exportMedia")
+        .unwrap_err();
+    assert!(err.to_string().contains("`effects.loudness.targetLoudness`"), "{err}");
+    // Both spellings of a snake_case field are known (#531), and null sets nothing.
+    for key in ["target_lufs", "targetLufs"] {
+        let (_, ok) = crate::export_tools::settings_from_params(
+            &s,
+            &json!({"settings": {"effects": {"loudness": {"enabled": true, key: -14}}, "captionSidecar": null}}),
+            "file.exportMedia",
+        )
+        .unwrap();
+        assert!(ok.effects.loudness.enabled);
+        assert_eq!(ok.effects.loudness.target_lufs, -14.0, "{key}");
+    }
 }
