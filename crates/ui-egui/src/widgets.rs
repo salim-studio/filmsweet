@@ -344,9 +344,12 @@ mod tests {
     fn frame(ctx: &egui::Context, events: Vec<egui::Event>, id: egui::Id) {
         let t = Tokens::for_kind(ThemeKind::Dark);
         let input = egui::RawInput { events, ..Default::default() };
-        let _ = ctx.run_ui(input, |ui| {
+        // no renderer takes the font atlas upload here; drop it explicitly (epaint panics otherwise)
+        ctx.run_ui(input, |ui| {
             hot_number(ui, id, 123.5, 1.0, (0.0, 1000.0), 1, "", &t);
-        });
+        })
+        .textures_delta
+        .clear();
     }
 
     #[test]
