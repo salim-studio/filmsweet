@@ -1008,6 +1008,7 @@ impl FilmcraftApp {
         if let Some(a) = self.audio.as_mut() {
             a.stop();
         }
+        self.scrub.device_stopped();
         self.playback.audio_clock = false;
         if self.session.mixrec.active() {
             let t = self.session.playhead();

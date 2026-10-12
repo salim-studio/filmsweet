@@ -2352,7 +2352,10 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
 
     // ---- Escape abandons the drag: the release commits nothing and the clips stay put (#580)
     if app.tl.drag.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.tl.drag = None;
+        // the live box (#1028) already changed the selection: put back the one the drag began with
+        if let Some(Drag::Marquee { before, .. }) = app.tl.drag.take() {
+            app.session.state.selection = before;
+        }
     }
 
     // ---- drag
