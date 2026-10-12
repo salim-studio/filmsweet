@@ -330,6 +330,24 @@ fn type_tool_drag_makes_paragraph_text_and_a_click_point_text() {
     assert_eq!(list["layers"][1]["box"], json!(null));
 }
 
+/// Chinese, Japanese and Korean input methods hand over the finished text as `Ime(Commit)`, not
+/// `Text`; it is typed into the text being edited on the monitor (#1083).
+#[test]
+fn text_committed_by_an_input_method_is_typed_on_the_monitor() {
+    let mut d = Driver::new();
+    d.ok("ui.set", json!({"tool": "Type"}));
+    d.frames(3);
+    let pic = d.rect("program.picture");
+    d.ok("ui.click", json!({"x": pic[0] + pic[2] * 0.3, "y": pic[1] + pic[3] * 0.2}));
+    d.ok("ui.type", json!({"text": "A"}));
+    // the events Microsoft Pinyin sends for "ni hao" picked as 你好
+    let preedit = |text: &str| egui::Event::Ime(egui::ImeEvent::Preedit { text: text.into(), active_range_chars: None });
+    d.harness.input_mut().events.extend([preedit("ni hao"), preedit(""), egui::Event::Ime(egui::ImeEvent::Commit("你好".into()))]);
+    d.frames(4);
+    let list = d.exec("graphics.list", json!({}));
+    assert_eq!(list["layers"][0]["text"], "A你好");
+}
+
 #[test]
 fn text_properties_switches_between_point_and_paragraph_text() {
     let mut d = Driver::new();
