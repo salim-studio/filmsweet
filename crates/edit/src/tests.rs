@@ -275,6 +275,17 @@ fn regular_trim_respects_neighbours_and_handles() {
 }
 
 #[test]
+fn trim_on_a_locked_track_is_refused() {
+    let mut fx = Fx::new();
+    let v1 = fx.v(0);
+    let a = fx.put(v1, 0, 100, 0);
+    fx.seq.track_mut(v1).unwrap().locked = true;
+    let mut n = fx.next;
+    assert_eq!(trim(&mut fx.seq, a, Edge::Out, TrimMode::Regular, -f(20), &mut Fx::ctx(&mut n)), Err(EditError::Locked));
+    assert_eq!(fx.spans(v1), vec![(0, 100)]);
+}
+
+#[test]
 fn held_regular_in_trim_stops_at_previous_clip() {
     let mut fx = Fx::new();
     let v1 = fx.v(0);
@@ -489,6 +500,30 @@ fn fades_follow_a_regular_trim() {
     // a clip trimmed shorter than its fades keeps them inside it
     trim(&mut fx.seq, a, Edge::Out, TrimMode::Regular, -f(18), &mut Fx::ctx(&mut n)).unwrap();
     assert_eq!(spans(&fx), vec![(f(12), f(4)), (f(12), f(4))]);
+    fx.seq.check().unwrap();
+}
+
+#[test]
+fn fades_follow_a_non_ripple_speed_change() {
+    // #918: faster without ripple shortens the clip; the fade-out stays on the new out point.
+    let mut fx = Fx::new();
+    let v1 = fx.v(0);
+    let a = fx.put(v1, 0, 100, 0);
+    fx.seq.track_mut(v1).unwrap().transitions = vec![Transition {
+        id: TransitionId(1),
+        effect: filmcraft_project::find_effect("cross_dissolve").unwrap().instance(),
+        start: f(90),
+        duration: f(10),
+        from: Some(a),
+        to: None,
+        align: Default::default(),
+        reverse: false,
+    }];
+    let mut n = fx.next;
+    set_speed(&mut fx.seq, a, 2.0, false, false, &mut Fx::ctx(&mut n)).unwrap();
+    let tr = &fx.seq.track(v1).unwrap().transitions[0];
+    assert_eq!(fx.spans(v1), vec![(0, 50)]);
+    assert_eq!((tr.start, tr.duration), (f(40), f(10)));
     fx.seq.check().unwrap();
 }
 
