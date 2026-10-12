@@ -33,6 +33,7 @@ pub mod mxf;
 pub mod ogg;
 mod stream_color;
 pub mod video;
+mod webm_alpha;
 
 use std::sync::{Arc, RwLock};
 
