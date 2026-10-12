@@ -232,18 +232,16 @@ fn shift_constrains_pen_mask_segments_to_45_degrees() {
     d.frames(2);
     let pic = d.rect("program.picture");
     let at = |fx: f64, fy: f64| json!({"x": pic[0] + pic[2] * fx, "y": pic[1] + pic[3] * fy});
-    // hold Shift (as the OS reports a held key) across the clicks
-    d.harness.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
-    d.frames(1);
+    // Shift-clicks (control gestures carry their own modifiers since UI.6, #881)
     for (fx, fy) in [(0.3, 0.3), (0.6, 0.34), (0.63, 0.6)] {
-        d.ok("ui.click", at(fx, fy));
+        let mut p = at(fx, fy);
+        p["modifiers"] = json!({"shift": true});
+        d.ok("ui.click", p);
         d.frames(2);
     }
     // a Shift-drag places the fourth point and pulls out its handle
     d.ok("ui.drag", json!({"from": at(0.32, 0.62), "to": at(0.42, 0.64), "steps": 6, "modifiers": {"shift": true}}));
     d.frames(2);
-    d.harness.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
-    d.frames(1);
     d.ok("ui.click", at(0.3, 0.3));
     d.frames(3);
     let m = d.masks();
