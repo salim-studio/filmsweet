@@ -163,10 +163,11 @@ fn every_builtin_preset_exports_and_ffprobe_confirms() {
         let Some(j) = probe(&out) else { continue };
         let fmt_name = j["format"]["format_name"].as_str().unwrap();
         match fmt.as_str() {
-            "wav" | "aiff" => {
+            "wav" | "aiff" | "flac" => {
                 let a = stream(&j, "audio").unwrap();
                 let bits = settings["audio"]["bits"].as_u64().unwrap();
                 let codec = match (fmt.as_str(), bits) {
+                    ("flac", _) => "flac",
                     ("wav", 24) => "pcm_s24le",
                     ("wav", _) => "pcm_s16le",
                     (_, 24) => "pcm_s24be",
@@ -551,6 +552,21 @@ fn crf_param_picks_constant_quality() {
 }
 
 #[test]
+fn exr_compression_param_is_parsed_and_defaults_to_none() {
+    use filmcraft_export::ExrCompression::{None as Plain, Rle, Zip, Zips};
+    let s = demo();
+    let setting = |p: Value| crate::export_tools::settings_from_params(&s, &p, "file.exportMedia").map(|(_, st)| st.exr_compression);
+    assert_eq!(setting(json!({"path": "x.exr", "format": "exr"})).unwrap(), Plain);
+    for (name, want) in [("none", Plain), ("rle", Rle), ("zips", Zips), ("zip", Zip)] {
+        assert_eq!(setting(json!({"path": "x.exr", "format": "exr", "exrCompression": name})).unwrap(), want);
+    }
+    let e = setting(json!({"path": "x.exr", "format": "exr", "exrCompression": "piz"})).unwrap_err().to_string();
+    assert!(e.contains("none | rle | zips | zip"), "{e}");
+    let old: filmcraft_export::ExportSettings = serde_json::from_value(json!({"format": "exr"})).unwrap();
+    assert_eq!(old.exr_compression, Plain);
+}
+
+#[test]
 fn queue_exports_several_sequences_and_ranges() {
     let mut s = demo();
     let dir = Scratch::new("queue-many");
@@ -666,4 +682,27 @@ fn default_export_dir_never_needs_a_real_filesystem() {
     // a saved project exports next to itself
     let s = Session { path: Some("/projects/show/edit.fcproj".into()), ..Default::default() };
     assert_eq!(crate::export_tools::default_export_dir(&s), std::path::PathBuf::from("/projects/show"));
+}
+
+#[test]
+fn unknown_settings_keys_are_errors_not_ignored() {
+    // A flat parameter put inside `settings` used to be dropped without a word: the export ran
+    // without loudness normalization. A misspelt nested key was dropped the same way.
+    let s = demo();
+    let err = crate::export_tools::settings_from_params(&s, &json!({"format": "h264", "settings": {"loudnessLufs": -14}}), "file.exportMedia").unwrap_err();
+    assert!(err.to_string().contains("`loudnessLufs`"), "{err}");
+    let err = crate::export_tools::settings_from_params(&s, &json!({"settings": {"effects": {"loudness": {"targetLoudness": -14}}}}), "file.exportMedia")
+        .unwrap_err();
+    assert!(err.to_string().contains("`effects.loudness.targetLoudness`"), "{err}");
+    // Both spellings of a snake_case field are known (#531), and null sets nothing.
+    for key in ["target_lufs", "targetLufs"] {
+        let (_, ok) = crate::export_tools::settings_from_params(
+            &s,
+            &json!({"settings": {"effects": {"loudness": {"enabled": true, key: -14}}, "captionSidecar": null}}),
+            "file.exportMedia",
+        )
+        .unwrap();
+        assert!(ok.effects.loudness.enabled);
+        assert_eq!(ok.effects.loudness.target_lufs, -14.0, "{key}");
+    }
 }
