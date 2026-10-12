@@ -51,6 +51,7 @@ pub mod perf;
 pub mod play_ahead;
 mod rtl;
 pub mod scrub;
+mod shuttle;
 pub mod source_playback;
 pub mod state;
 pub mod theme;
@@ -697,21 +698,24 @@ impl FilmcraftApp {
         }
         self.frames.set_cache_budget(p.memory.frame_cache_mb as usize * (1 << 20));
         self.ui.play_after_render = p.timeline.play_after_rendering;
-        if prev.as_ref().is_none_or(|q| q.audio_hardware != p.audio_hardware) {
+        let hardware_changed = prev.as_ref().is_none_or(|q| q.audio_hardware != p.audio_hardware);
+        let pitch_changed = prev.as_ref().is_some_and(|q| q.audio.maintain_pitch_shuttling != p.audio.maintain_pitch_shuttling);
+        if hardware_changed {
             if let Some(input) = self.session.voiceover.input.as_mut() {
                 input.configure_host(&p.audio_hardware.device_class);
             }
             let rate = self.session.active_sequence().map(|q| q.settings.sample_rate);
-            let playing = self.playback.playing && self.playback.preroll.is_none();
             if let Some(a) = self.audio.as_mut() {
                 a.stop();
                 a.configure(&p.audio_hardware, rate);
             }
-            if playing {
-                self.playback.anchor_tick = self.session.playhead();
-                self.playback.anchor_time = ctx.input(|i| i.time);
-                self.start_audio();
-            }
+        }
+        if (hardware_changed || pitch_changed) && self.playback.playing && self.playback.preroll.is_none() {
+            self.playback.anchor_tick = self.session.playhead();
+            let now = ctx.input(|i| i.time);
+            self.playback.anchor_time = now;
+            self.playback.audio_seen = (0, now);
+            self.start_audio();
         }
         if let Some(note) = self.audio.as_ref().and_then(|a| a.note()) {
             self.ui.status = note;
@@ -995,15 +999,13 @@ impl FilmcraftApp {
         let start_tick = self.session.playhead();
         let Some(a) = self.audio.as_mut() else { return };
         let sr = a.sample_rate();
-        // Mix at a lower effective rate for forward shuttle playback, then hand the
-        // samples to the device at its real rate. This keeps sound on the same
-        // timeline as the accelerated picture (with the expected pitch shift).
-        let Some(mix_rate) = shuttle_mix_rate(sr, self.playback.speed) else {
+        // Output frames still follow the accelerated timeline. The pitch preference selects
+        // either the original rate conversion or pitch-corrected program audio.
+        let Some((mix_rate, mix)) = shuttle::mix(&self.session, seq_id, sr, self.playback.speed) else {
             a.stop();
             return;
         };
         let cursor = start_tick.to_units_floor(i64::from(mix_rate));
-        let mix = playback_mix(&self.session, seq_id, mix_rate);
         // the old stream stops before the new mixer resets the underrun counters
         a.stop();
         // Desktop: mix ahead on a thread so the device callback never waits on decoding.
@@ -2245,6 +2247,115 @@ mod audio_recovery_tests {
         app.end_preroll(0.0);
         assert_eq!(starts.load(Ordering::Relaxed), 1, "2x playback must start audio output");
         assert!(app.playback.audio_clock, "the device is still the master clock");
+        app.stop();
+    }
+
+    /// Capture the block primed by the real shuttle playback path, without relying on a
+    /// physical device or consuming the producer faster than a device would.
+    #[test]
+    fn maintain_pitch_shuttling_controls_the_samples_sent_to_the_device() {
+        use std::sync::Mutex;
+        struct Capture(Arc<Mutex<Vec<f32>>>);
+        impl AudioOut for Capture {
+            fn start(&mut self, mut fill: Box<dyn FnMut(&mut [f32], usize) + Send>) -> Result<u32, String> {
+                let mut buf = vec![0.0; 2048];
+                fill(&mut buf, 2);
+                *self.0.lock().unwrap() = buf;
+                Ok(48_000)
+            }
+            fn stop(&mut self) {}
+            fn sample_rate(&self) -> u32 {
+                48_000
+            }
+            fn played_frames(&self) -> Option<u64> {
+                Some(4_800)
+            }
+        }
+        let amplitude = |samples: &[f32], ch: usize, hz: f64| {
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, frame) in samples.as_chunks::<2>().0.iter().enumerate() {
+                let phase = std::f64::consts::TAU * hz * i as f64 / 48_000.0;
+                re += f64::from(frame[ch]) * phase.cos();
+                im += f64::from(frame[ch]) * phase.sin();
+            }
+            2.0 * re.hypot(im) / (samples.len() / 2) as f64
+        };
+        let mut session = Session::default();
+        session.execute("file.newSequence", json!({"width":16,"height":16})).unwrap();
+        let inter: Vec<f32> =
+            (0..48_000 * 8).flat_map(|i| [440.0, 660.0].map(|hz| (0.2 * (std::f64::consts::TAU * hz * i as f64 / 48_000.0).sin()) as f32)).collect();
+        let bytes: Arc<[u8]> = filmcraft_engine::previews::write_wav_f32(&inter, 48_000).into();
+        let item = filmcraft_engine::commands::import_bytes(&mut session, "/shuttle-tone.wav", bytes, None).unwrap();
+        session.execute("timeline.place", json!({"item":item.0,"audioTrack":"A1","seconds":0.0})).unwrap();
+        let mut app = FilmcraftApp::new(session);
+        let samples = Arc::new(Mutex::new(Vec::new()));
+        app.audio = Some(Box::new(Capture(samples.clone())));
+        let mut normal = None;
+        for maintain in [true, false] {
+            app.session.prefs.audio.maintain_pitch_shuttling = maintain;
+            for speed in [0.5, 1.0, 1.5, 2.0, 4.0] {
+                app.session.set_playhead(Tick::from_seconds_f64(1.0));
+                let expected = app.session.sequence_rate().snap(app.session.playhead() + Tick::from_seconds_f64(0.1 * speed));
+                app.play(speed);
+                app.end_preroll(0.0);
+                assert!(app.playback.audio_clock);
+                let buf = samples.lock().unwrap();
+                for (ch, tone) in [440.0, 660.0].into_iter().enumerate() {
+                    let hz = if maintain { tone } else { tone * speed };
+                    let level = amplitude(&buf, ch, hz);
+                    assert!(level > 0.08, "maintain={maintain}, speed={speed}, channel={ch}: {hz} Hz level={level}");
+                    if speed != 1.0 {
+                        let wrong = if maintain { tone * speed } else { tone };
+                        assert!(amplitude(&buf, ch, wrong) < level * 0.3, "wrong pitch {wrong} Hz at {speed}x, maintain={maintain}");
+                    }
+                }
+                if speed == 1.0 {
+                    if let Some(previous) = &normal {
+                        assert_eq!(&*buf, previous, "1x must bypass pitch processing");
+                    } else {
+                        normal = Some(buf.clone());
+                    }
+                }
+                drop(buf);
+                app.advance_playback(&egui::Context::default());
+                assert_eq!(app.session.playhead(), expected, "the device clock must advance the timeline at {speed}x, snapped to a video frame");
+                app.stop();
+            }
+        }
+    }
+
+    #[test]
+    fn changing_pitch_preference_restarts_audio_at_the_current_playhead() {
+        let mut session = Session::default();
+        session.execute("file.newSequence", json!({"width":16,"height":16})).unwrap();
+        let ctx = egui::Context::default();
+        let mut app = FilmcraftApp::new(session);
+        let starts = Arc::new(AtomicUsize::new(0));
+        app.audio = Some(Box::new(Device { ready: true, starts: starts.clone(), reading: Some(0) }));
+        app.session.prefs.audio_hardware.default_output = "available".into();
+        app.apply_prefs(&ctx);
+        app.play(2.0);
+        app.end_preroll(0.0);
+        assert_eq!(starts.load(Ordering::Relaxed), 1);
+        app.session.set_playhead(Tick::from_seconds_f64(2.0));
+        let position = app.session.playhead();
+        for (maintain, expected_starts) in [(false, 2), (true, 3)] {
+            app.session.execute("prefs.set", json!({"key":"audio.maintainPitchShuttling","value":maintain})).unwrap();
+            app.apply_prefs(&ctx);
+            assert_eq!(starts.load(Ordering::Relaxed), expected_starts);
+            assert!(app.playback.audio_clock);
+            assert_eq!(app.playback.speed, 2.0);
+            assert_eq!(app.playback.anchor_tick, app.session.playhead());
+            assert_eq!(app.session.playhead(), position);
+            app.apply_prefs(&ctx);
+            assert_eq!(starts.load(Ordering::Relaxed), expected_starts, "unchanged settings do not restart");
+        }
+        for speed in [-1.0, 8.0] {
+            app.play(speed);
+            app.end_preroll(0.0);
+            assert!(!app.playback.audio_clock, "unsupported speed {speed} remains silent");
+        }
+        assert_eq!(starts.load(Ordering::Relaxed), 3);
         app.stop();
     }
 
