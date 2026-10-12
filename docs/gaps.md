@@ -221,13 +221,13 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
 
 ## G14. Localization: 8 of the 12 key languages missing
 
-- **Have:** Spanish, Japanese, Simplified Chinese and French (#498) catalogs cover ~99.6–100% of
-  the ~3,500 cataloged strings; Portuguese (Brazil) and Ukrainian ~10% (menus).
+- **Have:** Spanish, Japanese, Simplified Chinese, French (#498) and Portuguese (Brazil) (#859)
+  catalogs cover ~99.6–100% of the ~3,500 cataloged strings; Ukrainian ~10% (menus).
 - **Missing:** Hindi, Arabic (no RTL interface layout or catalog; the interface has Arabic and Hebrew
   fallback fonts and shows captions in reading order, but other names and fields keep egui's
   left-to-right run order; Arabic titles reported broken, #395),
   German beyond menus (#490), Korean (#508; needs Hangul fonts in craft-fonts),
-  Vietnamese, Portuguese beyond menus; Premiere also ships Italian and Russian. Engine errors,
+  Vietnamese; Premiere also ships Italian and Russian. Engine errors,
   CLI and MCP stay English. No language has a recorded native-speaker review.
 - **Done:** Indonesian (#867): `id.tsv` has every entry of the Spanish catalog (~100%), in Edit ▸
   Language, Settings ▸ General and the native macOS menu; System Language picks it for `id-*` (and
