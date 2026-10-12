@@ -440,8 +440,9 @@ pub fn spawn_export(s: &mut Session, project: Arc<Project>, seq: ItemId, mut set
     let id = s.jobs.iter().map(|j| j.id).max().unwrap_or(0) + 1;
     let job = crate::Job { id, label, progress: Default::default(), result: Default::default() };
     // Export always renders full-resolution media, whatever the proxy toggle says.
-    let provider = s.media.full_res_provider(project.clone(), s.services.clone());
+    let provider = s.media.full_res_provider(project.clone(), s.services.clone()).recording();
     let (prog, res) = (job.progress.clone(), job.result.clone());
+    let offline = s.export_offline.entry(id).or_default().clone();
     if cfg!(target_arch = "wasm32") && !wait && filmcraft_export::stepped(format) {
         // No threads: the host advances the export between UI frames (`Session::pump_jobs`).
         let mut exporter = filmcraft_export::Exporter::new(project, seq, &settings, &prog).map_err(|e| EngineError::Other(e.to_string()))?;
@@ -452,6 +453,7 @@ pub fn spawn_export(s: &mut Session, project: Arc<Project>, seq: ItemId, mut set
     }
     let run = move || {
         let r = filmcraft_export::export(&project, seq, &settings, &provider, &prog).map_err(|e| e.to_string());
+        *offline.lock().unwrap_or_else(|x| x.into_inner()) = provider.offline_used();
         if let Err(e) = &r {
             *prog.error.lock().unwrap_or_else(|x| x.into_inner()) = Some(e.clone());
             prog.finished.store(true, Ordering::Relaxed);
@@ -514,6 +516,7 @@ pub fn export_media(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(EngineError::Other(format!("export failed: {e}")));
         }
         out["result"] = v["result"].clone();
+        out["offlineMedia"] = offline_media_json(s, id);
     }
     Ok(out)
 }
@@ -568,6 +571,22 @@ impl ExportQueue {
     }
 }
 
+/// A `jobs.list` entry: [`crate::Job::to_json`], plus `offlineMedia` for an export job, so callers
+/// that poll an export (the bridge, MCP long exports) can report it like `file.exportMedia` does.
+pub(crate) fn job_json(s: &Session, j: &crate::Job) -> Value {
+    let mut v = j.to_json();
+    if s.export_offline.contains_key(&j.id) {
+        v["offlineMedia"] = offline_media_json(s, j.id);
+    }
+    v
+}
+
+/// The offline items export job `job` drew the slate for, as JSON (`[]` while it runs or when none).
+fn offline_media_json(s: &Session, job: u64) -> Value {
+    let list = s.export_offline.get(&job).map(|o| o.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap_or_default();
+    serde_json::to_value(list).unwrap_or_else(|_| json!([]))
+}
+
 fn item_json(s: &Session, it: &QueueItem) -> Value {
     let job = it.job.and_then(|id| s.jobs.iter().find(|j| j.id == id));
     let (progress, status_text) = match job {
@@ -588,6 +607,7 @@ fn item_json(s: &Session, it: &QueueItem) -> Value {
         "statusText": status_text,
         "job": it.job,
         "error": it.error,
+        "offlineMedia": it.job.map_or_else(|| json!([]), |j| offline_media_json(s, j)),
     })
 }
 

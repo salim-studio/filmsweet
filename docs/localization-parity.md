@@ -10,7 +10,7 @@ Portuguese (Brazil), Russian, Simplified Chinese.
 
 Edit ▸ Language (also Settings ▸ General, `general.interfaceLanguage`) switches the interface and
 persists across restarts; System Language (the default) follows the OS's or browser's preferred
-languages and falls back to English. Commands `app.language.<english|japanese|spanish|portuguese|ukrainian|chinese|german|russian|french>`
+languages and falls back to English. Commands `app.language.<english|japanese|spanish|portuguese|ukrainian|chinese|german|russian|french|indonesian>`
 are reachable over the control channel. One catalog per language,
 `crates/ui-egui/src/i18n/<code>.tsv` (format in the header of `es.tsv`); UI code wraps strings in
 `tl!("…")` / `tlf!("…{name}", name)`, and registry names (effects and their parameters, settings,
@@ -25,8 +25,11 @@ Fonts come from [craft-fonts](https://github.com/storytold/craft-fonts) (`CRAFT_
 official releases) or an installed system face; without one, switching to Japanese or Chinese is
 refused with a message. Simplified Chinese is picked for `zh`, `zh-CN`, `zh-SG`, `zh-Hans`, not
 Traditional locales. Ukrainian uses the bundled Cyrillic interface fonts. Vertical text in titles
-is supported. The interface (egui) does **not** shape complex scripts or lay out right to left;
-the title engine (`crates/text`, harfrust + bidi) does, but Arabic titles are reported broken (#395).
+is supported. The interface (egui) shapes each font run with harfrust and has Arabic and Hebrew
+fallback fonts (`crates/ui-egui/src/rtl.rs`), but it has no bidi pass: only captions (timeline
+blocks, the Text panel list when not being edited) are laid out in reading order, and the interface
+itself is never mirrored right to left. The title engine (`crates/text`, harfrust + bidi) lays out
+right to left, but Arabic titles are reported broken (#395).
 
 ## Status
 
@@ -41,10 +44,10 @@ whole interface, one PR) at ~4–8 h per language for the catalog plus tests.
 | Simplified Chinese | zh-cn | 3,485 (99.6%) | dialogs, Settings, effects, shortcuts, status; engine errors English | CJK font fallback; system IME via winit | not recorded | partial | 6–10 h + review |
 | Spanish | es | 3,496 (99.9%) | as above | Latin | not recorded | partial | 4–8 h + review |
 | Hindi | hi | 0 (0%) | — | **no Devanagari shaping in the interface** | — | none | 30–50 h (shaping in UI + catalog + fonts) |
-| Arabic | ar | 0 (0%) | — | **no RTL layout, no shaping in the interface**; titles broken (#395) | — | none | 40–70 h |
+| Arabic | ar | 0 (0%) | — | **no RTL interface layout**; fallback fonts and shaping in the interface, captions in reading order, other text in egui's left-to-right run order; titles broken (#395) | — | none | 40–70 h |
 | French | fr | 3,526 (same entries as Spanish, plus the macOS Settings item) | as Spanish | Latin (bundled fonts) | not recorded; welcome | partial (#498) | review |
 | Portuguese (Brazil) | pt-br | 348 (9.9%) | menus only | Latin | not recorded | menus only | 5–9 h + review |
-| Indonesian | id | 0 (0%) | — | Latin | — | none | 6–10 h + review |
+| Indonesian | id | 3,541 (same entries as Spanish, plus the macOS Settings item); must cover the core menus, no entry without a Spanish one | as Spanish | Latin (bundled fonts); System Language also maps the legacy `in` code | not recorded; welcome | partial (#867) | review |
 | Japanese | ja | 3,487 (99.7%) | as zh-cn; system-font kanji may pick the Chinese fallback (#547) | CJK fonts, vertical title text | not recorded | partial | 4–8 h + review |
 | German | de | 0 (0%) | — | Latin | — | none (requested #490) | 6–10 h + review |
 | Korean | ko | 0 (0%) | — | needs Hangul fonts in craft-fonts and IME testing | — | none (requested #508) | 10–20 h + review |

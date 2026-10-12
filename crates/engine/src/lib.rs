@@ -192,6 +192,10 @@ impl Services for FsServices {
     }
 }
 
+/// A point in the undo history (its top step), from [`Session::undo_mark`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UndoMark(Option<usize>);
+
 /// Undo history of whole-project snapshots.
 #[derive(Clone, Default)]
 pub struct History {
@@ -357,6 +361,9 @@ pub struct Session {
     pub journal: Vec<(String, Value)>,
     /// Background jobs (exports, render previews…).
     pub jobs: Vec<Job>,
+    /// Export job → the offline items it drew the slate for, filled when the export finishes
+    /// (#1054; `offlineMedia` in `file.exportMedia` and queue results).
+    pub export_offline: std::collections::HashMap<u64, Arc<std::sync::Mutex<Vec<media_pool::OfflineMedia>>>>,
     /// User preferences (`prefs.*` commands) and where they persist (None = not persisted).
     pub prefs: autosave::Preferences,
     pub prefs_path: Option<std::path::PathBuf>,
@@ -476,6 +483,7 @@ impl Session {
             events: Vec::new(),
             journal: Vec::new(),
             jobs: Vec::new(),
+            export_offline: Default::default(),
             prefs: Default::default(),
             prefs_path: None,
             persistence: None,
@@ -874,6 +882,36 @@ impl Session {
         }
     }
 
+    /// Where the undo history stands now, for [`Session::revert_to`].
+    pub fn undo_mark(&self) -> UndoMark {
+        UndoMark(self.history.undo.last().map(|u| Arc::as_ptr(&u.1) as usize))
+    }
+
+    /// Take back every edit made since `mark` (a gesture cancelled with Escape, #580), merged or
+    /// not: the project returns to how it was at `mark`, and neither undo nor redo keeps them.
+    /// Nothing happens when `mark` has left the history. Returns how many steps were taken back.
+    pub fn revert_to(&mut self, mark: UndoMark) -> usize {
+        if let UndoMark(Some(p)) = mark
+            && !self.history.undo.iter().any(|u| Arc::as_ptr(&u.1) as usize == p)
+        {
+            return 0;
+        }
+        let mut earliest = None;
+        let mut n = 0;
+        while self.undo_mark() != mark {
+            let Some((_, prev)) = self.history.undo.pop() else { break };
+            earliest = Some(prev);
+            n += 1;
+        }
+        if let Some(prev) = earliest {
+            self.project = prev;
+            self.history.merge_key = None;
+            self.fix_state();
+            self.bump();
+        }
+        n
+    }
+
     /// Edit the active sequence with the edit-algebra context.
     pub fn edit_sequence<R>(&mut self, label: &str, f: impl FnOnce(&mut Sequence, &mut EditCtx, &mut EditorState) -> Result<R>) -> Result<R> {
         self.edit_sequence_as(label, None, f)
@@ -1065,11 +1103,22 @@ impl Session {
 
     /// [`Session::render_program_at`], with the reason when nothing can be rendered.
     pub fn try_render_program_at(&self, scale: f32, t: Tick) -> Result<filmcraft_render::Image> {
+        self.render_program_with(scale, t, &self.media.provider(self.project.clone(), self.services.clone()))
+    }
+
+    /// [`Session::try_render_program_at`], also naming the offline items the frame drew the slate
+    /// for (#1054).
+    pub fn try_render_program_with_offline_at(&self, scale: f32, t: Tick) -> Result<(filmcraft_render::Image, Vec<media_pool::OfflineMedia>)> {
+        let provider = self.media.provider(self.project.clone(), self.services.clone()).recording();
+        let img = self.render_program_with(scale, t, &provider)?;
+        Ok((img, provider.offline_used()))
+    }
+
+    fn render_program_with(&self, scale: f32, t: Tick, provider: &dyn filmcraft_render::SourceProvider) -> Result<filmcraft_render::Image> {
         let seq = self.renderable_sequence(scale)?;
         let t = self.sequence_rate().snap(t.max(Tick::ZERO));
-        let provider = self.media.provider(self.project.clone(), self.services.clone());
         let opts = filmcraft_render::RenderOptions { scale, captions: true, ..Default::default() };
-        Ok(filmcraft_render::render_sequence(&self.project, seq, t, opts, &provider))
+        Ok(filmcraft_render::render_sequence(&self.project, seq, t, opts, provider))
     }
 
     /// The active sequence, if a frame of it at `scale` is within the image size limits.
@@ -1155,6 +1204,8 @@ mod keyboard_tests;
 #[cfg(test)]
 mod linked_speed_tests;
 #[cfg(test)]
+mod locked_clip_edits_tests;
+#[cfg(test)]
 mod masks_tests;
 #[cfg(test)]
 mod media_browser_tests;
@@ -1198,6 +1249,8 @@ mod relink_tests;
 mod remix_tests;
 #[cfg(test)]
 mod ripple_delete_tests;
+#[cfg(test)]
+mod roll_linked_tests;
 #[cfg(test)]
 mod scopes_tests;
 #[cfg(test)]

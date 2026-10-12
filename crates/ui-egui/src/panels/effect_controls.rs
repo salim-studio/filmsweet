@@ -669,7 +669,10 @@ pub(crate) fn param_row(
                 let off = drag_off.unwrap_or(0.0) + resp.drag_delta().x;
                 ui.data_mut(|d| d.insert_temp(id, off));
             }
-            if resp.drag_stopped() {
+            // egui ends a drag on Escape: that stop abandons it (#580)
+            if resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                ui.data_mut(|d| d.remove::<f32>(id));
+            } else if resp.drag_stopped() {
                 let off = drag_off.unwrap_or(0.0);
                 ui.data_mut(|d| d.remove::<f32>(id));
                 let new_tl =
@@ -690,32 +693,43 @@ pub(crate) fn param_row(
                 actions.push(("playhead.set".into(), json!({"time": tl.0})));
             }
             resp.context_menu(|ui| {
-                ui.label(egui::RichText::new(tl!("Temporal Interpolation")).color(t.text_dim));
-                for (label, key) in [
-                    (tl!("Linear"), "linear"),
-                    (tl!("Bezier"), "bezier"),
-                    (tl!("Auto Bezier"), "autoBezier"),
-                    (tl!("Continuous Bezier"), "continuousBezier"),
-                    (tl!("Hold"), "hold"),
-                    (tl!("Ease In"), "easeIn"),
-                    (tl!("Ease Out"), "easeOut"),
-                ] {
-                    if ui.button(label).clicked() {
-                        actions.push((
-                            "effects.setInterpolation".into(),
-                            with_mask(json!({"clip": clip.0, "effect": eff_json, "param": pd.id, "mediaTime": k.time.0, "interpolation": key})),
-                        ));
-                        ui.close();
-                    }
-                }
-                ui.separator();
-                if ui.button(tl!("Clear")).clicked() {
-                    actions
-                        .push(("effects.deleteKeyframe".into(), with_mask(json!({"clip": clip.0, "effect": eff_json, "param": pd.id, "mediaTime": k.time.0}))));
-                    ui.close();
-                }
+                keyframe_menu(app, ui, KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time }, actions);
             });
         }
+    }
+}
+
+/// Shared by the lane diamonds and graph points: commands use media time and preserve the mask.
+fn keyframe_menu(app: &mut FilmcraftApp, ui: &mut egui::Ui, target: KeyframeRef, actions: &mut Vec<(String, Value)>) {
+    let mut params = json!({"clip": target.clip, "effect": target.effect, "param": target.param, "mediaTime": target.time.0});
+    if let Some(mask) = target.mask {
+        params["mask"] = json!(mask);
+    }
+    ui.label(egui::RichText::new(tl!("Temporal Interpolation")).color(app.tokens.text_dim));
+    for (label, key) in [
+        (tl!("Linear"), "linear"),
+        (tl!("Bezier"), "bezier"),
+        (tl!("Auto Bezier"), "autoBezier"),
+        (tl!("Continuous Bezier"), "continuousBezier"),
+        (tl!("Hold"), "hold"),
+        (tl!("Ease In"), "easeIn"),
+        (tl!("Ease Out"), "easeOut"),
+    ] {
+        let response = ui.button(label);
+        app.auto.add(&format!("effectControls.keyframeMenu.{key}"), response.rect, label);
+        if response.clicked() {
+            let mut params = params.clone();
+            params["interpolation"] = json!(key);
+            actions.push(("effects.setInterpolation".into(), params));
+            ui.close();
+        }
+    }
+    ui.separator();
+    let response = ui.button(tl!("Clear"));
+    app.auto.add("effectControls.keyframeMenu.clear", response.rect, "Clear");
+    if response.clicked() {
+        actions.push(("effects.deleteKeyframe".into(), params));
+        ui.close();
     }
 }
 
@@ -960,23 +974,31 @@ pub fn properties_panel(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     run(app, ui.ctx(), actions);
 }
 
-/// Run the panel's actions. Parameter changes made while the mouse button is down (a drag) share
-/// one undo step, which the first change of each press begins (#201); typed values and clicks stay
-/// separate steps. A drag value only changes once the mouse moves, after the press frame, so the
-/// press that already began a step is remembered by its start time.
-fn run(app: &mut FilmcraftApp, ctx: &egui::Context, actions: Vec<(String, Value)>) {
+/// Run the panel's actions (also the Lumetri Color panel's). Parameter changes made
+/// while the mouse button is down (a drag) share one undo step, which the first change of each
+/// press begins (#201); typed values and clicks stay separate steps. A drag value only changes once
+/// the mouse moves, after the press frame, so the press that already began a step is remembered by
+/// its start time. That memory is refreshed on every frame the button stays down — including frames
+/// with no value change — so a Scale scrub that pauses between percents is still one undo (#887).
+pub(crate) fn run(app: &mut FilmcraftApp, ctx: &egui::Context, actions: Vec<(String, Value)>) {
     let (down, press) = ctx.input(|i| (i.pointer.any_down(), i.pointer.press_start_time()));
     let key = egui::Id::new("effect-controls-drag-step");
+    let begun = ctx.data(|d| d.get_temp::<Option<f64>>(key)).flatten();
+    let mut wrote = false;
     for (cmd, mut p) in actions {
         if cmd == "effects.setParam" && down {
-            let begun = ctx.data(|d| d.get_temp::<Option<f64>>(key)).flatten();
             p["merge"] = json!(true);
             p["begin"] = json!(begun != press);
-            ctx.data_mut(|d| d.insert_temp(key, press));
+            wrote = true;
         }
         if let Err(e) = app.session.execute(&cmd, p) {
             app.ui.status = e.to_string();
         }
+    }
+    if down && (wrote || begun.is_some()) {
+        ctx.data_mut(|d| d.insert_temp(key, press));
+    } else if !down {
+        ctx.data_mut(|d| d.remove::<Option<f64>>(key));
     }
 }
 
@@ -1117,7 +1139,10 @@ pub(crate) fn graph_rows(
             let dy: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
             let c = pos2(x_of(f), y_of(v) + dy);
             let r = Rect::from_center_size(c, vec2(10.0, 10.0));
-            let resp = ui.interact(r.expand(2.0), id, Sense::drag());
+            let resp = ui.interact(r.expand(2.0), id, Sense::click_and_drag());
+            resp.context_menu(|ui| {
+                keyframe_menu(app, ui, KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time }, actions);
+            });
             let auto_id = match (comps.len(), ci) {
                 (1, _) => format!("effectControls.{}.graph.keyframe.{}", pd.id, k.time.0),
                 (_, 0) => format!("effectControls.{}.graph.keyframe.{}.x", pd.id, k.time.0),
@@ -1138,11 +1163,13 @@ pub(crate) fn graph_rows(
                 p.line_segment([c, hp], Stroke::new(1.0, t.plot_handle_dim));
                 p.circle_filled(hp, 3.5, t.keyframe_handle);
                 let hr = ui.interact(Rect::from_center_size(hp, vec2(10.0, 10.0)), hid.with("h"), Sense::drag());
-                if hr.dragged() {
+                if hr.dragged_by(egui::PointerButton::Primary) {
                     let nx = graph_drag_offset(ui, &hr, vec2(hdx, 0.0)).x;
                     ui.data_mut(|d| d.insert_temp(hid, nx));
                 }
-                if hr.drag_stopped() {
+                if hr.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    ui.data_mut(|d| d.remove::<f32>(hid));
+                } else if hr.drag_stopped_by(egui::PointerButton::Primary) {
                     ui.data_mut(|d| d.remove::<f32>(hid));
                     let ni = ((infl * seg + hdx * side) / seg.max(1.0)).clamp(0.01, 1.0);
                     let key = if side > 0.0 { "outInfluence" } else { "inInfluence" };
@@ -1152,13 +1179,16 @@ pub(crate) fn graph_rows(
                     ));
                 }
             }
-            p.circle_filled(c, 4.5, if resp.dragged() { t.hot_text } else { t.plot_handle });
-            if resp.dragged() {
+            p.circle_filled(c, 4.5, if resp.dragged_by(egui::PointerButton::Primary) { t.hot_text } else { t.plot_handle });
+            if resp.dragged_by(egui::PointerButton::Primary) {
                 let ny = graph_drag_offset(ui, &resp, vec2(0.0, dy)).y;
                 ui.data_mut(|d| d.insert_temp(id, ny));
                 p.text(c + vec2(8.0, -10.0), Align2::LEFT_BOTTOM, format!("{:.dec$}", v_of(c.y)), Tokens::ui(10.5), t.hot_text);
             }
-            if resp.drag_stopped() {
+            // egui ends a drag on Escape: that stop abandons it (#580)
+            if resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                ui.data_mut(|d| d.remove::<f32>(id));
+            } else if resp.drag_stopped_by(egui::PointerButton::Primary) {
                 ui.data_mut(|d| d.remove::<f32>(id));
                 let nv = v_of(c.y);
                 let nv = if let ParamKind::Float { min, max, .. } = pd.kind { nv.clamp(min, max) } else { nv };
@@ -1252,6 +1282,45 @@ mod drag_undo_tests {
         assert_eq!(opacity(&app), 70.0, "undo takes back only the second drag");
         app.session.undo();
         assert_eq!(opacity(&app), start, "and then the first");
+    }
+
+    /// #887: a Scale hot-text drag that pauses between percents (no `setParam` that frame) is
+    /// still one undo, not one step per 1%.
+    #[test]
+    fn a_scale_drag_with_idle_frames_is_one_undo_step() {
+        let mut s = filmcraft_engine::Session::default();
+        s.execute("file.openDemoProject", json!({})).unwrap();
+        let clip = s.active_sequence().unwrap().video_tracks[0].items[0].id.0;
+        let mut app = crate::FilmcraftApp::new(s);
+        let ctx = egui::Context::default();
+        let scale = |app: &crate::FilmcraftApp| {
+            let q = app.session.active_sequence().unwrap();
+            let it = q.find_item(filmcraft_project::ClipId(clip)).unwrap().1;
+            it.effects.iter().find(|e| e.effect == "motion").unwrap().params["scale"].value.as_f64().unwrap()
+        };
+        let start = scale(&app);
+        let pos = egui::pos2(10.0, 10.0);
+        let button = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let mut time = 0.0;
+        let mut frame = |app: &mut crate::FilmcraftApp, events: Vec<egui::Event>, value: Option<f64>| {
+            time += 0.1;
+            let raw = egui::RawInput { time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| {
+                let actions = value.map(|v| ("effects.setParam".to_string(), json!({"clip": clip, "effect": "motion", "param": "scale", "value": v})));
+                super::run(app, ui.ctx(), actions.into_iter().collect());
+            });
+            out.textures_delta.clear();
+        };
+        frame(&mut app, vec![egui::Event::PointerMoved(pos), button(true)], None);
+        for v in [101.0, 150.0, 200.0, 249.0] {
+            frame(&mut app, vec![egui::Event::PointerMoved(pos)], Some(v));
+            frame(&mut app, vec![egui::Event::PointerMoved(pos)], None); // idle: mouse down, no 1% tick
+        }
+        frame(&mut app, vec![button(false)], None);
+        assert_eq!(scale(&app), 249.0);
+        app.session.undo();
+        assert_eq!(scale(&app), start, "one undo restores the scale from before the drag");
+        assert_eq!(app.session.undo(), None, "the drag must not have left extra 1% steps");
     }
 }
 
