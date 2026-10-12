@@ -159,6 +159,26 @@ fn merge(base: &mut Value, patch: &Value) {
     }
 }
 
+/// The first key of `patch` (as a dotted path) that the resolved settings `known` don't have,
+/// matched as [`merge`] matches them (the camelCase spelling of a snake_case field counts).
+/// A null value is accepted anywhere: it sets nothing.
+fn unknown_key(known: &Value, patch: &Value, prefix: &str) -> Option<String> {
+    let (Value::Object(k), Value::Object(p)) = (known, patch) else { return None };
+    for (key, v) in p {
+        let path = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
+        match k.get(key).or_else(|| k.get(&camel_to_snake(key))) {
+            None if !v.is_null() => return Some(path),
+            Some(kv) => {
+                if let Some(found) = unknown_key(kv, v, &path) {
+                    return Some(found);
+                }
+            }
+            None => {}
+        }
+    }
+    None
+}
+
 /// A frame rate from a number of frames per second (29.97 → 30000/1001) or "num/den".
 pub fn parse_rate(v: &Value) -> Option<FrameRate> {
     if let Some(s) = v.as_str() {
@@ -191,6 +211,12 @@ pub fn settings_from_params(s: &Session, p: &Value, cmd: &str) -> Result<(Option
         let mut v = serde_json::to_value(&settings).map_err(|e| EngineError::Other(e.to_string()))?;
         merge(&mut v, patch);
         settings = serde_json::from_value(v).map_err(|e| bad(cmd, format!("settings: {e}")))?;
+        // serde ignores keys it doesn't know, so a misspelt or misplaced key (a flat parameter
+        // such as `loudnessLufs` put inside `settings`) would silently do nothing.
+        let known = serde_json::to_value(&settings).map_err(|e| EngineError::Other(e.to_string()))?;
+        if let Some(path) = unknown_key(&known, patch, "") {
+            return Err(bad(cmd, format!("settings: unknown key `{path}` (see export.presets.get for the settings' keys)")));
+        }
     }
     // flat overrides (the original file.exportMedia parameters and a few common ones)
     if let Some(f) = str_p(p, "format") {
