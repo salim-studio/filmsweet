@@ -151,6 +151,11 @@ pub(crate) fn apply_to_selection(s: &mut Session, p: &Value, kind: TrackKind) ->
     } else {
         clip_edges(q, &clips)
     };
+    // an explicit `edge` keeps only that side of each selected clip
+    let edges: Vec<_> = match p.get("edge").and_then(Value::as_str) {
+        Some(only) => edges.into_iter().filter(|e| e.2 == only).collect(),
+        None => edges,
+    };
     if clips.is_empty() && edges.is_empty() {
         return Ok(None);
     }
