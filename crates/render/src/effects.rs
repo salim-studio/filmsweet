@@ -93,6 +93,23 @@ pub(crate) fn hash3(x: usize, y: usize, z: u64) -> f32 {
 }
 
 /// Apply one effect. Unknown/unimplemented ids are a no-op (they still round-trip in the project).
+/// Largest Median radius in source pixels (the parameter's range).
+const MEDIAN_MAX_RADIUS: f32 = 100.0;
+
+/// The Median radius in working-image pixels. Radius is authored in source pixels and `px_scale`
+/// converts to the working image (no cap at 4 working pixels: that made Radius > 4 look the same
+/// at full resolution). It stays within the parameter's range whatever a project file says, since
+/// the filter costs radius² per pixel, and within the image.
+fn median_radius(radius: f32, px_scale: f32, longest_side: usize) -> isize {
+    let scale = if px_scale.is_finite() { px_scale.max(0.0) } else { 1.0 };
+    let r = radius * scale;
+    if !(r.is_finite() && r > 0.0) {
+        return 0;
+    }
+    let cap = (MEDIAN_MAX_RADIUS * scale).min(longest_side.max(1) as f32);
+    r.round().clamp(0.0, cap) as isize
+}
+
 pub fn apply(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     if !e.enabled || img.w == 0 || img.h == 0 {
         return;
@@ -108,7 +125,7 @@ pub fn apply(img: &mut Image, e: &EffectInstance, cx: &FxCtx) {
     match e.effect.as_str() {
         "lumetri" => lumetri(img, e, cx),
         "median" => {
-            let r = (f(e, "radius", cx) * cx.px_scale).round().clamp(0.0, 4.0) as isize;
+            let r = median_radius(f(e, "radius", cx), cx.px_scale, img.w.max(img.h));
             if r > 0 {
                 median(img, r);
             }
@@ -890,6 +907,21 @@ pub(crate) fn mosaic(img: &mut Image, bx: usize, by: usize) {
 
 #[cfg(test)]
 mod tests {
+    use super::median_radius;
+
+    /// A project file's Median radius stays within the parameter's 0–100 range (scaled to the
+    /// working image) and the image: 1e9 used to run a radius-sized window over every pixel.
+    #[test]
+    fn median_radius_stays_in_the_parameter_range() {
+        assert_eq!(median_radius(1e9, 1.0, 4096), 100);
+        assert_eq!(median_radius(1e9, 0.5, 4096), 50);
+        assert_eq!(median_radius(1e9, 1.0, 40), 40);
+        assert_eq!(median_radius(12.0, 1.0, 4096), 12, "Radius above 4 keeps its full size");
+        assert_eq!(median_radius(f32::NAN, 1.0, 4096), 0);
+        assert_eq!(median_radius(-3.0, 1.0, 4096), 0);
+        assert_eq!(median_radius(8.0, f32::INFINITY, 4096), 8);
+    }
+
     use super::*;
     use filmcraft_project::find_effect;
 
