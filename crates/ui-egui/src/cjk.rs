@@ -55,6 +55,12 @@ fn find_system_font(sample: &str, preferred: &[&str]) -> Option<Arc<FontData>> {
 
 /// Whether [`install`] has a Chinese face to add: craft-fonts Hans/Hant faces, or an installed
 /// system face (scanned once per process). The Simplified Chinese interface needs one.
+/// Whether [`install`] has a Hangul face to add (an installed system face; none is bundled).
+/// The Korean interface needs one.
+pub(crate) fn korean_available() -> bool {
+    korean_font().is_some()
+}
+
 pub(crate) fn available() -> bool {
     craft_fonts().next().is_some() || system_font().is_some()
 }
