@@ -229,6 +229,7 @@ pub(crate) fn render_seq_tracks(project: &Project, seq: &Sequence, t: Tick, opts
                 clip_name: &item.name,
                 project: Some(project),
                 env: None,
+                frame_rate: seq.settings.frame_rate.as_f64(),
                 working: seq.settings.color.working,
             };
             for e in item.effects.iter().filter(|e| e.def().is_some_and(|d| !d.intrinsic)) {
@@ -483,6 +484,7 @@ pub(crate) fn item_layer_ex(
             clip_name: &item.name,
             project: Some(project),
             env: Some(&env),
+            frame_rate: seq.settings.frame_rate.as_f64(),
             working: seq.settings.color.working,
         };
         for e in item.effects.iter().filter(|e| e.def().is_some_and(|d| !d.intrinsic) && !filmcraft_project::graphic::is_layer(e)) {
