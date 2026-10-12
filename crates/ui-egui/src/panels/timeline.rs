@@ -1909,6 +1909,7 @@ pub(crate) const CLIP_MENU: &[&[(&str, &str)]] = &[
         ("Multi-Camera", "clip.multicam"),
     ],
     &[("Label", "edit.label")],
+    &[("Add Marker", "markers.add")],
     &[("Speed/Duration…", "clip.speedDuration"), ("Scene Edit Detection…", "clip.sceneEditDetection")],
     &[
         ("Frame Hold Options…", "clip.frameHoldOptions"),
