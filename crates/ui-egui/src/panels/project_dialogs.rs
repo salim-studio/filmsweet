@@ -15,6 +15,7 @@ fn push(app: &mut FilmcraftApp, id: &str, r: &egui::Response, label: &str) {
 
 pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let Some(mut d) = app.ui.project_panel.dialog.clone() else { return };
+    crate::widgets::revert_drag_on_escape(ctx, egui::Id::new("project-dialog-before-drag"), &mut d);
     let mut close = false;
     let mut run: Option<(String, Value)> = None;
     let title = match &d {
@@ -50,11 +51,11 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
             ProjectDialog::FreeformOptions { options } => {
                 egui::Grid::new("ff-options").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
                     ui.label(tl!("Grid spacing:"));
-                    let r = ui.add(egui::DragValue::new(&mut options.grid).range(4.0..=200.0).suffix(" pt"));
+                    let r = ui.add(crate::widgets::number_drag(&mut options.grid).range(4.0..=200.0).suffix(" pt"));
                     push(app, "projectDialog.grid", &r, "Grid spacing");
                     ui.end_row();
                     ui.label(tl!("Default clip size:"));
-                    let r = ui.add(egui::DragValue::new(&mut options.card_size).range(48.0..=480.0).suffix(" pt"));
+                    let r = ui.add(crate::widgets::number_drag(&mut options.card_size).range(48.0..=480.0).suffix(" pt"));
                     push(app, "projectDialog.cardSize", &r, "Default clip size");
                     ui.end_row();
                 });
@@ -82,7 +83,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
             }
         }
     });
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if crate::widgets::escape_closes(ctx) {
         close = true;
     }
     if let Some((cmd, p)) = run {
