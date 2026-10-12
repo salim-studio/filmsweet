@@ -302,7 +302,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let rate = seq.settings.frame_rate;
     let dt = ctx.input(|i| i.stable_dt).min(0.05) as f64;
     let header_w = app.ui.timeline.header_w;
-    let content = Rect::from_min_max(pos2(rect.min.x + header_w, rect.min.y + TOP_H), pos2(rect.max.x - 10.0, rect.max.y - SCROLLBAR_H));
+    let content = Rect::from_min_max(pos2(rect.min.x + header_w, rect.min.y + TOP_H), pos2(rect.max.x - SCROLLBAR_H, rect.max.y - SCROLLBAR_H));
     let ruler = Rect::from_min_max(pos2(content.min.x, rect.min.y + TOP_H - RULER_H), pos2(content.max.x, rect.min.y + TOP_H));
     app.last_timeline_width = content.width();
     let painter = ui.painter().clone();
@@ -640,7 +640,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     );
     vertical_scrollbar(
         ui,
-        Rect::from_min_max(pos2(content.max.x + 2.0, video_area.min.y), pos2(rect.max.x - 1.0, video_area.max.y)),
+        Rect::from_min_max(pos2(content.max.x, video_area.min.y), pos2(rect.max.x, video_area.max.y)),
         &mut app.ui.timeline.v_scroll,
         max_vs,
         true,
@@ -649,7 +649,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     );
     vertical_scrollbar(
         ui,
-        Rect::from_min_max(pos2(content.max.x + 2.0, audio_area.min.y), pos2(rect.max.x - 1.0, audio_area.max.y)),
+        Rect::from_min_max(pos2(content.max.x, audio_area.min.y), pos2(rect.max.x, audio_area.max.y)),
         &mut app.ui.timeline.a_scroll,
         max_as,
         false,
@@ -1677,8 +1677,11 @@ fn vertical_scrollbar(ui: &mut egui::Ui, bar: Rect, value: &mut f32, max: f32, i
     let h = (bar.height() * frac_vis).max(18.0);
     let pos = if invert { 1.0 - *value / max } else { *value / max };
     let y = bar.min.y + (bar.height() - h) * pos;
-    let thumb = Rect::from_min_size(pos2(bar.min.x + 1.0, y), vec2(bar.width() - 2.0, h));
-    p.rect_filled(thumb, 3.0, t.vertical_scroll_thumb);
+    let track = bar.shrink2(vec2(2.0, 0.0));
+    let thumb = Rect::from_min_size(pos2(track.min.x, y), vec2(track.width(), h));
+    p.rect_filled(track, track.width() / 2.0, t.separator);
+    let hover = ui.rect_contains_pointer(thumb);
+    p.rect_filled(thumb, thumb.width() / 2.0, if hover { t.scroll_thumb_hover } else { t.scroll_thumb });
     let resp = ui.interact(bar, egui::Id::new(("tl-vs", id)), Sense::drag());
     if resp.dragged() {
         let d = resp.drag_delta().y / (bar.height() - h).max(1.0) * max;
