@@ -81,7 +81,7 @@ fn main() -> eframe::Result {
     let logger = logging::install();
     // lossy, so a value that is not Unicode is reported like any other bad port instead of ignored
     let env_port = std::env::var_os("FILMCRAFT_CONTROL_PORT").map(|p| p.to_string_lossy().into_owned());
-    let launch = match args::parse(env_port, std::env::args().skip(1)) {
+    let launch = match args::parse(env_port, std::env::args_os().skip(1)) {
         Ok(Cli::Run(l)) => l,
         Ok(Cli::Help) => {
             tell(args::USAGE, false);
@@ -214,7 +214,7 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         }
         // voice-over recording reads the microphone through cpal
         session.voiceover.input = Some(Box::new(audio_in::CpalIn::new(&session.prefs.audio_hardware.device_class)));
-        let project = files.iter().find(|f| f.ends_with(".fcproj")).cloned();
+        let (project, media) = args::project_and_media(&files);
         if let Some(p) = project {
             if let Err(e) = session.execute("file.open", json!({"path": p})) {
                 log::error!("{e}");
@@ -236,7 +236,6 @@ fn app_creator(launch: Launch, graphics: graphics::GraphicsStart, created: Arc<A
         } else if demo {
             let _ = session.execute("file.openDemoProject", json!({}));
         }
-        let media: Vec<String> = files.iter().filter(|f| !f.ends_with(".fcproj")).cloned().collect();
         if !media.is_empty() {
             let _ = session.execute("file.import", json!({"paths": media}));
         }
