@@ -600,7 +600,9 @@ fn pen_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, frame: (u32
         } else {
             let c = to_c(snap(d.points.last(), p));
             d.points.push([c.x, c.y, 0.0, 0.0]);
-            ui.data_mut(|m| m.insert_temp(egui::Id::new("mask-pen-placed"), resp.drag_started_by(LEFT)));
+            // read the response before data_mut: it locks the context that drag_started_by reads
+            let dragging = resp.drag_started_by(LEFT);
+            ui.data_mut(|m| m.insert_temp(egui::Id::new("mask-pen-placed"), dragging));
         }
     }
     if resp.clicked() || resp.drag_stopped() {

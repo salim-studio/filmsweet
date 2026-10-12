@@ -520,14 +520,18 @@ fn english_month(month: u64) -> Option<&'static str> {
     })
 }
 
+const MAX_FRACTION_DIGITS: usize = 3;
+
 /// `1/2` → "one half"; other small denominators read "N ordinal(s)", anything
 /// bigger reads "N over M".
 fn parse_fraction(rest: &str) -> Option<(Vec<Token>, usize)> {
-    let (n, n_end) = read_u64(rest, 0, MAX_CARDINAL_DIGITS)?;
+    // Operands of up to three digits: a longer run (a year, as in the `7/2026` left after an
+    // impossible date's `13/`) is not a fraction.
+    let (n, n_end) = read_u64(rest, 0, MAX_FRACTION_DIGITS)?;
     if peek(rest, n_end) != Some('/') || n == 0 {
         return None;
     }
-    let (d, d_end) = read_u64(rest, n_end + 1, MAX_CARDINAL_DIGITS)?;
+    let (d, d_end) = read_u64(rest, n_end + 1, MAX_FRACTION_DIGITS)?;
     if d == 0 || peek(rest, d_end).is_some_and(|c| c.is_ascii_alphanumeric() || c == '/') {
         return None;
     }
