@@ -1847,6 +1847,7 @@ dependencies = [
  "filmcraft-prores",
  "filmcraft-testkit",
  "filmcraft-time",
+ "filmcraft-vp8",
  "filmcraft-vp9",
  "image",
  "log",
@@ -2337,6 +2338,13 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "unicode-bidi",
  "web-time",
+]
+
+[[package]]
+name = "filmcraft-vp8"
+version = "0.6.0"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
