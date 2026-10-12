@@ -797,3 +797,26 @@ fn timeline_clip_label_is_disabled_without_a_selected_clip() {
     assert_eq!(d.app().session.active_sequence().unwrap().find_item(clip).unwrap().1.label, filmcraft_project::Label::Blue);
     assert!(d.app().session.active_sequence().unwrap().markers.is_empty());
 }
+
+/// New Sequence stays open when the engine rejects the frame size so the rest of the draft is not lost.
+#[test]
+fn new_sequence_stays_open_on_invalid_frame_size() {
+    let mut d = Driver::demo();
+    let n0 = d.app().session.project.sequences().count();
+    d.ok("ui.menu.invoke", json!({"id": "file.newSequence"}));
+    d.frames(10);
+    {
+        let s = &mut d.app().ui.sequence_settings;
+        s.name = "Keep Me".into();
+        // within the dialog's per-side range, over the engine's pixel budget
+        (s.width, s.height) = (20_000, 20_000);
+    }
+    d.frames(2);
+    d.click("sequenceSettings.ok");
+    d.frames(2);
+    assert_eq!(d.app().session.project.sequences().count(), n0, "nothing is made");
+    assert!(!d.ids("sequenceSettings.").is_empty(), "dialog stays open: {}", d.app().ui.status);
+    assert_eq!(d.label("sequenceSettings.name"), "Keep Me");
+    assert_eq!(d.label("sequenceSettings.width"), "20000");
+    assert_eq!(d.label("sequenceSettings.height"), "20000");
+}
