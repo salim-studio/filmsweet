@@ -2810,8 +2810,8 @@
 	Ignore Audio	Abaikan Audio
 	Ignore Video	Abaikan Video
 	Apply a cut at each detected cut point	Terapkan potongan di setiap titik potong yang terdeteksi
-	Create a subclip for each detected cut point	Buat subklip untuk setiap titik potong yang terdeteksi
-	Generate clip markers at each detected cut point	Buat penanda klip di setiap titik potong yang terdeteksi
+	Create a bin of subclips from each detected cut point	Buat bin subklip dari setiap titik potong yang terdeteksi
+	Create a clip marker at each detected cut point	Buat penanda klip di setiap titik potong yang terdeteksi
 	Sensitivity:	Sensitivitas:
 	Normalize Mix Track to:	Normalisasi Trek Mix ke:
 	Disabled clips	Klip nonaktif
