@@ -187,6 +187,7 @@
 	Light	浅
 	Link	链接
 	Link Media…	链接媒体…
+	Refresh Changed Media	刷新已更改的媒体
 	Linked Selection	关联选择
 	Lock Guides	锁定参考线
 	Lumetri Color	Lumetri 颜色
@@ -487,7 +488,9 @@
 	{panel} — coming in a later milestone	{panel} — 将在后续里程碑中推出
 	Close Panel	关闭面板
 	Close Other Timeline Panels	关闭其他时间轴面板
+	Close All	全部关闭
 	Maximize Frame	最大化帧
+	Restore Frame	还原帧
 	Restore Workspace	恢复工作区
 	Reveal Sequence in Project	在项目面板中显示序列
 	Video Thumbnails	视频缩略图
@@ -2785,8 +2788,8 @@
 	Ignore Audio	忽略音频
 	Ignore Video	忽略视频
 	Apply a cut at each detected cut point	在每个检测到的切点应用剪切
-	Create a subclip for each detected cut point	为每个检测到的切点创建子剪辑
-	Generate clip markers at each detected cut point	在每个检测到的切点生成剪辑标记
+	Create a bin of subclips from each detected cut point	从每个检测到的切点创建子剪辑素材箱
+	Create a clip marker at each detected cut point	在每个检测到的切点创建剪辑标记
 	Sensitivity:	灵敏度：
 	Normalize Mix Track to:	将混音轨道标准化至：
 	Disabled clips	已禁用的剪辑
@@ -2955,9 +2958,18 @@
 	Step Forward 1 Frame	前进 1 帧
 	Match Playhead	匹配播放头
 	Gang to Program	联动到节目
+	AAC Audio	AAC 音频
+	AAC Audio 48 kHz 320 kbps	AAC 音频 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	MPEG-4 音频 (.m4a)，立体声 48 kHz AAC-LC，320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 位
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF，立体声 48 kHz 16 位 PCM
+	FLAC	FLAC
+	FLAC 48 kHz 24-bit	FLAC 48 kHz 24 位
+	FLAC, stereo 48 kHz 24-bit, lossless	FLAC，立体声 48 kHz 24 位，无损
+	FLAC (lossless)	FLAC（无损）
+	Compression Level	压缩级别
+	0 fastest, 8 smallest	0 最快，8 最小
 	APV	APV
 	APV 422-10	APV 422-10
 	APV 422-12	APV 422-12
@@ -2969,6 +2981,9 @@
 	Apple ProRes 422 HQ	Apple ProRes 422 HQ
 	Apple ProRes 422 LT	Apple ProRes 422 LT
 	Apple ProRes 422 Proxy	Apple ProRes 422 Proxy
+	Apple ProRes 4444	Apple ProRes 4444
+	Apple ProRes 4444 with Alpha	Apple ProRes 4444（带 Alpha）
+	Apple ProRes 4444 XQ	Apple ProRes 4444 XQ
 	Application	应用程序
 	Apply Guide Template	应用参考线模板
 	Auto Save Now	立即自动保存
@@ -3056,6 +3071,7 @@
 	Go to Sequence End	转到序列末尾
 	Go to Sequence Start	转到序列开头
 	H.264	H.264
+	AV1	AV1
 	H.264 1920×1080 for video sharing sites, VBR 1 pass, 16 Mbps	H.264 1920×1080（视频分享网站），VBR 1 遍，16 Mbps
 	H.264 1920×1080, VBR 1 pass, 20 Mbps target, AAC 320 kbps	H.264 1920×1080，VBR 1 遍，目标 20 Mbps，AAC 320 kbps
 	H.264 1920×1080, VBR 2 pass, 18 Mbps	H.264 1920×1080，VBR 2 遍，18 Mbps
@@ -3150,6 +3166,18 @@
 	Nudge Volume -1dB	微调音量 -1dB
 	Nudge Volume -3dB	微调音量 -3dB
 	Numbered BMP stills (24-bit)	带编号的 BMP 静帧（24 位）
+	JPEG	JPEG
+	Targa	Targa
+	DPX	DPX
+	JPEG Sequence	JPEG 序列
+	Targa Sequence	Targa 序列
+	DPX Sequence	DPX 序列
+	Numbered JPEG stills (quality 90)	带编号的 JPEG 静帧（质量 90）
+	Numbered Targa stills (24-bit, uncompressed)	带编号的 Targa 静帧（24 位，未压缩）
+	Numbered DPX stills (10-bit RGB)	带编号的 DPX 静帧（10 位 RGB）
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	OpenEXR 序列
+	Numbered OpenEXR stills (half float, linear, uncompressed)	带编号的 OpenEXR 静帧（16 位半精度浮点，线性，未压缩）
 	Numbered PNG stills at the sequence's frame size	带编号的 PNG 静帧（采用序列帧大小）
 	Numbered TIFF stills (RGB, 8-bit)	带编号的 TIFF 静帧（RGB，8 位）
 	Opacity 0 → 100 % over the first second	在最初一秒内不透明度从 0 → 100%
@@ -3178,6 +3206,9 @@
 	QuickTime, ProRes 422 HQ, 24-bit 48 kHz PCM	QuickTime，ProRes 422 HQ，24 位 48 kHz PCM
 	QuickTime, ProRes 422 LT, 24-bit 48 kHz PCM	QuickTime，ProRes 422 LT，24 位 48 kHz PCM
 	QuickTime, ProRes 422 Proxy, 24-bit 48 kHz PCM	QuickTime，ProRes 422 Proxy，24 位 48 kHz PCM
+	QuickTime, ProRes 4444 (4:4:4), 24-bit 48 kHz PCM	QuickTime，ProRes 4444 (4:4:4)，24 位 48 kHz PCM
+	QuickTime, ProRes 4444 (4:4:4) with alpha channel, 24-bit 48 kHz PCM	QuickTime，ProRes 4444 (4:4:4)，带 Alpha 通道，24 位 48 kHz PCM
+	QuickTime, ProRes 4444 XQ (4:4:4), 24-bit 48 kHz PCM	QuickTime，ProRes 4444 XQ (4:4:4)，24 位 48 kHz PCM
 	QuickTime, ProRes 422, 24-bit 48 kHz PCM	QuickTime，ProRes 422，24 位 48 kHz PCM
 	Quit FilmCraft	退出 FilmCraft
 	Rate Stretch Tool	速率伸缩工具
@@ -3410,6 +3441,7 @@
 	Main (8-bit; Main 10 for HDR sequences)	主要（8 位；HDR 序列使用主要 10）
 	Encoder	编码器
 	Hardware (H.265 has no software encoder)	硬件（H.265 无软件编码器）
+	Hardware (AV1 has no software encoder)	硬件（AV1 无软件编码器）
 	Text Properties	文本属性
 	Text Box Height	文本框高度
 	Paragraph Text	段落文本
@@ -3446,6 +3478,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	单击以选择，或在空白处单击并拖动以框选。使用 Shift、Alt 和 Ctrl 进行其他操作。
 	Click to zoom in; Alt-click to zoom out.	单击以放大；Alt-单击以缩小。
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	拖动：移动 · Alt-单击：平滑/拐角 · Ctrl-单击：删除
+	Drag inward to round the corners	向内拖动以使拐角变圆
 	Include Alpha Channel	包含 Alpha 通道
 	Sequence Settings	序列设置
 	Color Management	色彩管理
@@ -3503,6 +3536,9 @@
 	Edit Narration	编辑旁白
 	Clear Transition	清除过渡
 	Set Transition Duration	设置过渡持续时间
+	Resize floating panel	调整浮动面板大小
+	More transport controls	更多播放控制
+	Undock Panel	取消面板停靠
 	Project Notes	项目备注
 	Get Project Notes	获取项目备注
 	Edit Project Notes	编辑项目备注
@@ -3512,3 +3548,16 @@
 	Delete Caption Track	删除字幕轨道
 	Delete Caption Tracks	删除多个字幕轨道
 	Delete Empty Caption Tracks	删除空字幕轨道
+	Safe graphics mode: {mode}	安全图形模式：{mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	上次启动时默认图形模式失败。更新显卡驱动程序通常可以解决此问题。
+	Use Default Graphics	使用默认图形
+	The default graphics are used from the next start.	下次启动时将使用默认图形。
+	DirectX 12 only	仅 DirectX 12
+	software rendering	软件渲染
+	Label Color Presets	标签颜色预设
+	{name} (Modified)	{name}（已修改）
+	Revert to the preset's colors and names	恢复为预设的颜色和名称
+	Import a preset file…	导入预设文件…
+	Export the labels to a preset file…	将标签导出为预设文件…
+	Show the presets folder	显示预设文件夹
+	Delete this preset	删除此预设

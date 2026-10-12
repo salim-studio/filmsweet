@@ -209,7 +209,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     for (id, rect, label) in elems {
         app.auto.add(&id, rect, &label);
     }
-    close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    close |= crate::widgets::escape_closes(ctx);
     if browse && !close {
         let folder = filmcraft_engine::export_tools::expand_home(d.folder.trim());
         let ctx = ctx.clone();
