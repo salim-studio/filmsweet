@@ -680,7 +680,7 @@ fn parse_digit_groups(rest: &str, used: usize) -> Option<(Vec<Token>, usize)> {
     }
     if groups.len() == 1 {
         let group = groups.first()?;
-        let leading_zero = group.starts_with('0');
+        let leading_zero = has_leading_zero_str(rest.get(..used)?) || group.starts_with('0');
         // Total digits across the whole cluster: the integer before the dash plus this group.
         let total = rest.get(..used).map_or(0, |head| head.chars().filter(char::is_ascii_digit).count()) + group.len();
         if !leading_zero && total < 7 {
@@ -707,7 +707,7 @@ fn parse_digit_groups(rest: &str, used: usize) -> Option<(Vec<Token>, usize)> {
         return Some((words, end));
     }
     let total: usize = groups.iter().map(String::len).sum::<usize>() + rest.get(..used).map_or(0, |head| head.chars().filter(char::is_ascii_digit).count());
-    let leading_zero = groups.iter().any(|g| g.starts_with('0'));
+    let leading_zero = has_leading_zero_str(rest.get(..used)?) || groups.iter().any(|g| g.starts_with('0'));
     if total >= 7 || leading_zero {
         let mut words: Vec<Token> = Vec::new();
         if let Some(head) = rest.get(..used) {
@@ -1230,6 +1230,29 @@ mod tests {
         assert_eq!(words("£2.50", Lang::EnUs), "two pounds and fifty pence");
         assert_eq!(words("£1", Lang::EnUs), "one pound");
         assert_eq!(words("$0.50", Lang::EnUs), "zero dollars and fifty cents");
+    }
+
+    #[test]
+    fn first_digit_group_keeps_leading_zeros() {
+        for lang in [Lang::EnUs, Lang::EnGb] {
+            for (input, expected) in [
+                ("01-2", "zero one two"),
+                ("01-2-3", "zero one two three"),
+                ("0800-55", "zero eight zero zero five five"),
+                ("0800-1-2", "zero eight zero zero one two"),
+                ("0-2", "zero to two"),
+                ("0-2-3", "zero to two to three"),
+                ("2-3", "two to three"),
+                ("5-01", "five zero one"),
+                ("555-0134", "five five five zero one three four"),
+                ("0800-100", "zero eight zero zero one zero zero"),
+                ("5-10-15", "five to ten to fifteen"),
+                ("zero one two", "zero one two"),
+                ("zero eight zero zero five five", "zero eight zero zero five five"),
+            ] {
+                assert_eq!(words(input, lang), expected, "{lang:?}: {input}");
+            }
+        }
     }
 
     #[test]
