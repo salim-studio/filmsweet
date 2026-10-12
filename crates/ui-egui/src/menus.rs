@@ -22,6 +22,10 @@ macro_rules! uic {
 }
 
 pub const UI_COMMANDS: &[UiCommand] = &[
+    uic!("window.dockAction", "Docking Action", [], None),
+    uic!("window.dockPanel", "Dock Panel", [], None),
+    uic!("window.floatPanel", "Undock Panel", [], None),
+    uic!("window.closePanel", "Close Panel", [], None),
     uic!("app.language.english", "English", ["Edit", "Language"], None),
     uic!("app.language.japanese", "日本語", ["Edit", "Language"], None),
     uic!("app.language.spanish", "Español", ["Edit", "Language"], None),
@@ -31,6 +35,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("app.language.german", "Deutsch", ["Edit", "Language"], None),
     uic!("app.language.russian", "Русский", ["Edit", "Language"], None),
     uic!("app.language.french", "Français", ["Edit", "Language"], None),
+    uic!("app.language.indonesian", "Bahasa Indonesia", ["Edit", "Language"], None),
     uic!("source.playback.toggle", "Source Play/Stop", [], None),
     uic!("source.playback.play", "Play Source", [], None),
     uic!("source.playback.stop", "Stop Source", [], None),
@@ -171,6 +176,9 @@ pub fn targets_source(app: &FilmcraftApp, params: &Value) -> bool {
 
 /// Execute a UI or engine command by id.
 pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params: Value) -> Result<Value, String> {
+    if id == "edit.selectAll" && crate::panels::graphics::select_all_edited_text(app) {
+        return Ok(Value::Null);
+    }
     if filmcraft_engine::source_monitor::source_command(id) && targets_source(app, &params) && params.get("target").is_none() {
         let object = params.as_object_mut().ok_or("command parameters must be an object")?;
         object.insert("target".into(), json!("source"));
@@ -186,6 +194,7 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             | "app.language.german"
             | "app.language.russian"
             | "app.language.french"
+            | "app.language.indonesian"
     ) {
         // Japanese needs the craft-fonts (built with CRAFT_FONTS_DIR) or a font installed on the system
         if id == "app.language.japanese" && !crate::i18n::install_japanese_font(ctx) {
@@ -204,6 +213,7 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             "app.language.german" => crate::i18n::Language::De,
             "app.language.russian" => crate::i18n::Language::Ru,
             "app.language.french" => crate::i18n::Language::Fr,
+            "app.language.indonesian" => crate::i18n::Language::Id,
             _ => crate::i18n::Language::En,
         };
         // The preference is updated in memory before it is written, so a failed write (read-only
@@ -233,6 +243,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
     if id == "perf.stats" {
         // the engine's counters plus playback, frame workers and UI timings
         return Ok(crate::perf::stats(app));
+    }
+    if let Some(result) = crate::dock_ui::route(app, ctx, id, &params) {
+        return result;
     }
     if let Some(rest) = id.strip_prefix("window.panel.") {
         let p = PanelKind::from_name(rest).ok_or_else(|| format!("unknown panel `{rest}`"))?;
@@ -374,12 +387,14 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         }
         "playback.inToOut" => {
             let seq = app.session.active_sequence();
+            let marked_out = seq.and_then(|q| q.mark_out);
             let out = seq.and_then(|q| q.mark_out.map(|o| o + q.settings.frame_rate.frame_duration()));
             if let Some(i) = seq.and_then(|q| q.mark_in) {
                 app.session.set_playhead(i);
             }
             app.play(1.0);
             app.playback.stop_at = out;
+            app.playback.rest_at = marked_out;
             return Ok(Value::Null);
         }
         "playback.loop" => {
@@ -510,8 +525,9 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
             return Ok(json!({"dialog": "revert"}));
         }
         // Files or an image on the system clipboard paste into the Timeline, or import into the
-        // Project panel (#611). Copying clips puts their names there as text, so media on the
-        // clipboard was copied after them; without media, Paste pastes the copied clips.
+        // Project panel (#611). Copying clips puts their names there as text, so media copied
+        // *after* them still wins; media that was already there when Copy/Cut ran is ignored so
+        // Paste of cut/copied clips still works (#697).
         "edit.paste" | "edit.pasteInsert"
             if params.as_object().is_none_or(|m| m.is_empty()) && matches!(app.ui.focused, PanelKind::Timeline | PanelKind::Project) =>
         {
@@ -556,9 +572,30 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         app.ui.status = e.clone();
     }
     if r.is_ok() && matches!(id, "edit.copy" | "edit.cut") {
+        remember_stale_clipboard_media(app);
         put_clip_names_on_system_clipboard(app, ctx);
     }
     r
+}
+
+/// Snapshot OS files/image present at Copy/Cut. Many platforms keep a previous file list after
+/// `copy_text`, so Paste would otherwise import those files instead of the clips (#697).
+fn remember_stale_clipboard_media(app: &mut FilmcraftApp) {
+    app.stale_clipboard_media = app.hooks.clipboard_media.as_mut().and_then(|f| f()).as_ref().map(clipboard_media_key);
+}
+
+fn clipboard_media_key(media: &crate::ClipboardMedia) -> String {
+    match media {
+        crate::ClipboardMedia::Files(paths) => format!("files:{}", paths.join("\0")),
+        crate::ClipboardMedia::Image { width, height, rgba } => {
+            let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+            for b in rgba {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+            format!("img:{width}x{height}:{h}")
+        }
+    }
 }
 
 /// Copied clips live in the session, but on Windows and Linux Ctrl+V only reaches the app when the
@@ -578,6 +615,9 @@ fn put_clip_names_on_system_clipboard(app: &FilmcraftApp, ctx: &egui::Context) {
 /// imported into the shown bin in the Project panel. None when the clipboard holds neither.
 fn paste_clipboard_media(app: &mut FilmcraftApp, insert: bool) -> Option<Result<Value, String>> {
     let media = (app.hooks.clipboard_media.as_mut()?)()?;
+    if app.stale_clipboard_media.as_ref() == Some(&clipboard_media_key(&media)) {
+        return None;
+    }
     let paths = match media {
         crate::ClipboardMedia::Files(paths) => paths,
         crate::ClipboardMedia::Image { width, height, rgba } => match encode_png(width, height, rgba)
@@ -615,6 +655,11 @@ pub struct MenuItem {
 
 pub const MENUS: [&str; 9] = ["File", "Edit", "Clip", "Sequence", "Markers", "Graphics and Titles", "View", "Window", "Help"];
 
+/// Labels only the native macOS app menu shows, with no command in the menu tree behind them: the
+/// Settings submenu and the predefined Hide, Hide Others and Quit items. They are translated through
+/// the catalogs like menu labels (`apps/filmcraft/src/native_menu.rs`).
+pub const NATIVE_APP_MENU: [&str; 4] = ["Settings", "Hide FilmCraft", "Hide Others", "Quit FilmCraft"];
+
 pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
     let mut v = menu_items_for(&app.session);
     for it in &mut v {
@@ -629,6 +674,7 @@ pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
             "app.language.german" => it.checked = Some(app.ui.language == crate::i18n::Language::De),
             "app.language.russian" => it.checked = Some(app.ui.language == crate::i18n::Language::Ru),
             "app.language.french" => it.checked = Some(app.ui.language == crate::i18n::Language::Fr),
+            "app.language.indonesian" => it.checked = Some(app.ui.language == crate::i18n::Language::Id),
             _ => {}
         }
         if it.id.starts_with("view.") {
