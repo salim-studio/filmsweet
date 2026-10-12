@@ -550,6 +550,17 @@ pub fn invoke(app: &mut FilmcraftApp, ctx: &egui::Context, id: &str, mut params:
         crate::panels::settings::set_theme(app, ctx, k);
         return Ok(Value::Null);
     }
+    // File ▸ Open Recent
+    if let Some(i) = id.strip_prefix("file.openRecent.") {
+        let path = i.parse::<usize>().ok().and_then(|i| app.session.prefs.general.recent_projects.get(i).cloned()).ok_or("no such recent project")?;
+        return invoke(app, ctx, "file.open", json!({"path": path}));
+    }
+    if id == "file.clearRecent" {
+        let mut next = app.session.prefs.clone();
+        next.general.recent_projects.clear();
+        app.session.set_prefs(next).map_err(|e| e.to_string())?;
+        return Ok(Value::Null);
+    }
     // File dialogs for commands that need a path.
     if (id == "file.import" && params.get("paths").is_none() && params.get("path").is_none())
         || (id == "file.importImageSequence" && params.get("path").is_none())
@@ -682,7 +693,29 @@ pub fn menu_items(app: &FilmcraftApp) -> Vec<MenuItem> {
         }
     }
     crate::panels::workspaces::menu(app, &mut v);
+    open_recent(&mut v, &app.session, |n| app.ui.language.tr(n).to_string());
     v
+}
+
+/// File ▸ Open Recent, after Open Project…: the recent projects (General ▸ `recentProjects`),
+/// newest first, then Clear Recent Files. Clear is always there, so the submenu exists (in the
+/// native menu too, built once at launch) before the first project is saved.
+fn open_recent(items: &mut Vec<MenuItem>, session: &filmcraft_engine::Session, tr: impl Fn(&str) -> String) {
+    let Some(at) = items.iter().position(|it| it.id == "file.open") else { return };
+    let path: Vec<String> = vec!["File".into(), "Open Recent".into()];
+    let recent = &session.prefs.general.recent_projects;
+    let mut sub: Vec<MenuItem> = recent
+        .iter()
+        .enumerate()
+        .map(|(i, p)| MenuItem { id: format!("file.openRecent.{i}"), label: recent_name(p), path: path.clone(), shortcut: None, enabled: true, checked: None })
+        .collect();
+    sub.push(MenuItem { id: "file.clearRecent".into(), label: tr("Clear Recent Files"), path, shortcut: None, enabled: !recent.is_empty(), checked: None });
+    items.splice(at + 1..at + 1, sub);
+}
+
+/// A recent project as listed in File ▸ Open Recent and on Home: its file name.
+pub fn recent_name(path: &str) -> String {
+    std::path::Path::new(path).file_name().map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned())
 }
 
 /// The menu bar as it ships, without a running app: English labels, default preferences, the
@@ -692,6 +725,7 @@ pub fn default_menu_items() -> Vec<MenuItem> {
     let session = filmcraft_engine::Session::default();
     let mut v = menu_items_for(&session);
     crate::panels::workspaces::default_menu(&mut v, &session);
+    open_recent(&mut v, &session, str::to_string);
     v
 }
 
