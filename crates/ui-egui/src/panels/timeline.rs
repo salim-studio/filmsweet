@@ -2643,10 +2643,10 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 if cmd == "edit.label" {
                     ui.add_enabled_ui(!picked.is_empty(), |ui| {
                         let menu = ui.menu_button(crate::i18n::t(label), |ui| {
+                            // the user's label names and colours, as in Edit ▸ Label (#786)
+                            let labels = app.session.prefs.labels.clone();
                             for l in filmcraft_project::Label::ALL {
-                                let r = ui.button(crate::i18n::t(l.name()));
-                                app.auto.add_response(&format!("timeline.clipMenu.label.{}", l.name()), &r, crate::i18n::t(l.name()));
-                                if r.clicked() {
+                                if crate::menus::label_choice(ui, &mut app.auto, &labels, l, "timeline.clipMenu.label").clicked() {
                                     if let Err(error) = app.session.execute("edit.label", json!({"label":l.name()})) {
                                         app.ui.status = error.to_string();
                                     }
