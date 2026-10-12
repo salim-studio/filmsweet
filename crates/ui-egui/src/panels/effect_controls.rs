@@ -12,6 +12,10 @@ use crate::icons::{self, Icon};
 use crate::state::KeyframeRef;
 use crate::theme::Tokens;
 
+#[path = "effect_controls_selection.rs"]
+mod selection;
+pub(crate) use selection::Interaction;
+
 const ROW_H: f32 = 22.0;
 /// The narrowest the effect list and the keyframe area can be dragged (#643): the list's rows are
 /// laid out for at least 260 points (values from 150 points in, the reset button at the end).
@@ -32,7 +36,8 @@ const PROPS_VALUE_R: f32 = PROPS_NAV_X + NAV_STEP + 12.0;
 
 /// Timeline time at which the clip shows media time `m` (where a keyframe sits in the sequence).
 fn timeline_time_of(it: &TrackItem, m: Tick) -> Tick {
-    it.start + Tick(((m - it.source_in).0 as f64 / it.speed.abs().max(1e-6)) as i64)
+    let offset = if it.reverse { it.source_out() - m - Tick(1) } else { m - it.source_in };
+    it.start + Tick((offset.0 as f64 / it.speed.abs().max(1e-6)).round() as i64)
 }
 
 // The press frame can include movement before the button went down. Start from the press
@@ -146,6 +151,8 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     app.auto.add("effectControls.ruler", scrub, "time ruler");
     let body = Rect::from_min_max(pos2(rect.min.x, head.max.y + 4.0), pos2(split, rect.max.y - 26.0));
     let mut actions: Vec<(String, Value)> = Vec::new();
+    let selection_area = Rect::from_min_max(pos2(lane.min.x, bar.max.y), lane.max).intersect(ui.clip_rect());
+    let mut keys = Interaction::begin(app, ui, selection_area, clip.0);
     // the rows span the list and the keyframe area: the wheel scrolls anywhere over them and the
     // scrollbar sits at the panel's right edge (#643)
     let mut bui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_max(body.min, pos2(lane.max.x, body.max.y))).id_salt("ec-body"));
@@ -231,7 +238,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     custom_setup_row(app, bui, body, &lane, clip, idx, &e.effect);
                 }
                 for pd in &def.params {
-                    param_row(app, bui, body, clip, idx, e, None, pd, mt_now, &mut actions, &lane, &lx, it);
+                    param_row(app, bui, body, clip, idx, e, None, pd, mt_now, &mut actions, &lane, &lx, it, &mut keys);
                     if app.ui.expanded_fx.contains(&graph_key(clip, idx, pd.id))
                         && let Some(param) = e.params.get(pd.id)
                         && param.is_animated()
@@ -241,7 +248,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                 }
                 if crate::panels::masks::maskable(e) {
-                    crate::panels::masks::effect_rows(app, bui, body, clip, idx, e, mt_now, &mut actions, &lane, &lx, it);
+                    crate::panels::masks::effect_rows(app, bui, body, clip, idx, e, mt_now, &mut actions, &lane, &lx, it, &mut keys);
                 }
             }
         }
@@ -285,6 +292,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // footer timecode
     let tc = filmcraft_time::format_time(ph, seq.settings.frame_rate, seq.settings.drop_frame, filmcraft_time::TimeDisplay::Timecode, 48000);
     ui.painter().text(pos2(rect.min.x + 10.0, rect.max.y - 13.0), Align2::LEFT_CENTER, tc, Tokens::mono(13.0), t.timecode);
+    keys.finish(app, ui);
     run(app, ui.ctx(), actions);
 }
 
@@ -482,6 +490,7 @@ pub(crate) fn param_row(
     lane: &Rect,
     lx: &dyn Fn(Tick) -> f32,
     it: &TrackItem,
+    keys: &mut Interaction,
 ) {
     let _ = lx;
     let t = app.tokens;
@@ -650,62 +659,22 @@ pub(crate) fn param_row(
     if param.is_animated() {
         let y = r.center().y;
         let dur = it.duration.0.max(1) as f64;
-        let rate = app.session.sequence_rate();
         for k in &param.keyframes {
-            let tl = it.start + Tick(((k.time - it.source_in).0 as f64 / it.speed.abs().max(1e-6)) as i64);
+            let tl = timeline_time_of(it, k.time);
             let f = ((tl - it.start).0 as f64 / dur) as f32;
             if !(-0.01..=1.01).contains(&f) {
                 continue;
             }
             let id = egui::Id::new(("kf", clip.0, idx, pkey, k.time.0));
-            let drag_off: Option<f32> = ui.data(|d| d.get_temp(id));
-            let kx = lane.min.x + f * lane.width() + drag_off.unwrap_or(0.0);
-            // about Premiere's size: a diamond ~9 points wide
-            let kr = Rect::from_center_size(pos2(kx, y), vec2(15.0, 15.0));
-            let resp = ui.interact(kr.expand(2.0), id, Sense::click_and_drag());
+            let original = Rect::from_center_size(pos2(lane.min.x + f * lane.width(), y), vec2(15.0, 15.0));
+            let resp = ui.interact(original.expand(2.0), id, Sense::click_and_drag());
+            let reference = KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time };
+            let kr = keys.key(app, ui, reference.clone(), it, *lane, original, &resp, k.interp);
             app.auto.add(&format!("effectControls.{}.{}.keyframe.{}", e.effect, pkey, k.time.0), kr, "keyframe");
-            // highlighted when selected (not merely under the playhead: that lit up every
-            // parameter's keyframe at the same time, #412)
-            let is_this = |s: &KeyframeRef| s.clip == clip.0 && s.effect == idx && s.mask == mask && s.param == pd.id && s.time == k.time;
-            if resp.clicked() || resp.drag_started() {
-                app.ui.keyframe_selection = vec![KeyframeRef { clip: clip.0, effect: idx, param: pd.id.to_string(), mask, time: k.time }];
-            }
-            let sel = resp.dragged() || app.ui.keyframe_selection.iter().any(is_this);
-            let col = if sel { t.hot_text } else { Color32::from_rgb(0xb0, 0xb0, 0xb0) };
-            match k.interp {
-                filmcraft_project::Interpolation::Hold => {
-                    ui.painter().rect_filled(Rect::from_center_size(kr.center(), vec2(9.0, 9.0)), 0.0, col);
-                }
-                filmcraft_project::Interpolation::Linear => icons::paint(ui.painter(), kr, Icon::Keyframe, col),
-                _ => {
-                    ui.painter().circle_filled(kr.center(), 5.5, col);
-                }
-            }
-            if resp.dragged() {
-                let off = drag_off.unwrap_or(0.0) + resp.drag_delta().x;
-                ui.data_mut(|d| d.insert_temp(id, off));
-            }
-            // egui ends a drag on Escape: that stop abandons it (#580)
-            if resp.drag_stopped() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                ui.data_mut(|d| d.remove::<f32>(id));
-            } else if resp.drag_stopped() {
-                let off = drag_off.unwrap_or(0.0);
-                ui.data_mut(|d| d.remove::<f32>(id));
-                let new_tl =
-                    rate.snap_nearest(it.start + Tick(((f + off / lane.width()) as f64 * dur) as i64)).clamp(it.start, it.end() - rate.frame_duration());
-                let new_media = it.source_in + Tick(((new_tl - it.start).0 as f64 * it.speed.abs()) as i64);
-                if new_media != k.time {
-                    // the moved keyframe stays selected
-                    for s in app.ui.keyframe_selection.iter_mut().filter(|s| is_this(s)) {
-                        s.time = new_media;
-                    }
-                    actions.push((
-                        "effects.moveKeyframe".into(),
-                        with_mask(json!({"clip": clip.0, "effect": eff_json, "param": pd.id, "mediaTime": k.time.0, "to": new_media.0})),
-                    ));
-                }
-            }
-            if resp.clicked() {
+            let selected = app.ui.keyframe_selection.contains(&reference);
+            let col = if selected { t.hot_text } else { Color32::from_rgb(0xb0, 0xb0, 0xb0) };
+            selection::paint(ui.painter(), kr, k.interp, col);
+            if resp.clicked_by(egui::PointerButton::Primary) {
                 actions.push(("playhead.set".into(), json!({"time": tl.0})));
             }
             resp.context_menu(|ui| {

@@ -3084,6 +3084,15 @@ fn build() -> Vec<CommandSpec> {
             |s, p| keyframe_op(s, p, "move")
         ),
         cmd!(
+            "effects.moveKeyframes",
+            "Move Keyframes",
+            [],
+            None,
+            r#"{"keyframes":[{"clip":id,"effect":index,"param":str,"mask":n?,"time":mediaTicks}],"delta":timelineTicks}"#,
+            has_seq,
+            crate::keyframe_move::move_many
+        ),
+        cmd!(
             "effects.setInterpolation",
             "Keyframe Interpolation",
             [],
