@@ -513,7 +513,8 @@ pub fn rulers(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, top: Rect, le
         if resp.hovered() {
             ui.ctx().set_cursor_icon(if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
         }
-        if resp.drag_started() {
+        // the left button only, as for the other things dragged on the monitor
+        if resp.drag_started_by(egui::PointerButton::Primary) {
             ui.data_mut(|d| d.insert_temp(drag_id, NewGuide { vertical }));
         }
         let Some(ng) = ui.data(|d| d.get_temp::<NewGuide>(drag_id)).filter(|g| g.vertical == vertical) else { continue };
@@ -563,12 +564,13 @@ pub fn guides(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, area: Rect, p
         if resp.hovered() || resp.dragged() {
             ui.ctx().set_cursor_icon(if g.vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical });
         }
+        let left = egui::PointerButton::Primary;
         // egui ends a drag on Escape: that stop puts the guide back where it was (#580)
         let before_id = egui::Id::new((pfx, "guide-before-drag", i));
-        if resp.drag_started() {
+        if resp.drag_started_by(left) {
             ui.data_mut(|d| d.insert_temp(before_id, g.position));
         }
-        if resp.drag_stopped() {
+        if resp.drag_stopped_by(left) {
             let before = ui.data_mut(|d| d.remove_temp::<f64>(before_id));
             if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 if let (Some(p0), Some(guide)) = (before, view_mut(app, w).guides.get_mut(i)) {
@@ -578,7 +580,7 @@ pub fn guides(app: &mut FilmcraftApp, ui: &mut egui::Ui, w: Which, area: Rect, p
             }
         }
         if let Some(pos) = resp.interact_pointer_pos()
-            && (resp.dragged() || resp.drag_stopped())
+            && (resp.dragged_by(left) || resp.drag_stopped_by(left))
         {
             if !area.contains(pos) {
                 // outside the picture area: dropping here removes the guide
