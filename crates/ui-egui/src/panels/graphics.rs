@@ -753,7 +753,8 @@ pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, fra
         }
         if resp.drag_stopped() {
             ui.data_mut(|dd| dd.remove::<DragState>(drag_id));
-            let moved = (cur - d.start).length() > 2.0;
+            // egui ends a drag on Escape: that stop abandons it (#580)
+            let moved = (cur - d.start).length() > 2.0 && !ui.input(|i| i.key_pressed(egui::Key::Escape));
             match d.kind {
                 DragKind::Move if moved => {
                     if let Some(v) = v {
@@ -1771,20 +1772,26 @@ pub fn properties(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     for (id, r, label) in autos {
         app.auto.add(&id, r, &label);
     }
+    let (down, press) = ui.ctx().input(|i| (i.pointer.any_down(), i.pointer.press_start_time()));
+    let key = egui::Id::new("gfx-props-drag-step");
+    let begun = ui.ctx().data(|d| d.get_temp::<Option<f64>>(key)).flatten();
+    let mut wrote = false;
     for (cmd, mut p) in actions {
         // a drag of a property is one undo step: the first change of each press begins a new one,
-        // the rest fold into it (like Effect Controls, #201)
-        if cmd == "graphics.set" && ui.ctx().input(|i| i.pointer.any_down()) {
-            let key = egui::Id::new("gfx-props-drag-step");
-            let press = ui.ctx().input(|i| i.pointer.press_start_time());
-            let begun = ui.ctx().data(|d| d.get_temp::<Option<f64>>(key)).flatten();
+        // the rest fold into it (like Effect Controls, #201 / #887)
+        if cmd == "graphics.set" && down {
             p["merge"] = json!(true);
             p["begin"] = json!(begun != press);
-            ui.ctx().data_mut(|d| d.insert_temp(key, press));
+            wrote = true;
         }
         if let Err(e) = app.session.execute(&cmd, p) {
             app.ui.status = e.to_string();
         }
+    }
+    if down && (wrote || begun.is_some()) {
+        ui.ctx().data_mut(|d| d.insert_temp(key, press));
+    } else if !down {
+        ui.ctx().data_mut(|d| d.remove::<Option<f64>>(key));
     }
 }
 
@@ -1792,7 +1799,7 @@ pub fn properties(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
 pub fn dialogs(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let Some(mut d) = app.ui.text_props_dialog.clone() else { return };
     let mut elems: Vec<(String, Rect, &str)> = Vec::new();
-    let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    let mut close = crate::widgets::escape_closes(ctx);
     let mut ok = false;
     let name = |paragraph: bool| if paragraph { tl!("Paragraph Text") } else { tl!("Point Text") };
     let id = egui::Id::new("gfx-text-properties");
