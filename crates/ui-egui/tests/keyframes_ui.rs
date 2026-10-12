@@ -339,7 +339,7 @@ fn graph_keyframes_offer_interpolation_and_clear_in_one_undo_step() {
         if effect == "transform" {
             d.exec("effects.apply", json!({"clips": [clip.id], "effect": effect}));
             for intrinsic in ["motion", "opacity", "time_remap"] {
-                d.click(&format!("effectControls.effect.{intrinsic}"));
+                d.click(&format!("effectControls.effect.{intrinsic}.twirl"));
             }
         }
         for (seconds, value) in [0.5, 2.5].into_iter().zip(values) {
@@ -395,7 +395,7 @@ fn mask_keyframe_menus_preserve_the_effect_and_other_masks() {
     let (mut d, clip) = Driver::demo();
     d.ok("ui.set", json!({"workspace": "Effects"}));
     for intrinsic in ["motion", "time_remap"] {
-        d.click(&format!("effectControls.effect.{intrinsic}"));
+        d.click(&format!("effectControls.effect.{intrinsic}.twirl"));
     }
     for mask in 0..2 {
         d.exec("masks.add", json!({"clip": clip.id, "effect": "opacity", "shape": "ellipse"}));
