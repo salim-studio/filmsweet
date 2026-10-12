@@ -197,3 +197,45 @@ fn malformed_source_spans_are_bounded() {
     view.start = Tick::from_seconds_f64(1.0);
     assert_eq!(view.selected_range().duration, Tick::ZERO);
 }
+
+/// #1101: a placement that starts between frames must not run past `time + duration`, and the
+/// frame count `sequence.inspect` reports is the one export renders.
+#[test]
+fn sub_frame_place_ends_at_requested_end_and_inspect_matches_export_frames() {
+    let mut s = Session::default();
+    s.execute("file.openDemoProject", json!({})).unwrap();
+    s.execute("file.newSequence", json!({"name":"f","width":640,"height":360,"fps":24,"video":1,"audio":2})).unwrap();
+    let rate = s.sequence_rate();
+    let fd = rate.frame_duration().0;
+    let end = rate.tick_of(120).0;
+    s.execute("timeline.place", json!({"item":5,"track":"V1","audioTrack":"A1","frame":0,"sourceIn":0,"duration":end})).unwrap();
+    // a third of a frame after frame 60, ending exactly on frame 120
+    let at = rate.tick_of(60).0 + fd / 3;
+    let placed = s.execute("timeline.place", json!({"item":5,"track":"A2","time":at,"sourceIn":0,"duration":end - at})).unwrap();
+    let clip = placed["clips"][0].as_u64().unwrap();
+    let js = s.execute("sequence.inspect", json!({})).unwrap();
+    let c = js["audio"][1]["items"].as_array().unwrap().iter().find(|c| c["clip"] == clip).unwrap().clone();
+    assert!(c["end"].as_i64().unwrap() <= end, "clip runs past the requested end: {c}");
+    assert_eq!(rate.snap(Tick(c["start"].as_i64().unwrap())).0, c["start"].as_i64().unwrap(), "clip starts between frames: {c}");
+    assert_eq!(js["duration"], end);
+    let frames = s.execute("export.resolve", json!({})).unwrap()["frames"].clone();
+    assert_eq!(js["durationFrames"], frames);
+    assert_eq!(frames, 120);
+}
+
+/// A sequence that ends between frames (a clip moved to a sub-frame time) still reports the
+/// frame count export renders, the partial last frame included.
+#[test]
+fn inspect_duration_frames_counts_a_partial_last_frame_like_export() {
+    let mut s = setup();
+    let rate = s.sequence_rate();
+    let placed = s.execute("timeline.place", json!({"item":5,"track":"V1","audioTrack":"A1","frame":0,"sourceIn":0,"duration":rate.tick_of(48).0})).unwrap();
+    let clips: Vec<u64> = placed["clips"].as_array().unwrap().iter().filter_map(|v| v.as_u64()).collect();
+    let tracks = s.active_sequence().map(|q| (q.video_tracks[0].id.0, q.audio_tracks[0].id.0)).unwrap();
+    let t = rate.frame_duration().0 / 3;
+    s.execute("timeline.move", json!({"moves":[{"clip":clips[0],"track":tracks.0,"time":t},{"clip":clips[1],"track":tracks.1,"time":t}]})).unwrap();
+    let js = s.execute("sequence.inspect", json!({})).unwrap();
+    let frames = s.execute("export.resolve", json!({})).unwrap()["frames"].clone();
+    assert_eq!(js["durationFrames"], frames);
+    assert_eq!(frames, 49);
+}
