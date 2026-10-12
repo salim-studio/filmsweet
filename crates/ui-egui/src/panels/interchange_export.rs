@@ -7,6 +7,7 @@
 //! `<p>.audioFormat.<wav|aiff|mxf>` (mxf: AAF only), `<p>.sampleRate.<rate>`, `<p>.bitDepth.<16|24>`, `<p>.trimAudio`,
 //! `<p>.handles` (frames), `<p>.renderAudioEffects`, `<p>.title` (OMF), `<p>.ok`, `<p>.cancel`.
 
+use crate::widgets::CenteredDialog as _;
 use serde_json::{Value, json};
 
 use crate::FilmcraftApp;
@@ -70,7 +71,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let mut elems: Vec<(String, egui::Rect, String)> = Vec::new();
     let title = if d.omf { "OMF Export Settings" } else { "AAF Export Settings" };
     let shown = if d.omf { tl!("OMF Export Settings") } else { tl!("AAF Export Settings") };
-    egui::Window::new(shown).id(egui::Id::new(title)).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+    egui::Window::new(shown).id(egui::Id::new(title)).collapsible(false).resizable(false).centered(ctx).show(ctx, |ui| {
         ui.set_min_width(380.0);
         egui::Grid::new("interchange-export-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
             if d.omf {

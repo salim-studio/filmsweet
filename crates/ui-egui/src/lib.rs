@@ -1909,7 +1909,8 @@ impl FilmcraftApp {
             .id(egui::Id::new("FilmCraft hit an error"))
             .collapsible(false)
             .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(crate::widgets::dialog_center(ctx))
             .show(ctx, |ui| {
                 ui.set_max_width(460.0);
                 ui.label(tl!("Something went wrong while drawing the window. Your project is still open; save it to be safe."));

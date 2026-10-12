@@ -16,6 +16,7 @@
 //! `find.row.<n>.column|operator|text`; Project Settings tabs `projectSettings.tab.<general|scratchDisks|ingest>`,
 //! scratch rows `projectSettings.scratch.<key>` / `.browse` / `.same`.
 
+use crate::widgets::CenteredDialog as _;
 use egui::{Align2, RichText};
 use filmcraft_project::{FindOp, find::COLUMNS};
 use serde::{Deserialize, Serialize};
@@ -463,7 +464,7 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let info_only = matches!(d.command.as_str(), "file.mediaProperties" | "clip.sourceSettings" | "help.systemCompatibilityReport");
     // the title is translated; the window keeps one id whatever the interface language
     let id = egui::Id::new(("menu-dialog", pre));
-    egui::Window::new(title).id(id).collapsible(false).resizable(false).default_width(420.0).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+    egui::Window::new(title).id(id).collapsible(false).resizable(false).default_width(420.0).centered(ctx).show(ctx, |ui| {
         let p = &mut d.params;
         match d.command.as_str() {
             "edit.find" => {
