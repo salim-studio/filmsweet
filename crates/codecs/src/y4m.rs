@@ -180,7 +180,7 @@ impl Y4mSource {
             return Err(bad("no complete frames"));
         }
         let color = ColorInfo { matrix: filmcraft_frame::default_matrix(w, h), range: if full { Range::Full } else { Range::Limited }, ..ColorInfo::REC709 };
-        let duration = Tick::from_rational(frames.len() as i64 * rate.den, 1, rate.num);
+        let duration = Tick::from_rational(frames.len() as i64, rate.den, rate.num);
         let bitrate = (frame_bytes as u64 * 8).checked_mul(rate.num as u64).map(|b| b / rate.den as u64);
         let info = MediaInfo {
             name: name.to_string(),
@@ -244,7 +244,7 @@ impl Y4mSource {
             data: pixels,
             color: v.color,
             par: v.par,
-            pts: Tick::from_rational(idx as i64 * self.rate.den, 1, self.rate.num),
+            pts: Tick::from_rational(idx as i64, self.rate.den, self.rate.num),
         })
     }
 }
