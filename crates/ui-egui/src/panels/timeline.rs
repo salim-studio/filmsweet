@@ -601,6 +601,14 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             }
         }
+        if tr.locked {
+            let color = Color32::from_rgba_unmultiplied(t.text.r(), t.text.g(), t.text.b(), 64);
+            let mut x = content.min.x - row.height();
+            while x < content.max.x {
+                p.line_segment([pos2(x, row.max.y), pos2(x + row.height(), row.min.y)], Stroke::new(1.0, color));
+                x += 8.0;
+            }
+        }
     }
 
     // An existing clip dragged past the outer row previews its new destination (#1187).
@@ -1920,6 +1928,26 @@ fn marquee_clips(seq: &Sequence, layout: &Layout, r: Rect) -> Vec<ClipId> {
         .collect()
 }
 
+/// A move previews the same track-lock restrictions as its eventual edit.
+fn drag_is_locked(session: &filmcraft_engine::Session, seq: &Sequence, drag: &Drag) -> bool {
+    let clips = match drag {
+        Drag::Move { clips, track_delta, .. } => return move_is_locked(seq, clips, *track_delta),
+        Drag::Trim { clip, .. } | Drag::Stretch { clip, .. } | Drag::Remix { clip, .. } | Drag::Slip { clip, .. } | Drag::Slide { clip, .. } => vec![*clip],
+        Drag::Roll { left, right, .. } => vec![*left, *right],
+        Drag::Transition { id, .. } => return seq.all_tracks().any(|t| t.locked && t.transitions.iter().any(|tr| tr.id == *id)),
+        _ => return false,
+    };
+    move_is_locked(seq, &filmcraft_engine::commands::with_links(session, &clips), 0)
+}
+
+fn move_is_locked(seq: &Sequence, clips: &[ClipId], delta: i32) -> bool {
+    clips.iter().any(|clip| {
+        seq.find_item(*clip).is_some_and(|(track, _)| {
+            seq.track(track).is_some_and(|t| t.locked) || shift_track(seq, track, delta).and_then(|id| seq.track(id)).is_some_and(|t| t.locked)
+        })
+    })
+}
+
 fn shift_track(seq: &Sequence, tid: TrackId, delta: i32) -> Option<TrackId> {
     if delta == 0 {
         return Some(tid);
@@ -2260,17 +2288,35 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
         && area.contains(p)
     {
         let g = grab_at(seq, layout, p, tool, mods, roll_ripple);
-        let cur = match (tool, g) {
-            (_, Grab::Edge { .. }) => CursorIcon::ResizeColumn,
-            (Tool::Selection, Grab::Other(Hit::Transition { edge: Some(_), .. })) => CursorIcon::ResizeColumn,
-            (Tool::Selection, Grab::Other(Hit::Transition { edge: None, .. })) => CursorIcon::Grab,
-            (_, Grab::Volume { .. }) if tool == Tool::Pen || mods.command => CursorIcon::Crosshair,
-            (_, Grab::Volume { .. }) => CursorIcon::ResizeVertical,
-            (Tool::Razor, Grab::Other(Hit::Clip { .. })) => CursorIcon::Crosshair,
-            (Tool::Slip | Tool::Slide, Grab::Other(Hit::Clip { .. })) => CursorIcon::ResizeHorizontal,
-            (Tool::Hand, _) => CursorIcon::Grab,
-            (Tool::Zoom, _) => CursorIcon::ZoomIn,
-            _ => CursorIcon::Default,
+        let blocked = tool == Tool::Selection
+            && match g.hit() {
+                Hit::Clip { clip, .. } => {
+                    let clips = if app.session.state.selection.contains(&clip) {
+                        app.session.state.selection.clone()
+                    } else if mods.alt {
+                        vec![clip]
+                    } else {
+                        filmcraft_engine::commands::with_links(&app.session, &[clip])
+                    };
+                    move_is_locked(seq, &clips, 0)
+                }
+                _ => false,
+            };
+        let cur = if blocked {
+            CursorIcon::NotAllowed
+        } else {
+            match (tool, g) {
+                (_, Grab::Edge { .. }) => CursorIcon::ResizeColumn,
+                (Tool::Selection, Grab::Other(Hit::Transition { edge: Some(_), .. })) => CursorIcon::ResizeColumn,
+                (Tool::Selection, Grab::Other(Hit::Transition { edge: None, .. })) => CursorIcon::Grab,
+                (_, Grab::Volume { .. }) if tool == Tool::Pen || mods.command => CursorIcon::Crosshair,
+                (_, Grab::Volume { .. }) => CursorIcon::ResizeVertical,
+                (Tool::Razor, Grab::Other(Hit::Clip { .. })) => CursorIcon::Crosshair,
+                (Tool::Slip | Tool::Slide, Grab::Other(Hit::Clip { .. })) => CursorIcon::ResizeHorizontal,
+                (Tool::Hand, _) => CursorIcon::Grab,
+                (Tool::Zoom, _) => CursorIcon::ZoomIn,
+                _ => CursorIcon::Default,
+            }
         };
         ctx.set_cursor_icon(cur);
         // the edge a press here would grab, and the trim it starts (#259)
@@ -2457,6 +2503,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             }
             (_, Grab::Other(Hit::Empty { .. } | Hit::None)) => None,
         };
+        let started = started.filter(|drag| {
+            let blocked = drag_is_locked(&app.session, seq, drag);
+            if blocked {
+                ctx.set_cursor_icon(CursorIcon::NotAllowed);
+            }
+            !blocked
+        });
         if let Some(d) = started {
             if matches!(d, Drag::Scrub { .. }) {
                 scrub_playhead(app, seq, layout, p, mods.shift);
@@ -2535,14 +2588,19 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     (Some(c), Some(s)) if c.kind == s.kind => c.index as i32 - s.index as i32,
                     _ => 0,
                 };
-                // A linked or multitrack selection gets one destination per source track.
-                let new_track = start_row
-                    .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(tid, _)| seq.track(tid).is_some_and(|t| !t.locked))))
-                    .and_then(|s| {
-                        let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
-                        new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
-                    });
-                Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, new_track, copy: mods.alt })
+                if move_is_locked(seq, &clips, track_delta) {
+                    ctx.set_cursor_icon(CursorIcon::NotAllowed);
+                    Some(Drag::Move { clips, grab_tick, start_track, offset: Tick::ZERO, track_delta: 0, new_track: None, copy: mods.alt })
+                } else {
+                    // A linked or multitrack selection gets one destination per source track.
+                    let new_track = start_row
+                        .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(tid, _)| seq.track(tid).is_some_and(|t| !t.locked))))
+                        .and_then(|s| {
+                            let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
+                            new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
+                        });
+                    Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, new_track, copy: mods.alt })
+                }
             }
             Drag::Trim { clip, edge, mode, from, .. } => seq.find_item(clip).map(|(_, it)| {
                 let base = if edge == filmcraft_edit::Edge::In { it.start } else { it.end() };
@@ -2601,7 +2659,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             }
             other => Some(other),
         };
-        app.tl.drag = new;
+        app.tl.drag = new.filter(|drag| {
+            let blocked = drag_is_locked(&app.session, seq, drag);
+            if blocked {
+                ctx.set_cursor_icon(CursorIcon::NotAllowed);
+            }
+            !blocked
+        });
         // auto-scroll when dragging near the edges
         if !matches!(app.tl.drag, Some(Drag::Pan { .. }) | Some(Drag::ZoomBar { .. }) | Some(Drag::Volume(_))) {
             let v = &mut app.ui.timeline;
