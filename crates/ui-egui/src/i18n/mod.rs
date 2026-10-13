@@ -46,6 +46,8 @@ pub enum Language {
     Ru,
     Fr,
     Id,
+    /// Korean; Hangul needs an installed system font ([`korean_font_available`]).
+    Ko,
 }
 
 static JAPANESE: OnceLock<Catalog> = OnceLock::new();
@@ -56,10 +58,11 @@ static CHINESE: OnceLock<Catalog> = OnceLock::new();
 static GERMAN: OnceLock<Catalog> = OnceLock::new();
 static RUSSIAN: OnceLock<Catalog> = OnceLock::new();
 static FRENCH: OnceLock<Catalog> = OnceLock::new();
+static KOREAN: OnceLock<Catalog> = OnceLock::new();
 static INDONESIAN: OnceLock<Catalog> = OnceLock::new();
 
 impl Language {
-    pub const ALL: [Self; 10] = [Self::En, Self::Ja, Self::Es, Self::PtBr, Self::Uk, Self::ZhCn, Self::De, Self::Ru, Self::Fr, Self::Id];
+    pub const ALL: [Self; 11] = [Self::En, Self::Ja, Self::Es, Self::PtBr, Self::Uk, Self::ZhCn, Self::De, Self::Ru, Self::Fr, Self::Id, Self::Ko];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -73,6 +76,7 @@ impl Language {
             Self::Ru => "Русский",
             Self::Fr => "Français",
             Self::Id => "Bahasa Indonesia",
+            Self::Ko => "한국어",
         }
     }
 
@@ -88,6 +92,7 @@ impl Language {
             "ru" => Some(Self::Ru),
             "fr" => Some(Self::Fr),
             "id" => Some(Self::Id),
+            "ko" => Some(Self::Ko),
             _ => None,
         }
     }
@@ -101,7 +106,7 @@ impl Language {
     /// only for Simplified locales (`zh`, `zh-CN`, `zh-SG`, `zh-Hans…`); Traditional ones (`zh-TW`,
     /// `zh-HK`, `zh-MO`, `zh-Hant…`) are skipped.
     pub fn from_locales(tags: &[String]) -> Self {
-        const PRIMARY: [(&str, Language); 10] = [
+        const PRIMARY: [(&str, Language); 11] = [
             ("en", Language::En),
             ("ja", Language::Ja),
             ("es", Language::Es),
@@ -112,6 +117,7 @@ impl Language {
             ("fr", Language::Fr),
             ("id", Language::Id),
             ("in", Language::Id),
+            ("ko", Language::Ko),
         ];
         tags.iter()
             .find_map(|tag| {
@@ -142,6 +148,7 @@ impl Language {
             Self::Ru => "ru",
             Self::Fr => "fr",
             Self::Id => "id",
+            Self::Ko => "ko",
         }
     }
 
@@ -158,6 +165,7 @@ impl Language {
             Self::Ru => Some(RUSSIAN.get_or_init(|| Catalog::parse(include_str!("ru.tsv")))),
             Self::Fr => Some(FRENCH.get_or_init(|| Catalog::parse(include_str!("fr.tsv")))),
             Self::Id => Some(INDONESIAN.get_or_init(|| Catalog::parse(include_str!("id.tsv")))),
+            Self::Ko => Some(KOREAN.get_or_init(|| Catalog::parse(include_str!("ko.tsv")))),
         }
     }
 
@@ -313,6 +321,13 @@ pub fn chinese_font_available() -> bool {
     crate::cjk::available()
 }
 
+/// Whether the interface can show Korean: `theme::install` adds an installed system Hangul face
+/// (Malgun Gothic, Apple SD Gothic Neo, Noto Sans CJK KR…, see `cjk.rs`) when there is one; none
+/// is bundled. False on systems (and the web) without one.
+pub fn korean_font_available() -> bool {
+    crate::cjk::korean_available()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +344,7 @@ mod tests {
             ("ru", include_str!("ru.tsv")),
             ("fr", include_str!("fr.tsv")),
             ("id", include_str!("id.tsv")),
+            ("ko", include_str!("ko.tsv")),
         ] {
             let (entries, errors) = catalog::parse_entries(text);
             assert!(errors.is_empty(), "{code}: {errors:?}");
@@ -1095,6 +1111,32 @@ mod tests {
         assert!(matches_query("Gaussian Blur", "flou"));
         assert!(matches_query("Gaussian Blur", "gaussian"));
         set_current(Language::En);
+    }
+
+    /// Korean covers the whole interface (the Spanish catalog's entries and the native macOS
+    /// Settings menu); like French, the tests require the core menus, and every entry must still
+    /// have a Spanish counterpart so a renamed or removed source can't leave a dead Korean entry.
+    #[test]
+    fn korean_covers_the_menus_and_has_no_dead_entries() {
+        let (entries, errors) = catalog::parse_entries(include_str!("ko.tsv"));
+        assert!(errors.is_empty(), "{errors:?}");
+        for (ctx, en, _) in &entries {
+            assert!(ctx.is_empty() && (Language::Es.has(en) || en == "Settings"), "Korean entry without a Spanish one: {ctx:?} {en:?}");
+        }
+        for en in core_menu_labels() {
+            assert!(Language::Ko.has(&en), "missing Korean menu label: {en}");
+        }
+        for en in crate::menus::MENUS.into_iter().chain(["Audio", "Settings"]) {
+            assert!(Language::Ko.has(en), "untranslated Korean menu: {en}");
+        }
+        for (en, ko) in [("File", "파일"), ("Edit", "편집"), ("Sequence", "시퀀스"), ("Settings", "설정")] {
+            assert_eq!(Language::Ko.tr(en), ko);
+        }
+        assert_eq!(Language::Ko.name(), "한국어");
+        assert_eq!(Language::parse("ko"), Some(Language::Ko));
+        for tag in ["ko", "ko-KR", "ko_KR.UTF-8"] {
+            assert_eq!(Language::from_locales(&[tag.to_string()]), Language::Ko, "{tag}");
+        }
     }
 
     #[test]
