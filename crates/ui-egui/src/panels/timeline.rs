@@ -1355,6 +1355,22 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
     }
 }
 
+/// The Ruler's two strides, in frames: `(tick, label)`.
+///
+/// `label` is the first ladder step wide enough to keep timestamps apart (110 pt); `tick` is the
+/// finest divisor of `label` that still leaves ticks 12 pt apart. Deriving the tick stride as a
+/// divisor puts every label on a tick and keeps the ticks between labels evenly spaced.
+pub fn ruler_steps(frame_px: f64, base: i64) -> (i64, i64) {
+    // `FrameRate` is plain serde data, so a step past `base` can overflow; saturate instead.
+    let big = |k: i64| base.saturating_mul(k);
+    let steps = [1, 2, 5, 10, base / 2, base, big(2), big(5), big(10), big(15), big(30), big(60), big(120), big(300), big(600), big(1800), big(3600)];
+    let label_step = (*steps.iter().find(|s| **s as f64 * frame_px >= 110.0).unwrap_or(&big(3600))).max(1);
+    // Labels are at least 110 pt apart, so a divisor no larger than 9 keeps ticks >= 12 pt.
+    let minor =
+        (1..=9).rev().filter(|k| label_step.rem_euclid(*k) == 0).map(|k| label_step / k).find(|m| *m as f64 * frame_px >= 12.0).unwrap_or(label_step).max(1);
+    (minor, label_step)
+}
+
 fn draw_top(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq: &Sequence, layout: &Layout, t: &Tokens, seq_id: ItemId) {
     let p = ui.painter().clone();
     let rate = seq.settings.frame_rate;
@@ -1448,30 +1464,7 @@ fn draw_top(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq: &Sequenc
     let marker_y = ruler.min.y + 2.0;
     let label_y = ruler.min.y + 24.0;
     let tick_base = ruler.max.y - 3.0;
-    let fps = rate.as_f64();
-    let base = rate.timecode_base();
-    let steps: Vec<i64> = vec![
-        1,
-        2,
-        5,
-        10,
-        base / 2,
-        base,
-        base * 2,
-        base * 5,
-        base * 10,
-        base * 15,
-        base * 30,
-        base * 60,
-        base * 120,
-        base * 300,
-        base * 600,
-        base * 1800,
-        base * 3600,
-    ];
-    let frame_px = layout.pps / fps;
-    let label_step = *steps.iter().find(|s| **s as f64 * frame_px >= 110.0).unwrap_or(&(base * 3600));
-    let minor = *steps.iter().find(|s| **s as f64 * frame_px >= 12.0).unwrap_or(&label_step);
+    let (minor, label_step) = ruler_steps(layout.pps / rate.as_f64(), rate.timecode_base());
     // In/Out band
     if seq.mark_in.is_some() || seq.mark_out.is_some() {
         let a = layout.x_of(seq.mark_in.unwrap_or(Tick::ZERO));
@@ -3207,5 +3200,45 @@ mod new_track_tests {
         for y in [160.0, 202.0, 230.0, 480.0] {
             assert_eq!(at(y), None, "y = {y}");
         }
+    }
+}
+
+#[cfg(test)]
+mod ruler_tests {
+    use super::ruler_steps;
+
+    /// Every combination keeps both minimums and has the tick stride divide the label stride.
+    #[test]
+    fn labels_sit_on_evenly_spaced_ticks() {
+        for base in [24, 25, 30, 50, 60, 120] {
+            for frame_px in [0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 8.0, 20.0, 400.0] {
+                let (minor, label) = ruler_steps(frame_px, base);
+                let what = format!("{base} fps at {frame_px} pt a frame: tick {minor}, label {label}");
+                assert!(minor >= 1, "{what}");
+                assert_eq!(label % minor, 0, "every label must fall on a tick: {what}");
+                assert!(minor as f64 * frame_px >= 12.0 || minor == label, "ticks at least 12 pt apart: {what}");
+                assert!(label as f64 * frame_px >= 110.0, "labels at least 110 pt apart: {what}");
+            }
+        }
+    }
+
+    /// At 24 fps and 100 pt a second the ruler labels every 2 s, with evenly spaced ticks between.
+    #[test]
+    fn a_24_fps_view_at_100_pt_a_second_labels_every_two_seconds() {
+        let (minor, label) = ruler_steps(100.0 / 24.0, 24);
+        assert_eq!(label, 48, "2 s at 24 fps");
+        assert_eq!(label % minor, 0);
+        assert!(minor as f64 * (100.0 / 24.0) >= 12.0);
+    }
+
+    /// Degenerate inputs still give non-zero strides that divide.
+    #[test]
+    fn damaged_rates_give_usable_strides() {
+        for frame_px in [f64::NAN, f64::INFINITY, 0.0, -1.0] {
+            let (minor, label) = ruler_steps(frame_px, 24);
+            assert!(minor >= 1 && label >= 1 && label % minor == 0, "{frame_px} pt a frame: tick {minor}, label {label}");
+        }
+        let (minor, label) = ruler_steps(1.0, i64::MAX);
+        assert!(minor >= 1 && label >= 1 && label % minor == 0, "an unrepresentable rate: tick {minor}, label {label}");
     }
 }
