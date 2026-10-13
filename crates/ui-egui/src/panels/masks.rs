@@ -225,13 +225,18 @@ fn inside(pts: &[Vec2], p: Vec2) -> bool {
     w != 0
 }
 
-/// Mask editing on the Program monitor (selected mask) and the pen tool.
+/// Mask editing on the Program monitor (selected mask, while its clip is selected, as for the
+/// transform box) and the pen tool.
 pub fn monitor_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, frame: (u32, u32)) {
     if app.ui.mask_pen.is_some() {
         pen_overlay(app, ui, pic, frame);
         return;
     }
     let Some(sel) = app.session.state.selected_mask else { return };
+    // (the mask stays selected: its handles come back with its clip, #1341)
+    if !app.session.state.selection.contains(&sel.clip) {
+        return;
+    }
     let Some(seq) = app.session.active_sequence() else { return };
     let ph = app.session.playhead();
     let Some((_, it)) = seq.find_item(sel.clip) else { return };
