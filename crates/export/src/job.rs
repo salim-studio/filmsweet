@@ -72,7 +72,7 @@ use rayon::prelude::*;
 use crate::audio_out::AudioOut;
 use crate::mxf_out::{MxfMux, MxfSetup};
 use crate::pipeline::Pipeline;
-use crate::settings::{AudioCodec, BitrateMode, Multiplexer};
+use crate::settings::{AudioCodec, BitrateMode};
 use crate::{
     AudioEncoder, ColorSignal, EncodedPacket, EncoderFrame, ExportError, ExportSettings, Format, H264Pass, Out, Progress, Report, Result, Stage, VideoEncoder,
     audio_factories, export_range, frame_span, note_stage, timed, video_factories,
@@ -186,7 +186,10 @@ pub struct Exporter {
 
 /// Whether [`Exporter`] handles a format.
 pub fn stepped(format: Format) -> bool {
-    matches!(format, Format::H264 | Format::Hevc | Format::ProRes | Format::DnxHr | Format::Apv | Format::Mjpeg | Format::MxfOp1a | Format::MxfOpAtom)
+    matches!(
+        format,
+        Format::H264 | Format::Hevc | Format::Av1 | Format::ProRes | Format::DnxHr | Format::Apv | Format::Mjpeg | Format::MxfOp1a | Format::MxfOpAtom
+    )
 }
 
 /// Whether an export is HDR: an HDR working space, SDR not asked for, and a format whose encoder
@@ -249,7 +252,7 @@ impl Exporter {
             progress.set_status(format!("Exporting {} frames ({})", nframes, settings.format.label()));
         }
         let venc = make_venc(&settings, pipe.w, pipe.h, pipe.rate)?;
-        let brand = if settings.format.is_h26x() && settings.multiplexer == Multiplexer::Mp4 { Brand::Mp4 } else { Brand::Mov };
+        let brand = if settings.format.is_mp4_with(settings.multiplexer) { Brand::Mp4 } else { Brand::Mov };
         let audio = if settings.has_audio() { Some(AudioOut::new(project.clone(), seq, &settings, range)?) } else { None };
         let aenc: Option<Box<dyn AudioEncoder>> = match (&audio, settings.audio_codec()) {
             (Some(a), AudioCodec::Aac) => {
@@ -257,6 +260,7 @@ impl Exporter {
                     audio_factories().read().unwrap_or_else(|e| e.into_inner()).iter().find_map(|f| f(settings.format, a.sr, a.channels as u32, &settings));
                 Some(found.ok_or_else(|| ExportError::Unsupported("AAC encoder not available".into()))??)
             }
+            (Some(a), AudioCodec::Flac) => Some(Box::new(crate::FlacAudio::new(a.sr, a.channels as u32, &settings)?)),
             _ => None,
         };
         let measured = !settings.effects.loudness.enabled || audio.is_none();
@@ -484,11 +488,12 @@ impl Exporter {
         self.write_video(tail)?;
         self.write_audio(mixed)?;
         if let (Some(at), Some(a)) = (self.at, self.aenc.as_mut()) {
-            let fs = a.frame_size();
             let mux = self.mux.as_mut().ok_or_else(|| ExportError::Encode("internal: the container writer was not created".into()))?;
-            for au in a.flush()? {
-                mux.write_sample(at, WriteSample { data: &au, duration: fs, composition_offset: 0, is_sync: true })
-                    .map_err(|e| ExportError::Io(e.to_string()))?;
+            for (au, duration) in a.flush_timed()? {
+                mux.write_sample(at, WriteSample { data: &au, duration, composition_offset: 0, is_sync: true }).map_err(|e| ExportError::Io(e.to_string()))?;
+            }
+            if let Some(entry) = a.final_sample_entry() {
+                mux.set_sample_entry(at, entry).map_err(|e| ExportError::Io(e.to_string()))?;
             }
         }
         let (bytes, extra_files) = match self.mxf.take() {

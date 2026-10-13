@@ -15,6 +15,7 @@ pub mod blend;
 pub mod color_match;
 pub mod colorman;
 pub mod effects;
+pub mod flow;
 pub mod gpufx;
 pub mod graphic_clip;
 pub mod graphics;
@@ -282,7 +283,7 @@ pub(crate) fn render_seq_tracks(project: &Project, seq: &Sequence, t: Tick, opts
 /// it covers the whole output.
 fn adjustment_region(seq: &Sequence, item: &TrackItem, project: &Project, mt: Tick, scale: f32, w: usize, h: usize) -> Option<Image> {
     let size = source_size(project, item.item).unwrap_or((seq.settings.width, seq.settings.height));
-    let motion = motion_matrix(seq, item, size, mt);
+    let motion = motion_matrix(seq, item, size, source_par(project, item.item), mt);
     let s = scale as f64;
     let (fw, fh) = (((size.0 as f64 * s).round() as usize).max(1), ((size.1 as f64 * s).round() as usize).max(1));
     let m = Affine::scale(s, s).then_apply(&motion).then_apply(&Affine::scale(1.0 / s, 1.0 / s));
@@ -332,10 +333,26 @@ pub fn source_size(project: &Project, item: ItemId) -> Option<(u32, u32)> {
     project.source_size(item)
 }
 
+/// Pixel aspect ratio of an item's source, for [`motion_matrix`]: Interpret Footage's override,
+/// else the media's; `None` for items drawn in sequence pixels (graphics, adjustment layers).
+pub fn source_par(project: &Project, item: ItemId) -> Option<(u32, u32)> {
+    project.source_par(item)
+}
+
 /// The Motion transform of an item at media time `mt`, mapping full-res source pixels to
 /// full-res sequence pixels.
-pub fn motion_matrix(seq: &Sequence, item: &TrackItem, src: (u32, u32), mt: Tick) -> Affine {
+///
+/// `src` is the source's size in its own (storage) pixels and `src_par` their pixel aspect ratio
+/// (`None`: the sequence's, for graphics and adjustment layers). Motion works in square display
+/// units, as Premiere's does: the Anchor Point is in source pixels and the Position in sequence
+/// pixels, but Scale and Rotation see the picture at its display aspect, so a 1440 x 1080 clip with
+/// 4:3 pixels covers a 1920 x 1080 square-pixel frame at 100 %, and a square-pixel clip in a 4:3
+/// sequence is narrowed to its display width. Scale to Frame Size fits the display size too.
+pub fn motion_matrix(seq: &Sequence, item: &TrackItem, src: (u32, u32), src_par: Option<(u32, u32)>, mt: Tick) -> Affine {
     let (sw, sh) = (seq.settings.width as f64, seq.settings.height as f64);
+    let seq_par = filmcraft_project::sane_par(seq.settings.par);
+    let src_par = src_par.map_or(seq_par, filmcraft_project::sane_par);
+    let (p, q) = (filmcraft_project::par_ratio(src_par), filmcraft_project::par_ratio(seq_par));
     let mut pos = Vec2::new(sw / 2.0, sh / 2.0);
     let mut anchor = Vec2::new(src.0 as f64 / 2.0, src.1 as f64 / 2.0);
     let mut scale = Vec2::new(1.0, 1.0);
@@ -356,10 +373,22 @@ pub fn motion_matrix(seq: &Sequence, item: &TrackItem, src: (u32, u32), mt: Tick
         rot = m.f64_at("rotation", mt);
     }
     if item.scale_to_frame {
-        let fit = (sw / src.0 as f64).min(sh / src.1 as f64);
+        // the display size fitted in the frame's display size
+        let fit = (sw * q / (src.0.max(1) as f64 * p)).min(sh / src.1.max(1) as f64);
         scale = scale * fit;
     }
-    Affine::motion(pos, scale, rot, anchor)
+    // source px → (× p) display units → Scale, Rotation → (÷ q) sequence px. Without rotation the
+    // two stretches merge into one horizontal factor, exactly 1 when the ratios are the same.
+    if rot == 0.0 {
+        let r = if src_par == seq_par { 1.0 } else { p / q };
+        return Affine::motion(pos, Vec2::new(scale.x * r, scale.y), rot, anchor);
+    }
+    Affine::translate(pos.x, pos.y).then_apply(&Affine::scale(1.0 / q, 1.0)).then_apply(&Affine::motion(
+        Vec2::ZERO,
+        Vec2::new(scale.x * p, scale.y),
+        rot,
+        anchor,
+    ))
 }
 
 /// Render one track item's layer at timeline time `t` into a canvas-sized image.
@@ -403,7 +432,7 @@ pub(crate) fn item_layer_ex(
     // time inside a frame hold without Hold Filters).
     let mt = item.effect_time_at(t);
     let src_size = source_size(project, item.item)?;
-    let motion = motion_matrix(seq, item, src_size, mt);
+    let motion = motion_matrix(seq, item, src_size, source_par(project, item.item), mt);
     // How many output pixels one source pixel covers → request a reduced frame when possible.
     let lin = ((motion.a * motion.a + motion.b * motion.b).sqrt()).max((motion.c * motion.c + motion.d * motion.d).sqrt());
     let want = (lin * opts.scale as f64).clamp(1.0 / 64.0, 1.0) as f32;
@@ -507,8 +536,8 @@ pub(crate) fn video_source_time(item: &TrackItem, t: Tick, media_rate: filmcraft
     media_rate.tick_of(media_rate.frame_at(ft)).clamp(item.source_in.min(ft), ft)
 }
 
-/// The linear image of a media clip's `frame`, colour managed, and blended with the next frame when
-/// the clip's speed asks for it.
+/// The linear image of a media clip's `frame`, colour managed, and blended (or, with Optical Flow,
+/// motion interpolated) with the next frame when the clip's speed asks for it.
 #[allow(clippy::too_many_arguments)]
 fn media_image(project: &Project, seq: &Sequence, item: &TrackItem, t: Tick, src: &SharedSource, frame: &VideoFrame, n: usize, want: f32) -> Image {
     let img = colorman::decode(project, item.item, frame, n, &seq.settings.color);
@@ -516,7 +545,7 @@ fn media_image(project: &Project, seq: &Sequence, item: &TrackItem, t: Tick, src
         Some((next_time, wgt)) => match src.video_frame(FrameRequest { time: next_time, scale: want }) {
             Ok(f2) if f2.width == frame.width && f2.height == frame.height => {
                 let b = colorman::decode(project, item.item, &f2, n, &seq.settings.color);
-                img.lerp(&b, wgt)
+                if item.time_interpolation == filmcraft_project::TimeInterpolation::OpticalFlow { flow::interpolate(&img, &b, wgt) } else { img.lerp(&b, wgt) }
             }
             _ => img,
         },
@@ -590,9 +619,8 @@ pub fn render_clip(
 
 /// Frame Blending / Optical Flow on a speed-changed clip: the later source frame to mix in and
 /// its weight (0..1) at timeline `t`, or None when the exact media time falls on a source frame
-/// (or the clip plays at 100 %, is frame-held, or uses Frame Sampling).
-///
-/// TODO(optical flow): motion-compensated interpolation; Optical Flow renders as Frame Blending.
+/// (or the clip plays at 100 %, is frame-held, or uses Frame Sampling). Frame Blending cross-fades
+/// the two frames; Optical Flow synthesises the in-between frame from their motion ([`flow`]).
 pub fn interpolation_blend(item: &TrackItem, t: Tick, src_rate: filmcraft_time::FrameRate) -> Option<(Tick, f32)> {
     if item.time_interpolation == filmcraft_project::TimeInterpolation::FrameSampling || item.frame_hold.is_some() {
         return None;
@@ -678,3 +706,7 @@ mod preview_tests;
 #[cfg(test)]
 #[path = "region_tests.rs"]
 mod region_tests;
+
+#[cfg(test)]
+#[path = "par_tests.rs"]
+mod par_tests;

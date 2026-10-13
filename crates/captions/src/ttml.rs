@@ -10,8 +10,8 @@
 //!
 //! **Reading** is namespace-agnostic (TTML1 2010, the 2006 `ttaf1` drafts and TTML2 all read):
 //! clock times (`HH:MM:SS`, `.fraction`, `:FF` frames and `.subframes`), offset times (`h`, `m`,
-//! `s`, `ms`, `f`, `t` with `ttp:tickRate`), `begin` / `end` / `dur`, nested time containers
-//! (`body` / `div` begins add up), timed `<span>`s inside an untimed `<p>`, `<br/>`, whitespace
+//! `s`, `ms`, `f`, `t` with `ttp:tickRate`), `begin` / `end` / `dur`, nested `par` time
+//! containers (`body` / `div` begins add up and their ends clip what is inside), timed `<span>`s inside an untimed `<p>`, `<br/>`, whitespace
 //! collapsing, styles referenced by id (italic / bold / underline) and `ttm:agent` / `xml:id`.
 
 use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
@@ -252,6 +252,10 @@ fn parse_time(s: &str, tm: Timing) -> Option<Tick> {
         let (h, m) = (num(parts.first()?)?, num(parts.get(1)?)?);
         let sec_part = parts.get(2)?;
         let (si, sf) = sec_part.split_once('.').unwrap_or((sec_part, ""));
+        let seconds = num(si)?;
+        if m >= 60 || seconds >= 60 {
+            return None;
+        }
         let mut t = (h * 3600 + m * 60) * tps + decimal_ticks(si, sf, tps)?;
         if let Some(fp) = parts.get(3) {
             if parts.len() > 4 {
@@ -259,13 +263,15 @@ fn parse_time(s: &str, tm: Timing) -> Option<Tick> {
             }
             let (fi, fs) = fp.split_once('.').unwrap_or((fp, ""));
             let frames = num(fi)?;
-            let _ = tm.base;
             let sub: i128 = if fs.is_empty() { 0 } else { num(fs)? };
+            if frames >= i128::from(tm.base) || sub >= i128::from(tm.sub_frame_rate) {
+                return None;
+            }
             // frames at the effective rate; sub-frames divide a frame
             let ft = tm.rate.tick_of(1).0 as i128;
             t += frames * ft + sub * ft / tm.sub_frame_rate.max(1) as i128;
         }
-        return Some(Tick(t as i64));
+        return i64::try_from(t).ok().map(Tick);
     }
     let unit_start = s.find(|c: char| c.is_ascii_alphabetic())?;
     let (v, unit) = s.split_at(unit_start);
@@ -281,8 +287,12 @@ fn parse_time(s: &str, tm: Timing) -> Option<Tick> {
         "f" => {
             let n: i128 = vi.parse().ok()?;
             let fd = tm.rate.tick_of(1).0 as i128;
-            let whole = tm.rate.tick_of(n as i64).0 as i128;
-            whole + decimal_ticks("0", vf, fd)?
+            let whole = tm.rate.tick_of(i64::try_from(n).ok()?);
+            // tick_of saturates; a saturated count overflowed rather than named a real time
+            if whole == Tick(i64::MAX) {
+                return None;
+            }
+            whole.0 as i128 + decimal_ticks("0", vf, fd)?
         }
         "t" => {
             let n: i128 = vi.parse().ok()?;
@@ -290,7 +300,7 @@ fn parse_time(s: &str, tm: Timing) -> Option<Tick> {
         }
         _ => return None,
     };
-    Some(Tick(t as i64))
+    i64::try_from(t).ok().map(Tick)
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -413,44 +423,84 @@ pub fn parse(text: &str) -> Result<Document> {
     let Some(body) = root.children().find(|n| n.is_element() && n.tag_name().name() == "body") else {
         return Ok(doc);
     };
-    walk(body, Tick::ZERO, &tm, &styles, Fmt::default(), &mut doc);
+    if root.descendants().any(|n| attr(n, "timeContainer").is_some_and(|v| v.trim() == "seq")) {
+        doc.warnings.push("timeContainer=\"seq\" is not supported; its children are timed as in a par container".into());
+    }
+    // the body is a time container like a div: its begin offsets, and its end clips, everything inside
+    let t = times(body, Scope { begin: Tick::ZERO, end: None }, tm, &mut doc);
+    walk(body, Scope { begin: t.begin.unwrap_or(Tick::ZERO), end: t.end }, &tm, &styles, Fmt::default(), &mut doc);
     doc.cues.sort_by_key(|c| (c.start, c.end));
     Ok(doc)
 }
 
-/// Begin and end of a timed element relative to `parent` (None when it has no timing).
-fn times(n: roxmltree::Node, parent: Tick, tm: &Timing, doc: &mut Document) -> (Option<Tick>, Option<Tick>) {
-    let p = |k: &str, doc: &mut Document| -> Option<Tick> {
+/// The active interval of the enclosing time containers (`par`): child times are offsets from
+/// `begin`, and nothing inside outlasts `end` (None when no ancestor sets an end).
+#[derive(Clone, Copy)]
+struct Scope {
+    begin: Tick,
+    end: Option<Tick>,
+}
+
+/// Whether `n` has timing attributes of its own.
+fn has_timing(n: roxmltree::Node) -> bool {
+    ["begin", "end", "dur"].into_iter().any(|k| attr(n, k).is_some())
+}
+
+/// Timing of an element in its parent container.
+struct Times {
+    /// The begin, when the element sets one.
+    begin: Option<Tick>,
+    /// Its own end (`end`, or `begin` + `dur`, the earlier of the two) clipped to the parent's
+    /// end, else the parent's end.
+    end: Option<Tick>,
+    /// A timing attribute did not parse (and was warned about).
+    bad: bool,
+}
+
+fn times(n: roxmltree::Node, parent: Scope, tm: Timing, doc: &mut Document) -> Times {
+    let mut bad = false;
+    let mut p = |k: &str, doc: &mut Document| -> Option<Tick> {
         let v = attr(n, k)?;
-        let t = parse_time(v, *tm);
+        let t = parse_time(v, tm);
         if t.is_none() {
+            bad = true;
             doc.warnings.push(format!("bad time expression \"{v}\""));
         }
         t
     };
-    let begin = p("begin", doc).map(|b| parent + b);
-    let end = match (p("end", doc), p("dur", doc)) {
-        (Some(e), _) => Some(parent + e),
-        (None, Some(d)) => Some(begin.unwrap_or(parent) + d),
-        _ => None,
+    let begin = p("begin", doc).map(|b| parent.begin + b);
+    let own_end = match (p("end", doc).map(|e| parent.begin + e), p("dur", doc).map(|d| begin.unwrap_or(parent.begin) + d)) {
+        (Some(e), Some(d)) => Some(e.min(d)),
+        (e, d) => e.or(d),
     };
-    (begin, end)
+    let end = match (own_end, parent.end) {
+        (Some(e), Some(pe)) => Some(e.min(pe)),
+        (e, pe) => e.or(pe),
+    };
+    Times { begin, end, bad }
 }
 
-fn walk(n: roxmltree::Node, parent: Tick, tm: &Timing, styles: &std::collections::HashMap<String, Fmt>, fmt: Fmt, doc: &mut Document) {
+fn walk(n: roxmltree::Node, parent: Scope, tm: &Timing, styles: &std::collections::HashMap<String, Fmt>, fmt: Fmt, doc: &mut Document) {
     for c in n.children().filter(|c| c.is_element()) {
         let f = style_of(c, styles, fmt);
         match c.tag_name().name() {
             "div" => {
-                let (b, _) = times(c, parent, tm, doc);
-                walk(c, b.unwrap_or(parent), tm, styles, f, doc);
+                let t = times(c, parent, *tm, doc);
+                walk(c, Scope { begin: t.begin.unwrap_or(parent.begin), end: t.end }, tm, styles, f, doc);
             }
             "p" => {
-                let (b, e) = times(c, parent, tm, doc);
+                let t = times(c, parent, *tm, doc);
+                if t.bad {
+                    continue;
+                }
+                let (b, e) = (t.begin.unwrap_or(parent.begin), t.end);
                 let speaker = attr(c, "agent").map(|a| a.trim().trim_start_matches('_').replace('_', " "));
                 let id = c.attributes().find(|a| a.name() == "id").map(|a| a.value().to_string());
-                match (b, e) {
-                    (Some(b), Some(e)) => {
+                let spans: Vec<roxmltree::Node> = c.children().filter(|x| x.is_element() && x.tag_name().name() == "span" && has_timing(*x)).collect();
+                // a timed paragraph, or one without timed spans in a container with an end, is one cue
+                let whole = if has_timing(c) || spans.is_empty() { e } else { None };
+                match whole {
+                    Some(e) => {
                         let mut o = Out { s: String::new(), pending: false };
                         let tags: Vec<&str> = [(f.italic, "i"), (f.bold, "b"), (f.underline, "u")].into_iter().filter(|x| x.0).map(|x| x.1).collect();
                         for t in &tags {
@@ -465,12 +515,13 @@ fn walk(n: roxmltree::Node, parent: Tick, tm: &Timing, styles: &std::collections
                             doc.cues.push(Cue { start: b, end: e, text, speaker, id, ..Default::default() });
                         }
                     }
-                    _ => {
+                    None => {
                         // untimed paragraph: its timed spans are the cues
-                        let base = b.unwrap_or(parent);
-                        for sp in c.children().filter(|x| x.is_element() && x.tag_name().name() == "span") {
-                            let (sb, se) = times(sp, base, tm, doc);
-                            if let (Some(sb), Some(se)) = (sb, se) {
+                        let scope = Scope { begin: b, end: e };
+                        for sp in spans {
+                            let st = times(sp, scope, *tm, doc);
+                            let sb = st.begin.unwrap_or(scope.begin);
+                            if let (false, Some(se)) = (st.bad, st.end) {
                                 let mut o = Out { s: String::new(), pending: false };
                                 collect(sp, styles, style_of(sp, styles, f), &mut o);
                                 let text = clean(&o.s);
@@ -550,6 +601,34 @@ mod tests {
         assert_eq!(parse_time("15000000t", ticks), Some(s(1.5)));
         assert_eq!(parse_time("bogus", t), None);
         assert_eq!(parse_time("1:2", t), None);
+    }
+
+    #[test]
+    fn invalid_and_overflowed_time_expressions_are_ignored() {
+        let normal = tm(FrameRate::FPS_25);
+        for expr in [
+            "999999999999999h",
+            "999999999999999m",
+            "999999999999999s",
+            "999999999999999ms",
+            "999999999999999f",
+            "999999999999999t",
+            "00:60:00",
+            "00:00:60",
+            "00:00:01:25",
+        ] {
+            assert_eq!(parse_time(expr, normal), None, "{expr}");
+        }
+        let subframes = Timing { sub_frame_rate: 2, ..normal };
+        assert!(parse_time("00:00:01:12.1", subframes).is_some());
+        assert_eq!(parse_time("00:00:01:12.2", subframes), None);
+        // Bad cues must not wrap to a plausible but unrelated timeline position.
+        let xml =
+            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="999999999999999s" end="2s">Bad</p><p begin="1s" end="2s">Good</p></div></body></tt>"#;
+        let doc = parse(xml).expect("well-formed TTML");
+        assert_eq!(doc.cues.len(), 1);
+        assert_eq!(doc.cues[0].text, "Good");
+        assert!(!doc.warnings.is_empty());
     }
 
     #[test]

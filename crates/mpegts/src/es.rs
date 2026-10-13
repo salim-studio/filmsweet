@@ -175,6 +175,20 @@ pub struct FrameInfo {
 const ADTS_RATES: [u32; 13] = [96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000, 12_000, 11_025, 8_000, 7_350];
 
 /// Parse the frame header at the start of `b` (MPEG audio, ADTS, AC-3, E-AC-3).
+/// Bytes of the audio frame whose header starts `b` (MPEG audio, ADTS, LATM, AC-3, E-AC-3), or
+/// `None` without a valid header there. For containers that store frames in chunks that need not
+/// follow them (AVI): the frames are found again with it.
+pub fn frame_bytes(codec: &Codec, b: &[u8]) -> Option<usize> {
+    let sync = match codec {
+        Codec::MpegAudio => AudioSync::Mpa,
+        Codec::AacAdts => AudioSync::Adts,
+        Codec::AacLatm => AudioSync::Loas,
+        Codec::Ac3 | Codec::Eac3 => AudioSync::Ac3,
+        _ => return None,
+    };
+    frame_len(sync, b)
+}
+
 pub fn frame_info(codec: &Codec, b: &[u8]) -> Option<FrameInfo> {
     match codec {
         Codec::MpegAudio => {
@@ -232,6 +246,15 @@ pub fn frame_info(codec: &Codec, b: &[u8]) -> Option<FrameInfo> {
             Some(FrameInfo { sample_rate: rate, channels: AC3_CHANNELS[acmod as usize] + lfe as u32, samples: 1536, variant: bsid })
         }
         _ => None,
+    }
+}
+
+/// Whether the syncframe at the start of `b` is E-AC-3 (bsid 11-16) other than independent
+/// substream 0: a dependent substream (strmtyp 1) or another program (A/52 §E2.3.1.1-2).
+fn eac3_joins_unit(b: &[u8]) -> bool {
+    match b.get(2..6) {
+        Some(&[b2, _, _, b5]) => (11..=16).contains(&(b5 >> 3)) && (b2 >> 6 == 1 || (b2 >> 3) & 7 != 0),
+        _ => false,
     }
 }
 
@@ -572,14 +595,18 @@ impl Splitter {
             }
             match frame_len(sync, &self.buf[i..]) {
                 Some(len) if self.next_frame == Some(at) || self.confirmed(sync, i, len) => {
-                    self.close(at);
-                    let (pos, offset) = self.locate(at).unwrap_or((u64::MAX, 0));
-                    let mut o = Open { start: at, pos, offset, pts: None, dts: None, key: true, disposable: false, vcl: false, picture: None };
-                    if let Some((pts, dts)) = self.timestamps_at(at) {
-                        o.pts = pts;
-                        o.dts = dts;
+                    // an E-AC-3 dependent substream or further program joins the access unit of
+                    // the independent substream 0 before it, as in MP4 and Matroska
+                    if !(sync == AudioSync::Ac3 && self.open.is_some() && eac3_joins_unit(&self.buf[i..])) {
+                        self.close(at);
+                        let (pos, offset) = self.locate(at).unwrap_or((u64::MAX, 0));
+                        let mut o = Open { start: at, pos, offset, pts: None, dts: None, key: true, disposable: false, vcl: false, picture: None };
+                        if let Some((pts, dts)) = self.timestamps_at(at) {
+                            o.pts = pts;
+                            o.dts = dts;
+                        }
+                        self.open = Some(o);
                     }
-                    self.open = Some(o);
                     self.next_frame = Some(at + len as u64);
                     if at + len as u64 >= self.buf_start + self.buf.len() as u64 {
                         self.buf.clear();
@@ -653,5 +680,24 @@ mod tests {
         assert_eq!(ac3_frame_bytes(0, 30), Some(1792));
         assert_eq!(ac3_frame_bytes(1, 21), Some(836));
         assert_eq!(ac3_frame_bytes(2, 0), Some(192));
+    }
+
+    #[test]
+    fn eac3_dependent_substreams_join_the_access_unit() {
+        // 16-byte E-AC-3 syncframes (frmsiz 7), 48 kHz six blocks stereo: independent, dependent
+        // (7.1 extension), independent, dependent
+        let frame = |strmtyp: u8| {
+            let mut f = vec![0x0B, 0x77, strmtyp << 6, 7, (3 << 4) | (2 << 1), 16 << 3];
+            f.resize(16, 0);
+            f
+        };
+        let es: Vec<u8> = [frame(0), frame(1), frame(0), frame(1)].concat();
+        let mut s = Splitter::new(&Codec::Eac3);
+        s.feed(0, &es);
+        s.finish();
+        assert_eq!(s.units.iter().map(|u| u.size).collect::<Vec<_>>(), vec![32, 32]);
+        assert_eq!(frame_info(&Codec::Eac3, &es).map(|f| f.samples), Some(1536));
+        // AC-3 frames are never joined
+        assert!(!eac3_joins_unit(&[0x0B, 0x77, 0x40, 0, 0, 8 << 3]));
     }
 }

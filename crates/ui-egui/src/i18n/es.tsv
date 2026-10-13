@@ -192,6 +192,7 @@
 	Light	Claro
 	Link	Vincular
 	Link Media…	Vincular medios…
+	Refresh Changed Media	Actualizar medios cambiados
 	Linked Selection	Selección vinculada
 	Lock Guides	Bloquear guías
 	Lumetri Color	Color Lumetri
@@ -407,6 +408,10 @@
 	Delete Video Tracks	Eliminar pistas de video
 	Delete Audio Tracks	Eliminar pistas de audio
 	All Empty Tracks	Todas las pistas vacías
+	Caption Tracks	Pistas de subtítulos
+	Delete Caption Tracks	Eliminar pistas de subtítulos
+	Delete Caption Track	Eliminar pista de subtítulos
+	Delete Empty Caption Tracks	Eliminar pistas de subtítulos vacías
 	Version {version}	Versión {version}
 	A clean-room, pure-Rust non-linear video editor. Part of the ArtCraft family.	Un editor de video no lineal en Rust puro, desarrollado en sala limpia. Parte de la familia ArtCraft.
 	Join the ArtCraft Discord	Únete al Discord de ArtCraft
@@ -492,7 +497,9 @@
 	{panel} — coming in a later milestone	{panel}: llegará en una versión posterior
 	Close Panel	Cerrar panel
 	Close Other Timeline Panels	Cerrar los demás paneles de línea de tiempo
+	Close All	Cerrar todo
 	Maximize Frame	Maximizar marco
+	Restore Frame	Restaurar marco
 	Restore Workspace	Restaurar espacio de trabajo
 	Reveal Sequence in Project	Mostrar secuencia en el proyecto
 	Video Thumbnails	Miniaturas de video
@@ -670,6 +677,7 @@
 	Extract (')	Extraer (')
 	Export Frame: use Export mode (M6)	Exportar fotograma: usa el modo Exportar (M6)
 	Button Editor	Editor de botones
+	More transport controls	Más controles de reproducción
 	Multi-Camera Record on	Grabación multicámara activada
 	Multi-Camera Record off	Grabación multicámara desactivada
 	{first} - Merged	{first} - Combinado
@@ -801,6 +809,7 @@
 	Relink others automatically	Volver a vincular los demás automáticamente
 	Search in:	Buscar en:
 	Browse…	Examinar…
+	A file dialog is already open	Ya hay un cuadro de diálogo de archivos abierto
 	Exact name matches only	Solo coincidencias exactas de nombre
 	No candidates yet — Search a folder or Locate the file.	Aún no hay candidatos: busca en una carpeta o localiza el archivo.
 	✔ same file	✔ mismo archivo
@@ -968,11 +977,14 @@
 	Reset…	Restablecer…
 	Source · {name}	Origen · {name}
 	Reset Effect	Restablecer efecto
+	Reset Parameter	Restablecer parámetro
 	Save Preset…	Guardar ajuste preestablecido…
 	Custom Setup	Configuración personalizada
 	Edit…	Editar…
 	Show graphs	Mostrar gráficos
 	Toggle animation	Activar/desactivar animación
+	Eyedropper (pick a color from the Program monitor)	Cuentagotas (tomar un color del monitor de programa)
+	Eyedropper: no picture to sample	Cuentagotas: no hay imagen de la que tomar el color
 	Add/Remove Keyframe	Añadir/quitar fotograma clave
 	Temporal Interpolation	Interpolación temporal
 	Linear	Lineal
@@ -1213,6 +1225,9 @@
 	Caption track options	Opciones de pista de subtítulos
 	Timeline Display Settings	Ajustes de visualización de la línea de tiempo
 	Show Video Thumbnails	Mostrar miniaturas de video
+	Head	Cabeza
+	Head and Tail	Cabeza y cola
+	Continuous	Continuas
 	Show Audio Waveform	Mostrar forma de onda de audio
 	Expand All Tracks	Expandir todas las pistas
 	Minimize All Tracks	Minimizar todas las pistas
@@ -1251,6 +1266,9 @@
 	Active Monitor	Monitor activo
 	Add	Añadir
 	Add tracks automatically when editing source clips onto the Timeline	Añadir pistas automáticamente al editar clips de origen en la línea de tiempo
+	Place files dropped onto the Timeline directly on the Timeline	Colocar los archivos soltados en la línea de tiempo directamente en ella
+	1 file	1 archivo
+	{n} files	{n} archivos
 	Additional Scale	Escala adicional
 	Additive Dissolve	Disolución aditiva
 	Additive Dissolve (Legacy)	Disolución aditiva (heredada)
@@ -1808,7 +1826,7 @@
 	Hard Limiter	Limitador duro
 	Hard Mix	Mezcla definida
 	Hardware decoding	Descodificación por hardware
-	Hardware decoding: Auto uses the system's video decoder (VideoToolbox on macOS, Media Foundation on Windows, VA-API for H.264 and HEVC on Linux) for the streams it supports, and FilmCraft's own decoder for everything else or if the hardware fails. Media that is already open keeps its decoder until it is reopened.	Descodificación por hardware: Automático usa el descodificador de video del sistema (VideoToolbox en macOS, Media Foundation en Windows, VA-API para H.264 y HEVC en Linux) para los flujos que admite, y el descodificador propio de FilmCraft para todo lo demás o si falla el hardware. Los medios ya abiertos mantienen su descodificador hasta que se vuelven a abrir.
+	Hardware decoding: Auto uses the system's video decoder (VideoToolbox on macOS, Media Foundation on Windows, VA-API or NVDEC for H.264 and HEVC on Linux) for the streams it supports, and FilmCraft's own decoder for everything else or if the hardware fails. Media that is already open keeps its decoder until it is reopened.	Descodificación por hardware: Automático usa el descodificador de video del sistema (VideoToolbox en macOS, Media Foundation en Windows, VA-API o NVDEC para H.264 y HEVC en Linux) para los flujos que admite, y el descodificador propio de FilmCraft para todo lo demás o si falla el hardware. Los medios ya abiertos mantienen su descodificador hasta que se vuelven a abrir.
 	Head Size	Tamaño de la cabeza
 	Heart	Corazón
 	Height	Altura
@@ -1891,6 +1909,11 @@
 	Japanese	Japonés
 	JetBrains Mono	JetBrains Mono
 	Join Through Edits	Unir ediciones pasantes
+	Ripple Trim In	Recorte de rizo de entrada
+	Ripple Trim Out	Recorte de rizo de salida
+	Roll Edit	Edición de rodillo
+	Trim In	Recortar entrada
+	Trim Out	Recortar salida
 	Kaleidoscope	Caleidoscopio
 	Keep a recovery copy of unsaved changes	Mantener una copia de recuperación de los cambios sin guardar
 	Key Color	Color clave
@@ -2782,8 +2805,8 @@
 	Ignore Audio	Ignorar audio
 	Ignore Video	Ignorar video
 	Apply a cut at each detected cut point	Aplicar un corte en cada punto de corte detectado
-	Create a subclip for each detected cut point	Crear un subclip para cada punto de corte detectado
-	Generate clip markers at each detected cut point	Generar marcadores de clip en cada punto de corte detectado
+	Create a bin of subclips from each detected cut point	Crear una bandeja de subclips a partir de cada punto de corte detectado
+	Create a clip marker at each detected cut point	Crear un marcador de clip en cada punto de corte detectado
 	Sensitivity:	Sensibilidad:
 	Normalize Mix Track to:	Normalizar pista de mezcla a:
 	Disabled clips	Clips desactivados
@@ -2885,6 +2908,7 @@
 	Target Bitrate	Velocidad de bits objetivo
 	Adaptive ({bpp} bits per pixel)	Adaptable ({bpp} bits por píxel)
 	Maximum Bitrate	Velocidad de bits máxima
+	Quality (CRF)	Calidad (CRF)
 	Key Frame Distance	Distancia entre fotogramas clave
 	Quality	Calidad
 	Render at Maximum Depth	Procesar a la máxima profundidad
@@ -2930,6 +2954,7 @@
 	File Name & Location	Nombre y ubicación del archivo
 	Quick Export: {path}	Exportación rápida: {path}
 	Graphics problem: switched to software compositing	Problema de gráficos: se ha cambiado a la composición por software
+	GPU acceleration is unavailable; preview renders on the CPU	La aceleración por GPU no está disponible; la vista previa se renderiza en la CPU
 	Exporting	Exportando
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Opt, and Cmd for other options.	Haz clic para seleccionar, o haz clic en un espacio vacío y arrastra para seleccionar con un marco. Usa Mayús, Opción y Cmd para otras opciones.
 	Click to select all clips to the right in all tracks. Shift-click for a single track.	Haz clic para seleccionar todos los clips a la derecha en todas las pistas. Mayús+clic para una sola pista.
@@ -2951,9 +2976,18 @@
 	Step Forward 1 Frame	Avanzar 1 fotograma
 	Match Playhead	Igualar cabezal
 	Gang to Program	Vincular al programa
+	AAC Audio	AAC Audio
+	AAC Audio 48 kHz 320 kbps	AAC Audio 48 kHz 320 kbps
+	MPEG-4 audio (.m4a), stereo 48 kHz AAC-LC at 320 kbps	Audio MPEG-4 (.m4a), estéreo, AAC-LC de 48 kHz a 320 kbps
 	AIFF	AIFF
 	AIFF 48 kHz 16-bit	AIFF 48 kHz 16 bits
 	AIFF, stereo 48 kHz 16-bit PCM	AIFF, estéreo, PCM de 48 kHz y 16 bits
+	FLAC	FLAC
+	FLAC 48 kHz 24-bit	FLAC 48 kHz 24 bits
+	FLAC, stereo 48 kHz 24-bit, lossless	FLAC, estéreo, 48 kHz y 24 bits, sin pérdida
+	FLAC (lossless)	FLAC (sin pérdida)
+	Compression Level	Nivel de compresión
+	0 fastest, 8 smallest	0 más rápido, 8 más pequeño
 	APV	APV
 	APV 422-10	APV 422-10
 	APV 422-12	APV 422-12
@@ -2965,6 +2999,9 @@
 	Apple ProRes 422 HQ	Apple ProRes 422 HQ
 	Apple ProRes 422 LT	Apple ProRes 422 LT
 	Apple ProRes 422 Proxy	Apple ProRes 422 Proxy
+	Apple ProRes 4444	Apple ProRes 4444
+	Apple ProRes 4444 with Alpha	Apple ProRes 4444 con alfa
+	Apple ProRes 4444 XQ	Apple ProRes 4444 XQ
 	Application	Aplicación
 	Apply Guide Template	Aplicar plantilla de guías
 	Auto Save Now	Guardar automáticamente ahora
@@ -3052,6 +3089,7 @@
 	Go to Sequence End	Ir al final de la secuencia
 	Go to Sequence Start	Ir al inicio de la secuencia
 	H.264	H.264
+	AV1	AV1
 	H.264 1920×1080 for video sharing sites, VBR 1 pass, 16 Mbps	H.264 1920×1080 para sitios de video, VBR 1 pasada, 16 Mbps
 	H.264 1920×1080, VBR 1 pass, 20 Mbps target, AAC 320 kbps	H.264 1920×1080, VBR 1 pasada, 20 Mbps objetivo, AAC 320 kbps
 	H.264 1920×1080, VBR 2 pass, 18 Mbps	H.264 1920×1080, VBR 2 pasadas, 18 Mbps
@@ -3146,6 +3184,18 @@
 	Nudge Volume -1dB	Ajustar volumen -1 dB
 	Nudge Volume -3dB	Ajustar volumen -3 dB
 	Numbered BMP stills (24-bit)	Imágenes fijas BMP numeradas (24 bits)
+	JPEG	JPEG
+	Targa	Targa
+	DPX	DPX
+	JPEG Sequence	Secuencia JPEG
+	Targa Sequence	Secuencia Targa
+	DPX Sequence	Secuencia DPX
+	Numbered JPEG stills (quality 90)	Imágenes fijas JPEG numeradas (calidad 90)
+	Numbered Targa stills (24-bit, uncompressed)	Imágenes fijas Targa numeradas (24 bits, sin comprimir)
+	Numbered DPX stills (10-bit RGB)	Imágenes fijas DPX numeradas (RGB de 10 bits)
+	OpenEXR	OpenEXR
+	OpenEXR Sequence	Secuencia OpenEXR
+	Numbered OpenEXR stills (half float, linear, uncompressed)	Imágenes fijas OpenEXR numeradas (coma flotante de 16 bits, lineal, sin comprimir)
 	Numbered PNG stills at the sequence's frame size	Imágenes fijas PNG numeradas al tamaño de fotograma de la secuencia
 	Numbered TIFF stills (RGB, 8-bit)	Imágenes fijas TIFF numeradas (RGB, 8 bits)
 	Opacity 0 → 100 % over the first second	Opacidad de 0 a 100 % durante el primer segundo
@@ -3174,6 +3224,9 @@
 	QuickTime, ProRes 422 HQ, 24-bit 48 kHz PCM	QuickTime, ProRes 422 HQ, PCM de 24 bits y 48 kHz
 	QuickTime, ProRes 422 LT, 24-bit 48 kHz PCM	QuickTime, ProRes 422 LT, PCM de 24 bits y 48 kHz
 	QuickTime, ProRes 422 Proxy, 24-bit 48 kHz PCM	QuickTime, ProRes 422 Proxy, PCM de 24 bits y 48 kHz
+	QuickTime, ProRes 4444 (4:4:4), 24-bit 48 kHz PCM	QuickTime, ProRes 4444 (4:4:4), PCM de 24 bits y 48 kHz
+	QuickTime, ProRes 4444 (4:4:4) with alpha channel, 24-bit 48 kHz PCM	QuickTime, ProRes 4444 (4:4:4) con canal alfa, PCM de 24 bits y 48 kHz
+	QuickTime, ProRes 4444 XQ (4:4:4), 24-bit 48 kHz PCM	QuickTime, ProRes 4444 XQ (4:4:4), PCM de 24 bits y 48 kHz
 	QuickTime, ProRes 422, 24-bit 48 kHz PCM	QuickTime, ProRes 422, PCM de 24 bits y 48 kHz
 	Quit FilmCraft	Salir de FilmCraft
 	Rate Stretch Tool	Herramienta Ajuste de velocidad
@@ -3289,6 +3342,7 @@
 	Upper First	Superior primero
 	VBR, 1 pass	VBR, 1 pasada
 	VBR, 2 pass	VBR, 2 pasadas
+	CRF (constant quality)	CRF (calidad constante)
 	Vimeo 1080p Full HD	Vimeo 1080p Full HD
 	Vimeo 2160p 4K Ultra HD	Vimeo 2160p 4K Ultra HD
 	Voice-over Record	Grabación de voz en off
@@ -3376,6 +3430,7 @@
 	out	salida
 	in	entrada
 	The language changed but could not be saved: {e}	El idioma ha cambiado, pero no se ha podido guardar: {e}
+	no Chinese font is installed on this system; the interface stays in English	no hay ninguna fuente china instalada en este sistema; la interfaz sigue en inglés
 	no Japanese font is installed on this system; the interface stays in English	no hay ninguna fuente japonesa instalada en este sistema; la interfaz sigue en inglés
 	Show	Mostrar
 	Sort	Ordenar
@@ -3404,6 +3459,7 @@
 	Main (8-bit; Main 10 for HDR sequences)	Main (8 bits; Main 10 para secuencias HDR)
 	Encoder	Codificador
 	Hardware (H.265 has no software encoder)	Hardware (H.265 no tiene codificador por software)
+	Hardware (AV1 has no software encoder)	Hardware (AV1 no tiene codificador por software)
 	Text Properties	Propiedades de texto
 	Text Box Height	Altura del cuadro de texto
 	Paragraph Text	Texto de párrafo
@@ -3440,6 +3496,7 @@
 	Click to select, or click in empty space and drag to marquee select. Use Shift, Alt, and Ctrl for other options.	Haz clic para seleccionar, o haz clic en un espacio vacío y arrastra para seleccionar con un marco. Usa Mayús, Alt y Ctrl para otras opciones.
 	Click to zoom in; Alt-click to zoom out.	Haz clic para acercar; Alt+clic para alejar.
 	Drag: move · Alt-click: smooth/corner · Ctrl-click: delete	Arrastrar: mover · Alt+clic: suave/esquina · Ctrl+clic: eliminar
+	Drag inward to round the corners	Arrastrar hacia dentro para redondear las esquinas
 	Include Alpha Channel	Incluir canal alfa
 	Sequence Settings	Ajustes de secuencia
 	Color Management	Gestión del color
@@ -3480,3 +3537,58 @@
 	New Sequence	Nueva secuencia
 	Tracks	Pistas
 	tracks	pistas
+	Clear Transition	Borrar transición
+	Set Transition Duration	Establecer duración de la transición
+
+# System appearance modes and theme cards.
+	Active	Activo
+	Appearance Mode	Modo de apariencia
+	Dark Theme	Tema oscuro
+	Light Theme	Tema claro
+	Next Appearance Mode	Siguiente modo de apariencia
+	Sync with system	Sincronizar con el sistema
+	UI Scale	Escala de la interfaz
+	Auto (system)	Automática (sistema)
+	In	Entrada
+	Out	Salida
+	Export Markers as CSV…	Exportar marcadores como CSV…
+	Fill Type	Tipo de relleno
+	Gradient Angle	Ángulo del degradado
+	Linear Gradient	Degradado lineal
+	Solid	Sólido
+	GPU Rendering	Renderizado por GPU
+	Composite on the GPU when available	Componer en la GPU cuando esté disponible
+	Text to Speech	Texto a voz
+	Edit Narration	Editar narración
+
+	Dock Panel	Acoplar panel
+	Undock Panel	Desacoplar panel
+	Docking Action	Acción de acoplamiento
+	Resize floating panel	Cambiar tamaño del panel flotante
+	Project Notes	Notas del proyecto
+	Get Project Notes	Obtener notas del proyecto
+	Edit Project Notes	Editar notas del proyecto
+	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	Notas de este proyecto: tareas pendientes, instrucciones, números de fotograma… Se guardan con el proyecto.
+	Use Effect Shutter Angle	Usar el ángulo de obturación del efecto
+
+	Appearance Settings…	Ajustes de apariencia…
+
+	Add to favorites	Añadir a favoritos
+
+	Remove from favorites	Quitar de favoritos
+	Compression	Compresión
+	ZIP (1 scan line)	ZIP (1 línea de exploración)
+	ZIP (16 scan lines)	ZIP (16 líneas de exploración)
+	Safe graphics mode: {mode}	Modo gráfico seguro: {mode}
+	An earlier start failed with the default graphics. Updating the graphics driver usually fixes this.	Un inicio anterior falló con los gráficos predeterminados. Actualizar el controlador gráfico suele solucionarlo.
+	Use Default Graphics	Usar gráficos predeterminados
+	The default graphics are used from the next start.	Los gráficos predeterminados se usarán a partir del próximo inicio.
+	DirectX 12 only	Solo DirectX 12
+	software rendering	renderizado por software
+	Label Color Presets	Ajustes preestablecidos de color de etiqueta
+	{name} (Modified)	{name} (modificado)
+	Revert to the preset's colors and names	Volver a los colores y nombres del ajuste preestablecido
+	Import a preset file…	Importar un archivo de ajuste preestablecido…
+	Export the labels to a preset file…	Exportar las etiquetas a un archivo de ajuste preestablecido…
+	Show the presets folder	Mostrar la carpeta de ajustes preestablecidos
+	Delete this preset	Eliminar este ajuste preestablecido
