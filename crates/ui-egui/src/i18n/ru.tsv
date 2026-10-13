@@ -221,6 +221,8 @@
 	Normalize Mix Track…	Нормализовать мастер-дорожку…
 	Offline File…	Автономный файл…
 	Open Project…	Открыть проект…
+	Open Recent	Открыть недавние
+	Clear Recent Files	Очистить список недавних файлов
 	Optical Flow	Оптический поток
 	Overwrite	Перезаписать
 	Paste	Вставить
@@ -356,3 +358,4 @@
 	Zoom to Sequence	Масштабировать по размеру эпизода
 	Next Appearance Mode	Следующий режим оформления
 	Project Notes	Заметки проекта
+

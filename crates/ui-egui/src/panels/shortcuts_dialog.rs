@@ -156,7 +156,8 @@ pub fn show(app: &mut FilmcraftApp, ctx: &egui::Context) -> bool {
         .collapsible(false)
         .resizable(false)
         .fixed_size(size)
-        .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
+        .pivot(Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .frame(egui::Frame::window(&ctx.global_style()).fill(t.panel_bg).inner_margin(14.0))
         .show(ctx, |ui| {
             ui.set_width(size.x);

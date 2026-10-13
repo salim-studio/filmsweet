@@ -237,6 +237,9 @@
 	Normalize Mix Track…	Normalisasi Trek Mix…
 	Offline File…	Berkas Offline…
 	Open Project…	Buka Proyek…
+	Open Recent	Terakhir Dibuka
+	Clear Recent Files	Hapus Daftar Berkas Terakhir
+	Recent	Terbaru
 	Optical Flow	Aliran Optik
 	Overwrite	Timpa
 	Paste	Tempel
@@ -2927,6 +2930,10 @@
 	Sample Size	Ukuran Sampel
 	16 bit	16 bit
 	24 bit	24 bit
+	32 bit	32 bit
+	32 bit float	32 bit titik mengambang
+	FLAC stores whole-number samples only	FLAC hanya menyimpan sampel bilangan bulat
+	MXF export writes integer PCM only	Ekspor MXF hanya menulis PCM bilangan bulat
 	Size / Opacity	Ukuran / Opasitas
 	Image Overlay	Overlay Gambar
 	PNG or JPEG file	Berkas PNG atau JPEG
@@ -3562,3 +3569,7 @@
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	Catatan untuk proyek ini: daftar tugas, instruksi, nomor bingkai… Disimpan bersama proyek.
 	Use Effect Shutter Angle	Gunakan Sudut Rana Efek
 	Settings	Preferensi
+
+	Appearance Settings…	Pengaturan Tampilan…
+	Add to favorites	Tambahkan ke favorit
+	Remove from favorites	Hapus dari favorit

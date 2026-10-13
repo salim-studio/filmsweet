@@ -234,6 +234,9 @@
 	Normalize Mix Track…	Normalizar faixa de mixagem…
 	Offline File…	Arquivo offline…
 	Open Project…	Abrir projeto…
+	Open Recent	Abrir recentes
+	Clear Recent Files	Limpar arquivos recentes
+	Recent	Recentes
 	Optical Flow	Fluxo óptico
 	Overwrite	Sobrescrever
 	Paste	Colar
@@ -2924,6 +2927,10 @@
 	Sample Size	Tamanho da amostra
 	16 bit	16 bits
 	24 bit	24 bits
+	32 bit	32 bits
+	32 bit float	32 bits de ponto flutuante
+	FLAC stores whole-number samples only	O FLAC só armazena amostras inteiras
+	MXF export writes integer PCM only	A exportação MXF só grava PCM inteiro
 	Size / Opacity	Tamanho / opacidade
 	Image Overlay	Sobreposição de imagem
 	PNG or JPEG file	Arquivo PNG ou JPEG
@@ -3556,6 +3563,12 @@
 	Text to Speech	Texto para fala
 	Edit Narration	Editar narração
 	Project Notes	Notas do projeto
+
+	Appearance Settings…	Configurações de aparência…
+
+	Add to favorites	Adicionar aos favoritos
+
+	Remove from favorites	Remover dos favoritos
 	Get Project Notes	Obter notas do projeto
 	Edit Project Notes	Editar notas do projeto
 	Notes for this project: to-dos, instructions, frame numbers… Saved with the project.	Notas deste projeto: tarefas, instruções, números de quadro… Salvas com o projeto.

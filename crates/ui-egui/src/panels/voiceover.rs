@@ -11,6 +11,7 @@
 //! `voiceover.ok`, `voiceover.cancel`; the countdown overlay is `voiceover.countdown.overlay`.
 //! UI commands: `voiceover.recordToggle {track?}` and `voiceover.settingsDialog`.
 
+use crate::widgets::CenteredDialog as _;
 use egui::{Align2, Color32, Rect, RichText, Sense, Stroke, pos2, vec2};
 use filmcraft_engine::voiceover::VoiceOverPrefs;
 use filmcraft_project::TrackId;
@@ -239,7 +240,7 @@ fn settings_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
     let accent = app.tokens.accent;
     // the title is translated; the window keeps one id whatever the interface language
     let id = egui::Id::new("voiceover-settings");
-    egui::Window::new(tl!("Voice-Over Record Settings")).id(id).collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+    egui::Window::new(tl!("Voice-Over Record Settings")).id(id).collapsible(false).resizable(false).centered(ctx).show(ctx, |ui| {
         egui::Grid::new("voiceover-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
             ui.label(tl!("Name:"));
             let r = ui.add(egui::TextEdit::singleline(&mut d.prefs.name).desired_width(220.0));

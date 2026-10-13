@@ -166,7 +166,8 @@ fn link_media(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .resizable(false)
         .default_width(width)
         .max_width(width)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().id_salt("link-media-body-scroll").max_height((ctx.content_rect().height() - 140.0).max(1.0)).show(ui, |ui| {
                 ui.label(tlf!("{n} clip(s) can't find their media. Locate them, search a folder, or leave them offline.", n = rows.len()));
@@ -373,7 +374,8 @@ fn make_offline(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .id(egui::Id::new("Make Offline"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.label(tlf!("Make {n} selected clip(s) offline. Their clips show the offline slate until you link them again.", n));
             let r = ui.radio(!delete, tl!("Media files remain on disk"));
@@ -417,7 +419,8 @@ fn create_proxies(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .id(egui::Id::new("Create Proxies"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.label(tlf!("{n} clip(s) selected.", n = d.items.len()));
             ui.add_space(4.0);
@@ -496,7 +499,8 @@ fn project_manager(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .id(egui::Id::new("Project Manager"))
         .collapsible(false)
         .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(crate::widgets::dialog_center(ctx))
         .show(ctx, |ui| {
             ui.label(RichText::new(tl!("Sequences")).strong());
             for (id, name) in &seqs {
