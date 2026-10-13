@@ -134,9 +134,40 @@ fn apply_default_transitions(s: &mut Session, p: &Value) -> Result<Value> {
         return crate::trim::apply_default_transitions(s);
     }
     let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let edges = clip_edges(q, &clips);
+    apply_at_edges(s, edges, &Value::Null, "Apply Default Transitions")
+}
+
+/// Apply Video / Audio Transition (⌘D / ⇧⌘D) with clips or edit points of `kind` selected: the
+/// transition goes at the selected clips' edges (as Apply Default Transitions to Selection), or at
+/// the selected edit points, instead of at the playhead (#1124). `None` when nothing of `kind` is
+/// selected. `p`'s settings (`effect`, `frames`, `params`, `reverse`) apply to every edge.
+pub(crate) fn apply_to_selection(s: &mut Session, p: &Value, kind: TrackKind) -> Result<Option<Value>> {
+    let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+    let on_kind = |c: ClipId| q.find_item(c).and_then(|(t, _)| q.track(t)).is_some_and(|t| t.kind == kind);
+    let clips: Vec<ClipId> = s.state.selection.iter().copied().filter(|c| on_kind(*c)).collect();
+    let edges = if clips.is_empty() {
+        s.state.edit_points.iter().filter(|e| on_kind(e.clip)).map(|e| (kind, e.clip, if e.out { "out" } else { "in" })).collect()
+    } else {
+        clip_edges(q, &clips)
+    };
+    // an explicit `edge` keeps only that side of each selected clip
+    let edges: Vec<_> = match p.get("edge").and_then(Value::as_str) {
+        Some(only) => edges.into_iter().filter(|e| e.2 == only).collect(),
+        None => edges,
+    };
+    if clips.is_empty() && edges.is_empty() {
+        return Ok(None);
+    }
+    let label = if kind == TrackKind::Video { "Apply Video Transition" } else { "Apply Audio Transition" };
+    apply_at_edges(s, edges, p, label).map(Some)
+}
+
+/// The In and Out edges of `clips`, one per cut; edges that already have a transition keep it.
+fn clip_edges(q: &Sequence, clips: &[ClipId]) -> Vec<(TrackKind, ClipId, &'static str)> {
     // (track, clip, edge) per distinct cut
     let mut edges: Vec<(TrackKind, ClipId, &'static str, Tick, TrackId)> = Vec::new();
-    for c in &clips {
+    for c in clips {
         let Some((tid, it)) = q.find_item(*c) else { continue };
         let Some(tr) = q.track(tid) else { continue };
         for (edge, at) in [("in", it.start), ("out", it.end())] {
@@ -150,17 +181,25 @@ fn apply_default_transitions(s: &mut Session, p: &Value) -> Result<Value> {
             edges.push((tr.kind, *c, edge, at, tid));
         }
     }
+    edges.into_iter().map(|(kind, clip, edge, _, _)| (kind, clip, edge)).collect()
+}
+
+/// Apply a transition at each (track kind, clip, edge) with `settings`, as one undo step `label`.
+fn apply_at_edges(s: &mut Session, edges: Vec<(TrackKind, ClipId, &'static str)>, settings: &Value, label: &str) -> Result<Value> {
     let n0 = s.history.undo.len();
     let mut ids = Vec::new();
     let mut errors = Vec::new();
-    for (kind, clip, edge, _, _) in edges {
+    for (kind, clip, edge) in edges {
         let cmd = if kind == TrackKind::Video { "sequence.applyVideoTransition" } else { "sequence.applyAudioTransition" };
-        match s.execute(cmd, json!({"clip": clip.0, "edge": edge})) {
+        let mut args = settings.as_object().cloned().unwrap_or_default();
+        args.insert("clip".into(), json!(clip.0));
+        args.insert("edge".into(), json!(edge));
+        match s.execute(cmd, Value::Object(args)) {
             Ok(r) => ids.push(r["transition"].clone()),
             Err(e) => errors.push(e.to_string()),
         }
     }
-    crate::clip_ops::collapse_history(s, n0, "Apply Default Transitions");
+    crate::clip_ops::collapse_history(s, n0, label);
     if ids.is_empty() {
         return Err(EngineError::Other(errors.into_iter().next().unwrap_or_else(|| "no transition could be applied to the selection".into())));
     }

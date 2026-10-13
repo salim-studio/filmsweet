@@ -121,7 +121,6 @@ fn the_selection_follows_the_box_while_it_is_dragged() {
     assert!(d.selected(b) && !d.selected(a), "the release keeps what the box showed");
 }
 
-
 #[test]
 fn alt_box_selects_only_video_and_delete_keeps_linked_audio() {
     let mut d = Driver::demo();

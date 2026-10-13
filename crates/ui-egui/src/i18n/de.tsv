@@ -248,6 +248,8 @@
 	OMF…	OMF…
 	Offline File…	Offline-Datei…
 	Open Project…	Projekt öffnen…
+	Open Recent	Zuletzt geöffnete Dateien
+	Clear Recent Files	Zuletzt geöffnete Dateien leeren
 	OpenTimelineIO…	OpenTimelineIO…
 	Optical Flow	Optischer Fluss
 	Overwrite	Überschreiben
@@ -387,3 +389,4 @@
 	Zoom Out	Verkleinern
 	Zoom to Sequence	Auf Sequenz zoomen
 	Project Notes	Projektnotizen
+

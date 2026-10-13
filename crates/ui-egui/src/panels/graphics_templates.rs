@@ -17,6 +17,7 @@
 //! dialogs: `exportTemplate.name|category|control.<n>|ok|cancel`, `replaceFonts.from|to|ok|cancel`.
 //! The UI state (`UiState::gfx_templates`) is serde, so agents can read and set it.
 
+use crate::widgets::CenteredDialog as _;
 use std::sync::Arc;
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
@@ -650,7 +651,7 @@ fn export_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .default_width(420.0)
-        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .centered(ctx)
         .show(ctx, |ui| {
             egui::Grid::new("gfx-export-grid").num_columns(2).show(ui, |ui| {
                 ui.label(tl!("Name:"));
@@ -729,7 +730,7 @@ fn replace_dialog(app: &mut FilmcraftApp, ctx: &egui::Context) {
         .collapsible(false)
         .resizable(false)
         .default_width(440.0)
-        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .centered(ctx)
         .show(ctx, |ui| {
             ui.label(tl!("Fonts used in the project:"));
             egui::Grid::new("gfx-fonts-used").striped(true).num_columns(3).show(ui, |ui| {
