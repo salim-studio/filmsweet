@@ -571,6 +571,33 @@ pub fn draft_path(points: &[[f64; 4]]) -> MaskPath {
     }
 }
 
+/// Delete / Backspace and Cmd+Z take back the last pen point while a mask is drawn (#1345). The
+/// draft is outside the undo history: run before the shortcuts, so the keys reach neither Clear
+/// (of the clip being masked) nor Undo (of the previous project edit). Taking back the last point
+/// drops the draft.
+pub(crate) fn pen_take_back(app: &mut FilmcraftApp, ctx: &egui::Context, text_focused: bool) {
+    let Some(d) = app.ui.mask_pen.as_mut() else { return };
+    let n = ctx.input_mut(|i| {
+        // Shift+Cmd+Z is Redo: consume_key ignores an extra Shift
+        let redo = i.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::Z, pressed: true, modifiers: m, .. } if m.shift));
+        let undo = if redo { 0 } else { i.count_and_consume_key(egui::Modifiers::COMMAND, egui::Key::Z) };
+        let clear = if text_focused {
+            0
+        } else {
+            i.count_and_consume_key(egui::Modifiers::NONE, egui::Key::Backspace) + i.count_and_consume_key(egui::Modifiers::NONE, egui::Key::Delete)
+        };
+        undo + clear
+    });
+    if n == 0 {
+        return;
+    }
+    let left = d.points.len().saturating_sub(n);
+    d.points.truncate(left);
+    if left == 0 {
+        app.ui.mask_pen = None;
+    }
+}
+
 fn pen_overlay(app: &mut FilmcraftApp, ui: &mut egui::Ui, pic: Rect, frame: (u32, u32)) {
     let Some(draft) = app.ui.mask_pen.clone() else { return };
     let ph = app.session.playhead();

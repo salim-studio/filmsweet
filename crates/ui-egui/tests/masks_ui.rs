@@ -258,6 +258,76 @@ fn shift_constrains_pen_mask_segments_to_45_degrees() {
     assert!(ox > 10.0 && oy.abs() < 1e-6, "handle constrained horizontal: {pen}");
 }
 
+/// Delete / Backspace and Cmd+Z take back the last pen point while a mask is drawn: the draft is
+/// outside the undo history, so the keys must not reach Clear (on the clip being masked) or Undo
+/// (of the previous project edit). The last point taken back closes the draft (#1345).
+#[test]
+fn delete_and_undo_take_back_the_last_pen_point() {
+    let mut d = Driver::demo();
+    d.ok("ui.set", json!({"workspace": "Effects"}));
+    let seq = d.exec("sequence.inspect", json!({}));
+    let clip = &seq["video"][0]["items"][0];
+    let (id, start, dur) = (clip["clip"].as_u64().unwrap(), clip["start"].as_i64().unwrap(), clip["duration"].as_i64().unwrap());
+    d.exec("playhead.set", json!({"time": start + dur / 2}));
+    d.exec("timeline.select", json!({"clips": [id]}));
+    // a project edit for a stray Undo to revert
+    d.exec("effects.apply", json!({"effect": "gaussian_blur"}));
+    d.frames(3);
+    let undo_len = |d: &mut Driver| d.exec("history.list", json!({}))["undo"].as_array().unwrap().len();
+    let clip_there = |d: &mut Driver| {
+        let seq = d.exec("sequence.inspect", json!({}));
+        seq["video"][0]["items"].as_array().unwrap().iter().any(|c| c["clip"].as_u64() == Some(id))
+    };
+    let undo0 = undo_len(&mut d);
+    d.ok("ui.click", json!({"id": "effectControls.opacity.mask.pen"}));
+    d.frames(2);
+    let pic = d.rect("program.picture");
+    let at = |fx: f64, fy: f64| json!({"x": pic[0] + pic[2] * fx, "y": pic[1] + pic[3] * fy});
+    for (fx, fy) in [(0.3, 0.3), (0.6, 0.3), (0.6, 0.6)] {
+        d.ok("ui.click", at(fx, fy));
+        d.frames(2);
+    }
+    // with the Timeline focused, Delete and Backspace are Clear on the selected clip
+    d.ok("ui.set", json!({"focused": "Timeline"}));
+    // Redo is not a take-back
+    d.ok("ui.key", json!({"key": "Shift+Cmd+Z"}));
+    d.frames(2);
+    d.ok("ui.key", json!({"key": "Delete"}));
+    d.frames(2);
+    assert!(clip_there(&mut d), "Delete cleared the clip being masked");
+    d.ok("ui.key", json!({"key": "Cmd+Z"}));
+    d.frames(2);
+    assert_eq!(undo_len(&mut d), undo0, "Cmd+Z undid a project edit while drawing");
+    // one point left: two more, then a click on the first closes the mask with three vertices
+    for (fx, fy) in [(0.35, 0.65), (0.25, 0.5)] {
+        d.ok("ui.click", at(fx, fy));
+        d.frames(2);
+    }
+    d.ok("ui.click", at(0.3, 0.3));
+    d.frames(3);
+    let m = d.masks();
+    let pen = m.iter().find(|x| x["effectId"] == "opacity").unwrap_or_else(|| panic!("opacity mask: {m:?}"));
+    assert_eq!(pen["path"]["vertices"].as_array().unwrap().len(), 3, "{pen}");
+    let (p0, p1) = (v0(pen, 0), v0(pen, 1));
+    assert!(p1.1 > p0.1 + 50.0, "second vertex is the one placed after the take-backs: {p0:?} {p1:?}");
+
+    // Backspace on the only point closes the draft; Cmd+Z then undoes as usual
+    d.ok("ui.click", json!({"id": "effectControls.opacity.mask.pen"}));
+    d.frames(2);
+    d.ok("ui.click", at(0.5, 0.5));
+    d.frames(2);
+    d.ok("ui.set", json!({"focused": "Timeline"}));
+    d.ok("ui.key", json!({"key": "Backspace"}));
+    d.frames(2);
+    assert!(clip_there(&mut d), "Backspace cleared the clip being masked");
+    assert!(d.ok("ui.elements", json!({"prefix": "program.maskPen"})).as_array().unwrap().is_empty(), "draft still open");
+    let undo1 = undo_len(&mut d);
+    d.ok("ui.key", json!({"key": "Cmd+Z"}));
+    d.frames(2);
+    assert_eq!(undo_len(&mut d), undo1 - 1);
+    assert!(d.masks().iter().all(|x| x["effectId"] != "opacity"), "Undo removed the pen mask");
+}
+
 #[test]
 fn presets_bin_drag_and_save_dialog() {
     let mut d = Driver::demo();
