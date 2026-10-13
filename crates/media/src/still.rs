@@ -12,6 +12,7 @@ use crate::{FrameRequest, MediaError, MediaInfo, MediaKind, MediaSource, Result,
 pub mod dng;
 pub mod exr;
 pub mod hdr;
+mod ycbcr_tiff;
 
 /// Default still duration (Premiere's preference default is 5 seconds).
 pub const DEFAULT_STILL_DURATION: Tick = Tick(5 * TICKS_PER_SECOND);
@@ -47,6 +48,9 @@ pub fn decode_raster(name: &str, bytes: &[u8]) -> Result<Raster> {
     }
     if crate::tga::sniff(name, bytes) {
         return crate::tga::decode(name, bytes);
+    }
+    if ycbcr_tiff::sniff(bytes) {
+        return ycbcr_tiff::decode(name, bytes);
     }
     let img = image::load_from_memory(bytes).map_err(|e| MediaError::Decode(format!("{name}: {e}")))?;
     let has_alpha = img.color().has_alpha();
