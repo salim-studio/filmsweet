@@ -3148,10 +3148,11 @@ fn build() -> Vec<CommandSpec> {
             items.sort_by_key(|i| i.0);
             items.dedup();
             let mut used = std::collections::HashSet::new();
-            for it in s.project.sequences() {
+            for it in s.project.sequences().filter(|it| !items.contains(&it.id)) {
                 if let Some(q) = it.as_sequence() {
                     for t in q.all_tracks() {
-                        used.extend(t.items.iter().map(|x| x.item));
+                        // Subclips keep the underlying file source alive too.
+                        used.extend(t.items.iter().filter_map(|x| s.project.resolve_media(x.item).map(|(id, _, _)| id)));
                     }
                 }
             }
