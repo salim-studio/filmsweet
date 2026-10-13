@@ -1677,6 +1677,58 @@ fn build() -> Vec<CommandSpec> {
             })?;
             Ok(Value::Null)
         }),
+        cmd!("edit.rippleDeleteHead", "Ripple Delete Head Frame", ["Edit"], None, r#"{"clips":[id]?,"clip":id?}"#, has_selection, |s, p| {
+            // #1357: remove the head — from each selected clip's in point through the playhead —
+            // and ripple the sequence closed. Linked clips ripple as one group (the engine's
+            // group trim moves every member's in point by one delta and shifts the synced
+            // tracks once). The playhead past every member's out point deletes the group whole.
+            let ph = s.playhead();
+            let clips = with_links(s, &clips_p(s, p));
+            // groups keyed by link id (unlinked clips: their own id)
+            let mut groups: Vec<(u64, Vec<ClipId>)> = Vec::new();
+            {
+                let q = s.active_sequence().ok_or(EngineError::NoSequence)?;
+                for c in &clips {
+                    let (_, item) = q.find_item(*c).ok_or_else(|| EngineError::Other("clip not in the active sequence".into()))?;
+                    if (ph - item.start) <= Tick::ZERO {
+                        return Err(EngineError::Other("the playhead is at or before the clip's in point".into()));
+                    }
+                    let key = item.link.unwrap_or(c.0);
+                    match groups.iter_mut().find(|(k, _)| *k == key) {
+                        Some((_, members)) => members.push(*c),
+                        None => groups.push((key, vec![*c])),
+                    }
+                }
+            }
+            s.edit_sequence("Ripple Delete Head Frame", |q, ctx, st| {
+                for (_, members) in &groups {
+                    let live: Vec<(ClipId, Tick, Tick)> = members.iter().filter_map(|c| q.find_item(*c).map(|(_, i)| (*c, i.start, i.duration))).collect();
+                    if live.is_empty() {
+                        continue;
+                    }
+                    let head = live.iter().map(|(_, s, _)| (ph - *s).max(Tick::ZERO)).max().unwrap_or(Tick::ZERO);
+                    let all_whole = live.iter().all(|(_, _, d)| head >= *d);
+                    let ids: Vec<ClipId> = live.iter().map(|(c, _, _)| *c).collect();
+                    if all_whole {
+                        let spans = edit::ripple_delete_items(q, &ids)?;
+                        if st.ripple_sequence_markers {
+                            for r in spans.iter().rev() {
+                                crate::sequence_tools::ripple_markers(&mut q.markers, r.end(), -r.duration);
+                            }
+                        }
+                        continue;
+                    }
+                    let start = live.iter().map(|(_, s, _)| *s).min().unwrap_or(ph);
+                    edit::ripple_trim_group(q, &ids, Edge::In, head, ctx)?;
+                    if st.ripple_sequence_markers {
+                        // the head [start, start + head) closes: later markers move back by it
+                        crate::sequence_tools::ripple_markers(&mut q.markers, start + head, Tick::ZERO - head);
+                    }
+                }
+                Ok(())
+            })?;
+            Ok(Value::Null)
+        }),
         cmd!("edit.selectAll", "Select All", ["Edit"], Some("Cmd+A"), "{}", has_seq, |s, _| {
             let all: Vec<ClipId> = s.active_sequence().map(|q| q.all_tracks().flat_map(|t| t.items.iter().map(|i| i.id)).collect()).unwrap_or_default();
             s.state.selection = all;
