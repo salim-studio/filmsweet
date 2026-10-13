@@ -3151,18 +3151,37 @@ fn build() -> Vec<CommandSpec> {
             for it in s.project.sequences().filter(|it| !items.contains(&it.id)) {
                 if let Some(q) = it.as_sequence() {
                     for t in q.all_tracks() {
-                        // Subclips keep the underlying file source alive too.
-                        used.extend(t.items.iter().filter_map(|x| s.project.resolve_media(x.item).map(|(id, _, _)| id)));
+                        for clip in t
+                            .items
+                            .iter()
+                            .filter(|clip| !items.contains(&clip.item) || s.project.item(clip.item).is_some_and(|item| matches!(item.kind, ItemKind::Media(_))))
+                        {
+                            // Preserve the whole valid file-backed chain, not just its root.
+                            if !s.project.resolve_media(clip.item).is_some_and(|(_, media, _)| matches!(media.media, MediaRef::File { .. })) {
+                                continue;
+                            }
+                            let mut id = clip.item;
+                            for _ in 0..16 {
+                                used.insert(id);
+                                match s.project.item(id).map(|item| &item.kind) {
+                                    Some(ItemKind::Subclip { parent, .. }) => id = *parent,
+                                    _ => break,
+                                }
+                            }
+                        }
                     }
                 }
             }
             let mut gone = Vec::new();
             let mut offlined = Vec::new();
+            let mut retained_subclips = Vec::new();
             for i in items {
                 let keep = used.contains(&i)
                     && s.project.item(i).and_then(filmcraft_project::ProjectItem::as_media).is_some_and(|m| matches!(m.media, MediaRef::File { .. }));
                 if keep {
                     offlined.push(i);
+                } else if used.contains(&i) && s.project.item(i).is_some_and(|item| matches!(item.kind, ItemKind::Subclip { .. })) {
+                    retained_subclips.push(i);
                 } else {
                     gone.push(i);
                 }
@@ -3176,7 +3195,7 @@ fn build() -> Vec<CommandSpec> {
                 for b in &bins {
                     pr.root.remove_bin(*b);
                 }
-                for i in &offlined {
+                for i in offlined.iter().chain(&retained_subclips) {
                     if pr.root.parent_of(*i).is_none() {
                         pr.root.children.push(filmcraft_project::BinEntry::Item(*i));
                     }

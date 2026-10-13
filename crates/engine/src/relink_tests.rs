@@ -314,3 +314,56 @@ fn deleting_sequence_and_its_media_does_not_keep_an_unused_source() {
     assert!(s.project.item(items[1]).is_some());
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn deleting_subclip_and_source_does_not_keep_an_unused_source() {
+    let root = tmp_dir("delete-subclip-and-source");
+    let (path, items) = saved_project(&root);
+    let mut s = open(&path);
+    let seq = s.state.active_sequence.unwrap();
+    let p = std::sync::Arc::make_mut(&mut s.project);
+    let range = filmcraft_time::TimeRange::new(filmcraft_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
+    let sub =
+        p.add_item("Subclip", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
+    for t in p.sequence_mut(seq).unwrap().all_tracks_mut() {
+        for c in &mut t.items {
+            if c.item == items[0] {
+                c.item = sub;
+            }
+        }
+    }
+    s.execute("project.delete", json!({"items": [sub.0, items[0].0]})).unwrap();
+    assert!(s.project.item(sub).is_none());
+    assert!(s.project.item(items[0]).is_none(), "a removed timeline subclip must not retain its unused source");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn deleting_bin_preserves_intermediate_subclip_needed_by_surviving_clip() {
+    let root = tmp_dir("delete-intermediate-subclip");
+    let (path, items) = saved_project(&root);
+    let mut s = open(&path);
+    let seq = s.state.active_sequence.unwrap();
+    let p = std::sync::Arc::make_mut(&mut s.project);
+    let range = filmcraft_time::TimeRange::new(filmcraft_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
+    let parent =
+        p.add_item("Parent", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
+    let outer = p.add_item("Outer", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent, range, restrict_trims: false }, None);
+    for t in p.sequence_mut(seq).unwrap().all_tracks_mut() {
+        for c in &mut t.items {
+            if c.item == items[0] {
+                c.item = outer;
+            }
+        }
+    }
+    let bin = p.add_bin("Sources", None);
+    p.move_to_bin(&[items[0], parent], Some(bin)).unwrap();
+    let before = s.active_sequence().unwrap().clone();
+    s.execute("project.delete", json!({"items": [bin.0]})).unwrap();
+    assert_eq!(s.active_sequence().unwrap(), &before);
+    assert!(s.project.resolve_media(outer).is_some(), "the surviving nested subclip must still resolve");
+    assert!(s.project.resolve_media(outer).unwrap().1.offline);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.project.root.parent_of(parent), Some(bin));
+    let _ = std::fs::remove_dir_all(root);
+}
