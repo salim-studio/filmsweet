@@ -218,7 +218,7 @@ pub struct Unit {
     /// No other unit depends on it (B pictures of MPEG-1/2 video, non-reference H.264/HEVC).
     pub disposable: bool,
     pub size: u32,
-    /// TS: index of the packet holding the first byte; PS: byte offset of its PES packet.
+    /// TS: byte offset of the packet holding the first byte; PS: byte offset of its PES packet.
     pub(crate) pos: u64,
     /// Offset of the first byte within that packet's elementary-stream payload.
     pub(crate) offset: u32,
@@ -356,3 +356,5 @@ impl Unwrap {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod work_tests;
