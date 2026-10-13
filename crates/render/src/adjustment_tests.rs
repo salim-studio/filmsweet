@@ -218,3 +218,87 @@ fn transform_shutter_on_an_adjustment_layer_spans_one_sequence_frame() {
     assert!(diff(61) < 1e-4, "frame after the move is blurred");
     assert!(diff(45) > 1e-2, "moving frame is sharp");
 }
+
+fn dissolve(s: &mut Scene, track: usize, from: Option<ClipId>, to: Option<ClipId>, start: i64) {
+    let tr = filmcraft_project::Transition {
+        id: filmcraft_project::TransitionId(900 + start as u64),
+        effect: find_effect("cross_dissolve").unwrap().instance(),
+        start: R.tick_of(start),
+        duration: R.tick_of(12),
+        from,
+        to,
+        align: Default::default(),
+        reverse: false,
+    };
+    s.p.sequence_mut(s.seq).unwrap().video_tracks[track].transitions.push(tr);
+}
+
+fn at(s: &Scene, frame: i64) -> [f32; 4] {
+    render_sequence(&s.p, s.seq, R.tick_of(frame), RenderOptions::default(), &s.map).get(160, 90)
+}
+
+/// A dissolve at the start of an adjustment layer (Cmd+D) fades its effects in, and one at its
+/// end fades them out, instead of leaving them off for the transition and cutting in after it.
+#[test]
+fn a_dissolve_fades_the_adjustment_layers_effects_in_and_out() {
+    let mut s = scene(2);
+    let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
+    place(&mut s.p, s.seq, 0, red);
+    let adj = adjustment(&mut s.p, s.seq, 1);
+    fx(&mut s, adj, "invert");
+    dissolve(&mut s, 1, None, Some(adj), 0);
+    dissolve(&mut s, 1, Some(adj), None, 36);
+    // fade in over frames 0..12: red → halfway → cyan
+    assert!(near(at(&s, 0), [1.0, 0.0, 0.0], 1e-3), "{:?}", at(&s, 0));
+    assert!(near(at(&s, 3), [0.75, 0.25, 0.25], 1e-3), "a quarter in: {:?}", at(&s, 3));
+    assert!(near(at(&s, 6), [0.5, 0.5, 0.5], 1e-3), "halfway in: {:?}", at(&s, 6));
+    assert!(near(at(&s, 24), [0.0, 1.0, 1.0], 1e-3), "{:?}", at(&s, 24));
+    // fade out over frames 36..48
+    assert!(near(at(&s, 42), [0.5, 0.5, 0.5], 1e-3), "halfway out: {:?}", at(&s, 42));
+    assert!(near(at(&s, 45), [0.75, 0.25, 0.25], 1e-3), "three quarters out: {:?}", at(&s, 45));
+}
+
+/// The layer's own opacity and blend mode still count during the fade.
+#[test]
+fn a_dissolve_on_an_adjustment_layer_keeps_its_opacity_and_blend_mode() {
+    let mut s = scene(2);
+    let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
+    place(&mut s.p, s.seq, 0, red);
+    let adj = adjustment(&mut s.p, s.seq, 1);
+    fx(&mut s, adj, "invert");
+    clip(&mut s, adj).effect_mut("opacity").unwrap().params.get_mut("opacity").unwrap().value = ParamValue::Float(50.0);
+    dissolve(&mut s, 1, None, Some(adj), 0);
+    // halfway through the fade, at 50 % opacity: a quarter of the way to cyan
+    assert!(near(at(&s, 6), [0.75, 0.25, 0.25], 1e-3), "{:?}", at(&s, 6));
+    // Multiply (red × cyan = black) fades from red to black
+    let op = clip(&mut s, adj).effect_mut("opacity").unwrap();
+    op.params.get_mut("opacity").unwrap().value = ParamValue::Float(100.0);
+    op.params.get_mut("blend").unwrap().value =
+        ParamValue::Choice(filmcraft_project::effect::BLEND_MODES.iter().position(|b| *b == "Multiply").unwrap() as u32);
+    assert!(near(at(&s, 6), [0.5, 0.0, 0.0], 1e-3), "{:?}", at(&s, 6));
+    assert!(near(at(&s, 24), [0.0, 0.0, 0.0], 1e-3), "{:?}", at(&s, 24));
+}
+
+/// A frame where a transition touches an adjustment layer is composited on the CPU, which knows
+/// how to fade one; the layered (GPU) plan does not.
+#[test]
+fn a_transition_with_an_adjustment_layer_is_not_planned_as_layers() {
+    let mut s = scene(2);
+    let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
+    let blue = matte(&mut s.p, &mut s.map, [0.0, 0.0, 1.0, 1.0]);
+    place(&mut s.p, s.seq, 0, red);
+    // V2: a blue clip from 0 to 24, then an adjustment layer from 24, a dissolve centred on the cut
+    let b = place(&mut s.p, s.seq, 1, blue);
+    clip(&mut s, b).duration = R.tick_of(24);
+    let a = s.p.add_item("Adjustment Layer", Label::Lavender, ItemKind::AdjustmentLayer { width: 320, height: 180, rate: R, duration: R.tick_of(48) }, None);
+    let mut ti = s.p.make_track_item(a, TrackKind::Video, R.tick_of(24), TimeRange::new(Tick::ZERO, R.tick_of(24)), R).unwrap();
+    ti.effects.insert(0, find_effect("invert").unwrap().instance());
+    let ac = ti.id;
+    s.p.sequence_mut(s.seq).unwrap().video_tracks[1].items.push(ti);
+    dissolve(&mut s, 1, Some(b), Some(ac), 18);
+    let q = s.p.sequence(s.seq).unwrap();
+    // frame 20 is still on the blue clip, but the dissolve into the adjustment layer shows
+    assert!(!crate::plan::layered_at(&s.p, q, R.tick_of(20)));
+    // halfway (frame 24): half blue, half the inverted red (cyan)
+    assert!(near(at(&s, 24), [0.0, 0.5, 1.0], 1e-3), "{:?}", at(&s, 24));
+}

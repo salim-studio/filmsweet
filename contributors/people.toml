@@ -81,3 +81,6 @@ sync_github_name = false
 [people.Silvertree2010]
 display_name = "Netter"
 sync_github_name = false
+
+[people.webdevtodayjason]
+display_name = "Jason Brashear"
