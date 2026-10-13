@@ -594,7 +594,8 @@ impl Pps {
                 }
                 6 => {
                     let n_minus1 = r.read_ue()?;
-                    ensure!(n_minus1 <= 128, "slice_group_run_length out of range");
+                    // pic_size_in_map_units_minus1: one slice_group_id per map unit of the picture.
+                    ensure!(n_minus1 < sps.pic_width_in_mbs.saturating_mul(sps.pic_height_in_map_units), "pic_size_in_map_units out of range");
                     let n = n_minus1 + 1;
                     let bits = 32 - (num_slice_groups - 1).leading_zeros();
                     for _ in 0..n {
