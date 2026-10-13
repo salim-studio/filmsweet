@@ -11,8 +11,8 @@ use crate::{FrameRequest, MediaError, MediaInfo, MediaKind, MediaSource, Result,
 
 pub mod dng;
 pub mod exr;
-mod ycbcr_tiff;
 pub mod hdr;
+mod ycbcr_tiff;
 
 /// Default still duration (Premiere's preference default is 5 seconds).
 pub const DEFAULT_STILL_DURATION: Tick = Tick(5 * TICKS_PER_SECOND);
