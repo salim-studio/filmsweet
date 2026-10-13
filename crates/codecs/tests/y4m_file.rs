@@ -99,9 +99,17 @@ fn damaged_and_hostile_y4m_files_fail_without_panicking() {
         b[i] ^= 0x41;
         cases.push(b);
     }
-    for header in
-        ["W99999999 H99999999 F25:1", "W0 H4 F25:1", "W6 H4 F0:0", "W6 H4 F25:0", "W6 H4 F25:1 C411", "W6 H4 F25:1 Cbogus", "W6 H4 A0:0 F-5:1", "H4 F25:1"]
-    {
+    for header in [
+        "W99999999 H99999999 F25:1",
+        "W0 H4 F25:1",
+        "W6 H4 F0:0",
+        "W6 H4 F25:0",
+        "W6 H4 F25:1 C411",
+        "W6 H4 F25:1 Cbogus",
+        "W6 H4 A0:0 F-5:1",
+        "H4 F25:1",
+        "W6 H4 F1:9223372036854775807",
+    ] {
         cases.push(y4m(header, "FRAME", &[vec![0; 36]]));
     }
     for (i, b) in cases.into_iter().enumerate() {
