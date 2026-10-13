@@ -577,6 +577,25 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
 
+    // An existing clip dragged past the outer row previews its new destination (#1187).
+    if let Some(Drag::Move { clips, offset, new_track: Some((kind, band)), .. }) = app.tl.drag.clone() {
+        let preview = painter.with_clip_rect(band.intersect(content));
+        for clip in clips {
+            if let Some((track, it)) = seq.find_item(clip)
+                && seq.track(track).is_some_and(|t| t.kind == kind)
+            {
+                let start = (it.start + offset).max(Tick::ZERO);
+                let body = Rect::from_min_max(pos2(layout.x_of(start), band.min.y + 1.0), pos2(layout.x_of(start + it.duration), band.max.y - 1.0));
+                preview.rect_filled(body, 3.0, t.accent.gamma_multiply(0.4));
+                preview.rect_stroke(body, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+                if body.height() >= 20.0 {
+                    preview.text(body.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, &it.name, Tokens::ui(11.0), t.text);
+                }
+                app.auto.add(&format!("timeline.newTrackPreview.{}", clip.0), body.intersect(band), &it.name);
+            }
+        }
+    }
+
     // ---- track headers
     draw_headers(app, ui, seq, &rows, rect, vclip, aclip, &t);
     // divider between video and audio
@@ -1777,6 +1796,7 @@ fn preview_drag(app: &FilmcraftApp, seq: &Sequence, out: &mut HashMap<ClipId, (T
     };
     let Some(d) = &app.tl.drag else { return };
     match d {
+        Drag::Move { new_track: Some(_), .. } => {}
         Drag::Move { clips, offset, track_delta, .. } => {
             for c in clips {
                 if let Some((tid, it)) = seq.find_item(*c) {
@@ -2457,16 +2477,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     (Some(c), Some(s)) if c.kind == s.kind => c.index as i32 - s.index as i32,
                     _ => 0,
                 };
-                // #1104: past the last track of the clips' kind, a new track (only for clips of one track)
-                let new_track = start_row.filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(t, _)| t == start_track))).and_then(|s| {
-                    let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
-                    new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
-                });
-                if let Some((_, band)) = new_track {
-                    let (x0, x1) = (layout.x_of((first + offset).max(Tick::ZERO)), layout.x_of((last + offset).max(Tick::ZERO)));
-                    let r = Rect::from_min_max(pos2(x0, band.min.y + 1.0), pos2(x1, band.max.y - 1.0));
-                    ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Inside);
-                }
+                // A linked or multitrack selection gets one destination per source track.
+                let new_track = start_row
+                    .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(tid, _)| seq.track(tid).is_some_and(|t| !t.locked))))
+                    .and_then(|s| {
+                        let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
+                        new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
+                    });
                 Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, new_track, copy: mods.alt })
             }
             Drag::Trim { clip, edge, mode, from, .. } => seq.find_item(clip).map(|(_, it)| {
