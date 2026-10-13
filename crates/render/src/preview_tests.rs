@@ -234,6 +234,7 @@ fn effect_costs() {
             clip_name: "x",
             project: None,
             env: None,
+            frame_rate: 24.0,
             working: filmcraft_color::WorkingSpace::Rec709,
         };
         apply(&mut img, &e, &cx);
