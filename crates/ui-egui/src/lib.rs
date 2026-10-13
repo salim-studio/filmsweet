@@ -1433,6 +1433,15 @@ impl FilmcraftApp {
         self.menu_sent = items;
     }
 
+    /// Whether keyboard focus is on a dock divider or a floating panel's resize grip, as drawn last pass.
+    fn divider_focused(&self, ctx: &egui::Context) -> bool {
+        let Some(focused) = ctx.memory(|m| m.focused()) else { return false };
+        self.auto
+            .previous
+            .iter()
+            .any(|e| e.response_id == Some(focused) && (e.id.starts_with("dock.gutter.") || (e.id.starts_with("panel.float.") && e.id.ends_with(".resize"))))
+    }
+
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let workspaces = (dock::names(&self.workspaces), self.ui.workspace.clone());
         if self.bindings_rev != self.session.shortcuts.revision || workspaces != self.menu_workspaces {
@@ -1440,7 +1449,10 @@ impl FilmcraftApp {
             self.bindings = menus::bindings(self);
             self.bindings_rev = self.session.shortcuts.revision;
         }
-        if ctx.egui_wants_keyboard_input() || self.dialog == Some(Dialog::Shortcuts) {
+        // A pane divider or floating-panel grip keeps focus after a pointer drag so arrows can
+        // nudge it, but it takes no other key: Space and the other shortcuts keep working (#1482).
+        let divider_focused = self.divider_focused(ctx);
+        if (ctx.egui_wants_keyboard_input() && !divider_focused) || self.dialog == Some(Dialog::Shortcuts) {
             return;
         }
         // A focused text field takes every unmodified key, including the ones our shortest
@@ -1496,6 +1508,10 @@ impl FilmcraftApp {
                 // Vietnamese Telex combines into diacritics (#243). Chords with a modifier stay:
                 // Ctrl+S and friends are not something a text field or an IME consumes.
                 if lets_text_field_keep(*m, text_focused) {
+                    continue;
+                }
+                // The focused divider consumes the arrows itself (egui matches them with any Shift/Alt).
+                if divider_focused && matches!(k, egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown) {
                     continue;
                 }
                 if i.consume_key(*m, *k) {
