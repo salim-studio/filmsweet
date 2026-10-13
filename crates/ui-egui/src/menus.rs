@@ -842,6 +842,7 @@ pub fn menu_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let mut clicked: Option<String> = None;
     egui::MenuBar::new().config(egui::containers::menu::MenuConfig::new().style(crate::theme::menu_style)).ui(ui, |ui| {
+        let mut titles = Vec::with_capacity(MENUS.len());
         for top in MENUS {
             let mine: Vec<&MenuItem> = items.iter().filter(|i| i.path.first().map(String::as_str) == Some(top)).collect();
             let r = ui.menu_button(app.ui.language.tr(top), |ui| {
@@ -852,10 +853,27 @@ pub fn menu_bar(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
                 menu_level(ui, &mine, 1, &mut clicked, &mut app.auto, &labels);
             });
             app.auto.add(&format!("menu.{top}"), r.response.rect, top);
+            titles.push(r.response);
         }
+        switch_on_hover(ui.ctx(), &titles);
     });
     if let Some(id) = clicked {
         let _ = invoke(app, &ctx, &id, json!({}));
+    }
+}
+
+/// Like a native menu bar (Windows, macOS): while one top-level menu is open, hovering another
+/// top-level title opens that menu instead (#1500). egui's `MenuBar` only switches on click.
+fn switch_on_hover(ctx: &egui::Context, titles: &[egui::Response]) {
+    let ids: Vec<egui::Id> = titles.iter().map(egui::Popup::default_response_id).collect();
+    let Some(open) = ids.iter().position(|id| egui::Popup::is_id_open(ctx, *id)) else { return };
+    // `hovered` is false where a popup covers the title (a tall submenu pushed up over the
+    // bar), so the pointer inside an open menu never switches it.
+    if let Some(i) = titles.iter().position(egui::Response::hovered)
+        && i != open
+    {
+        egui::Popup::open_id(ctx, ids[i]);
+        ctx.request_repaint();
     }
 }
 
@@ -1013,5 +1031,26 @@ mod tests {
         let reset = ws.iter().position(|it| it.id == "window.workspace.reset");
         assert!(matches!((editing, reset), (Some(e), Some(r)) if e < r), "workspaces come before the layout commands");
         assert!(items.iter().any(|it| it.id == "file.save" && it.path == ["File"]));
+    }
+
+    /// #1500: like a native menu bar, while one menu is open hovering another title opens it.
+    #[test]
+    fn hovering_another_title_switches_the_open_menu() {
+        use egui_kittest::{Harness, kittest::Queryable};
+
+        let app = FilmcraftApp::new(filmcraft_engine::Session::default());
+        let mut harness = Harness::builder().with_size(egui::vec2(1200.0, 700.0)).build_ui_state(|ui, app| menu_bar(app, ui), app);
+        harness.run_steps(3);
+        // Nothing open: hovering a title does not open it.
+        harness.get_by_label("Edit").hover();
+        harness.run_steps(3);
+        assert!(harness.query_by_label_contains("Save All").is_none() && harness.query_by_label_contains("Undo").is_none());
+        harness.get_by_label("File").click();
+        harness.run_steps(3);
+        assert!(harness.query_by_label_contains("Save All").is_some(), "File menu did not open");
+        harness.get_by_label("Edit").hover();
+        harness.run_steps(4);
+        assert!(harness.query_by_label_contains("Save All").is_none(), "File menu should close");
+        assert!(harness.query_by_label_contains("Undo").is_some(), "Edit menu should open on hover");
     }
 }
