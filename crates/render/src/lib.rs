@@ -229,9 +229,14 @@ pub(crate) fn render_seq_tracks(project: &Project, seq: &Sequence, t: Tick, opts
             }
             let below = canvas.snapshot();
             let (adj, bl) = adjustment_layer(project, seq, item, t, opts, &tc, &below);
-            let mut out = below;
-            blend::composite(&mut out, &adj, 1.0, bl);
-            canvas.set(out);
+            if bl == Blend::Normal {
+                // The adjusted picture already replaces the original (see `adjustment_layer`).
+                canvas.set(adj);
+            } else {
+                let mut out = below;
+                blend::composite(&mut out, &adj, 1.0, bl);
+                canvas.set(out);
+            }
             continue;
         }
         match item_layer_ex(project, seq, item, t, opts, sources, &tc, true) {
@@ -290,12 +295,20 @@ fn adjustment_layer(project: &Project, seq: &Sequence, item: &TrackItem, t: Tick
         mask::apply_effect(&mut adj, e, &cx);
     }
     let (op, bl) = opacity_blend(item, mt);
-    // Adjustment layer opacity (and opacity masks, in sequence pixels) mix adjusted over original.
-    adj.scale_alpha(op);
-    mask::apply_opacity_masks(&mut adj, item, mt, opts.scale);
+    // Adjustment layer opacity (and opacity masks, in sequence pixels) weigh adjusted against original.
+    let mut weight = Image::filled(w, h, [op; 4]);
+    mask::apply_opacity_masks(&mut weight, item, mt, opts.scale);
     // Motion moves / scales the adjustment layer's frame: it only applies inside it.
     if let Some(region) = adjustment_region(seq, item, project, mt, opts.scale, w, h) {
         let cov: Vec<f32> = region.px.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
+        mask::scale_by(&mut weight, &cov);
+    }
+    let cov: Vec<f32> = weight.px.as_chunks::<4>().0.iter().map(|p| p[3]).collect();
+    if bl == Blend::Normal {
+        // The adjusted picture replaces the original instead of being drawn over it: what
+        // Transform or Basic 3D leave empty shows nothing of the untransformed picture (#1524).
+        mask::mix(&mut adj, below, &cov);
+    } else {
         mask::scale_by(&mut adj, &cov);
     }
     (adj, bl)
