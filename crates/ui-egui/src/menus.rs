@@ -952,7 +952,11 @@ fn menu_entry(ui: &mut egui::Ui, it: &MenuItem, auto: &mut crate::automation::Re
     if let Some(s) = &it.shortcut {
         b = b.shortcut_text(shortcut_text(s));
     }
-    let r = ui.add_enabled(it.enabled, b);
+    let mut r = ui.add_enabled(it.enabled, b);
+    // Help items say whether they open the web browser (and which address) or stay in FilmCraft
+    if let Some(hint) = crate::links::menu_hint(&it.id) {
+        r = r.on_hover_text(hint);
+    }
     auto.add(&format!("menu.{}", it.id), r.rect, &it.label);
     if let Some(color) = swatch {
         paint_swatch(ui, r.rect, color);
