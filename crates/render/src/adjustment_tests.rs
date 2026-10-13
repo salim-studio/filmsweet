@@ -157,6 +157,26 @@ fn motion_and_masks_restrict_the_region() {
 }
 
 #[test]
+fn a_transform_replaces_the_picture_below() {
+    // Premiere: Transform on an adjustment layer moves the composite below; it is not a copy
+    // drawn over the untouched original (#1524).
+    let mut s = scene(2);
+    let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
+    place(&mut s.p, s.seq, 0, red);
+    let adj = adjustment(&mut s.p, s.seq, 1);
+    fx(&mut s, adj, "transform");
+    let tf = clip(&mut s, adj).effects.iter_mut().find(|e| e.effect == "transform").unwrap();
+    tf.params.get_mut("scale_height").unwrap().value = ParamValue::Float(50.0);
+    let img = render(&s);
+    assert!(near(img.get(160, 90), [1.0, 0.0, 0.0], 1e-4), "{:?}", img.get(160, 90));
+    assert_eq!(img.get(10, 10), [0.0; 4], "the original is gone outside the scaled picture");
+    // at 50 % opacity: half the original, half the (empty) transformed picture
+    clip(&mut s, adj).effect_mut("opacity").unwrap().params.get_mut("opacity").unwrap().value = ParamValue::Float(50.0);
+    let c = render(&s).get(10, 10);
+    assert!((c[0] - 0.5).abs() < 1e-3 && (c[3] - 0.5).abs() < 1e-3, "{c:?}");
+}
+
+#[test]
 fn nested_adjustment_layers_stay_in_their_sequence() {
     let mut s = scene(2);
     let red = matte(&mut s.p, &mut s.map, [1.0, 0.0, 0.0, 1.0]);
