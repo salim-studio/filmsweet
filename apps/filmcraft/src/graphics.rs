@@ -5,6 +5,13 @@
 //! `igvk64.dll`, #512 #413; AMD's OpenGL driver `atio6axx.dll`, #477), where no Rust error
 //! handling runs, so every launch died the same way until the user set `WGPU_BACKEND` by hand.
 //!
+//! # The adapter
+//! In the default mode on Windows the adapter is wgpu's own choice, except for a GPU that Vulkan
+//! lists through two installed versions of one driver: there the newer one draws, because a
+//! window drawn through the stale one dies inside the driver (`amdvlk64.dll`; see
+//! `filmcraft_gpu::adapter`). That case is avoided up front instead of left to the fallback
+//! below, which would end in DirectX 12 only.
+//!
 //! # When a start counts as failed
 //! The data folder keeps the mode to start with and the failed starts in a row in it
 //! ([`STATE_FILE`]). Each start also leaves its own attempt file (`graphics-start/<pid>-<n>.json`,
@@ -435,7 +442,16 @@ fn apply_for(options: &mut NativeOptions, mode: Mode, backend_override: Option<B
         // Vulkan and DX12 both: forcing DX12 alone sends shaders through FXC (which rejects
         // fx.wgsl, silently falling back to the CPU) and leaves machines without DX12 with no
         // backend at all.
-        Mode::Default if windows => create.instance_descriptor.backends = backend_override.unwrap_or(Backends::PRIMARY),
+        Mode::Default if windows => {
+            create.instance_descriptor.backends = backend_override.unwrap_or(Backends::PRIMARY);
+            // wgpu's own choice of adapter, except for a GPU that Windows lists through two
+            // versions of one driver: the first entry can be a stale one that crashes inside the
+            // driver (`filmcraft_gpu::adapter`). A selector replaces `power_preference`
+            // (`WGPU_POWER_PREF`), so it takes that along.
+            let power = create.power_preference;
+            create.native_adapter_selector =
+                Some(Arc::new(move |adapters: &[wgpu::Adapter], surface: Option<&wgpu::Surface<'_>>| filmcraft_gpu::adapter::pick(adapters, surface, power)));
+        }
         Mode::Default => {}
         // Without Vulkan, whose driver is what crashes; GPU effects may fall back to the CPU.
         Mode::Dx12 => create.instance_descriptor.backends = Backends::DX12,
@@ -495,7 +511,19 @@ mod tests {
         assert_eq!(backends, Backends::PRIMARY);
         assert!(!backends.contains(Backends::GL));
         assert!(backends.contains(Backends::DX12) && backends.contains(Backends::VULKAN));
-        assert!(!selector);
+        // and chooses the adapter itself: a GPU listed through two versions of one driver
+        assert!(selector);
+    }
+
+    #[test]
+    fn only_the_windows_default_and_software_modes_choose_the_adapter() {
+        for backend_override in [None, Some(Backends::VULKAN), Some(Backends::DX12)] {
+            assert!(configured(Mode::Default, backend_override, true).1);
+            // elsewhere, and in DirectX 12 only mode, the adapter is wgpu's own choice
+            assert!(!configured(Mode::Default, backend_override, false).1);
+            assert!(!configured(Mode::Dx12, backend_override, true).1);
+        }
+        assert!(configured(Mode::Software, None, true).1 && configured(Mode::Software, None, false).1);
     }
 
     #[test]
