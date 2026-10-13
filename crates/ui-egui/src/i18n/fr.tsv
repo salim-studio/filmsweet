@@ -232,6 +232,9 @@
 	Normalize Mix Track…	Normaliser la piste de mixage…
 	Offline File…	Fichier hors ligne…
 	Open Project…	Ouvrir un projet…
+	Open Recent	Ouvrir un fichier récent
+	Clear Recent Files	Effacer la liste des fichiers récents
+	Recent	Récents
 	Optical Flow	Flux optique
 	Overwrite	Écraser
 	Paste	Coller
@@ -2922,6 +2925,10 @@
 	Sample Size	Taille d'échantillon
 	16 bit	16 bits
 	24 bit	24 bits
+	32 bit	32 bits
+	32 bit float	32 bits à virgule flottante
+	FLAC stores whole-number samples only	FLAC ne stocke que des échantillons entiers
+	MXF export writes integer PCM only	L’export MXF n’écrit que du PCM entier
 	Size / Opacity	Taille / opacité
 	Image Overlay	Superposition d'image
 	PNG or JPEG file	Fichier PNG ou JPEG
