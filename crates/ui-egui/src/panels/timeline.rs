@@ -1903,7 +1903,7 @@ fn move_transition_preview(app: &FilmcraftApp, seq: &Sequence, trn: &filmcraft_p
     if lands.len() != endpoints.len() {
         return None;
     }
-    let (dest, delta) = lands[0];
+    let &(dest, delta) = lands.first()?;
     lands.iter().skip(1).all(|l| *l == (dest, delta)).then(|| (trn.start + delta, trn.end() + delta, dest))
 }
 
