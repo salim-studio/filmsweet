@@ -230,6 +230,9 @@
 	Normalize Mix Track…	Normalizar pista de mezcla…
 	Offline File…	Archivo sin conexión…
 	Open Project…	Abrir proyecto…
+	Open Recent	Archivos recientes
+	Clear Recent Files	Vaciar archivos recientes
+	Recent	Recientes
 	Optical Flow	Flujo óptico
 	Overwrite	Sobrescribir
 	Paste	Pegar
@@ -2926,6 +2929,10 @@
 	Sample Size	Tamaño de muestra
 	16 bit	16 bits
 	24 bit	24 bits
+	32 bit	32 bits
+	32 bit float	32 bits de coma flotante
+	FLAC stores whole-number samples only	FLAC solo guarda muestras enteras
+	MXF export writes integer PCM only	La exportación MXF solo escribe PCM entero
 	Size / Opacity	Tamaño / opacidad
 	Image Overlay	Superposición de imagen
 	PNG or JPEG file	Archivo PNG o JPEG
@@ -3596,3 +3603,9 @@
 	Export the labels to a preset file…	Exportar las etiquetas a un archivo de ajuste preestablecido…
 	Show the presets folder	Mostrar la carpeta de ajustes preestablecidos
 	Delete this preset	Eliminar este ajuste preestablecido
+	Opens in your web browser: {url}	Se abre en el navegador web: {url}
+	Saves this session's log and shows it in your file manager.	Guarda el registro de esta sesión y lo muestra en el explorador de archivos.
+	Shows a report on this computer.	Muestra un informe sobre este equipo.
+	Shows the version, community links and credits in a FilmCraft window.	Muestra la versión, los enlaces de la comunidad y los créditos en una ventana de FilmCraft.
+	Couldn't open your web browser	No se pudo abrir el navegador web
+	Open this address in your browser yourself:	Abre esta dirección tú mismo en el navegador:
