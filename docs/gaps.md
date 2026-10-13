@@ -85,7 +85,9 @@ platforms** G4, G9, G17; **performance** G16; **ecosystem** G11; **measurement**
   (Windows), then a software adapter (WARP, lavapipe, llvmpipe) with CPU compositing, and keeps
   the mode that works; a start-up error wgpu reports moves on in the same process. A fallback mode
   shows a notice with Use Default Graphics; `--graphics default|dx12|software` picks a mode by
-  hand. An explicit `WGPU_BACKEND` stays in charge.
+  hand. An explicit `WGPU_BACKEND` stays in charge. On Windows, a GPU that Vulkan lists through two
+  installed versions of one driver (GPUs on different driver packages) draws with the newer one
+  instead of dying inside the stale one (`filmcraft_gpu::adapter`).
 - **Missing:** a launch that never fails, and CI that runs the gates.
 - **Evidence:** open issues: macOS 12 Monterey aborts on a missing VideoToolbox symbol (#468,
   #661, #655), Intel UHD graphics (`igvk64.dll`, #512), Windows 11 does not run or fails after setup
