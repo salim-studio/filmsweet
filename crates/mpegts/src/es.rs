@@ -177,7 +177,6 @@ pub struct FrameInfo {
 
 const ADTS_RATES: [u32; 13] = [96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000, 12_000, 11_025, 8_000, 7_350];
 
-/// Parse the frame header at the start of `b` (MPEG audio, ADTS, AC-3, E-AC-3).
 /// Bytes of the audio frame whose header starts `b` (MPEG audio, ADTS, LATM, AC-3, E-AC-3), or
 /// `None` without a valid header there. For containers that store frames in chunks that need not
 /// follow them (AVI): the frames are found again with it.
@@ -407,8 +406,9 @@ impl Splitter {
             return;
         }
         // PES-delimited modes resolve a unit's position from `pos` right here and never look a
-        // chunk up again, so remembering chunks there would only grow without bound
-        if matches!(self.mode, Mode::MpegVideo | Mode::Audio(_)) {
+        // chunk up again, so remembering chunks there would only grow without bound (NAL streams
+        // keep theirs: an access unit can start inside a PES; `keep_from` prunes them)
+        if matches!(self.mode, Mode::MpegVideo | Mode::Audio(_) | Mode::Nal { .. }) {
             self.chunks.push_back((pos, self.es_pos));
         }
         if let Some(o) = self.open.as_mut()
@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn pes_delimited_modes_do_not_retain_chunks() {
-        for codec in [Codec::LpcmBluray, Codec::H264, Codec::Unknown(0x99)] {
+        for codec in [Codec::LpcmBluray, Codec::Unknown(0x99)] {
             let mut s = Splitter::new(&codec);
             for k in 0..5000u64 {
                 s.pes_start(Some(k as i64), None);
