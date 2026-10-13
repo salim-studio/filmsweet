@@ -472,3 +472,94 @@ fn locked_edges_do_not_preview_a_trim() {
         }
     }
 }
+
+fn move_existing_clip_to_a_new_track(audio: bool, linked: bool) {
+    let mut d = Driver::demo();
+    d.exec("sequence.linkedSelection", json!({"on": linked}));
+    d.exec("sequence.snap", json!({"on": false}));
+    d.ok("ui.set", json!({"timeline":{"videoTrackHeight":32,"audioTrackHeight":32}}));
+    d.frames(6);
+    let q = d.app().session.active_sequence().unwrap();
+    let tracks = if audio { &q.audio_tracks } else { &q.video_tracks };
+    let count = tracks.len();
+    let clip = tracks[0].items[0].id;
+    let original = q.find_item(clip).unwrap().1.clone();
+    let other = if audio { &q.video_tracks } else { &q.audio_tracks };
+    let other_count = other.len();
+    let partner = linked.then(|| {
+        assert!(original.link.is_some());
+        other.iter().flat_map(|t| &t.items).find(|i| i.link == original.link).unwrap().clone()
+    });
+    let layout = d.app().tl.layout.as_ref().unwrap();
+    let row = layout.rows.iter().find(|r| r.track == tracks[0].id).unwrap();
+    let outer = layout.rows.iter().find(|r| r.track == tracks.last().unwrap().id).unwrap();
+    let from = egui::pos2(layout.x_of(original.start + filmcraft_time::Tick(original.duration.0 / 2)), row.rect.min.y + 8.0);
+    let to = egui::pos2(from.x, if audio { outer.rect.max.y + 8.0 } else { outer.rect.min.y - 8.0 });
+    assert!(layout.content.contains(to));
+    assert!(layout.row_at(to.y).is_none());
+    let before = d.app().session.project.clone();
+    let undo = d.app().session.history.undo.len();
+    d.harness.input_mut().events.push(egui::Event::PointerMoved(from));
+    d.frames(1);
+    d.harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Default::default(),
+    });
+    d.frames(1);
+    for i in 1..=12 {
+        d.harness.input_mut().events.push(egui::Event::PointerMoved(from + (to - from) * (i as f32 / 12.0)));
+        d.frames(1);
+    }
+    // A frame updates the gesture, then the next frame paints its destination.
+    d.frames(2);
+    let preview = d.ok("ui.elements", json!({"prefix":format!("timeline.newTrackPreview.{}",clip.0)}));
+    assert_eq!(preview.as_array().unwrap().len(), 1, "new destination is shown during the drag");
+    assert_eq!(*d.app().session.project, *before);
+    assert_eq!(d.app().session.history.undo.len(), undo);
+    d.harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
+    d.frames(2);
+    let q = d.app().session.active_sequence().unwrap();
+    let tracks = if audio { &q.audio_tracks } else { &q.video_tracks };
+    assert_eq!(tracks.len(), count + 1, "drop creates a new outer track");
+    assert_eq!(q.find_item(clip).unwrap().0, tracks.last().unwrap().id);
+    assert_eq!(q.find_item(clip).unwrap().1, &original);
+    let other = if audio { &q.video_tracks } else { &q.audio_tracks };
+    assert_eq!(other.len(), other_count + usize::from(linked));
+    if let Some(partner) = partner {
+        assert_eq!(q.find_item(partner.id).unwrap().0, other.last().unwrap().id);
+        assert_eq!(q.find_item(partner.id).unwrap().1, &partner);
+    }
+    assert_eq!(d.app().session.history.undo.len(), undo + 1);
+    let after = d.app().session.project.clone();
+    d.exec("edit.undo", json!({}));
+    assert_eq!(*d.app().session.project, *before);
+    d.exec("edit.redo", json!({}));
+    assert_eq!(*d.app().session.project, *after);
+}
+
+#[test]
+fn existing_video_clip_drag_above_tracks_adds_a_track() {
+    move_existing_clip_to_a_new_track(false, false);
+}
+
+#[test]
+fn existing_audio_clip_drag_below_tracks_adds_a_track() {
+    move_existing_clip_to_a_new_track(true, false);
+}
+
+#[test]
+fn linked_video_drag_adds_video_and_audio_tracks() {
+    move_existing_clip_to_a_new_track(false, true);
+}
+
+#[test]
+fn linked_audio_drag_adds_audio_and_video_tracks() {
+    move_existing_clip_to_a_new_track(true, true);
+}
