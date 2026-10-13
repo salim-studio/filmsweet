@@ -18,6 +18,7 @@ fn cx(px_scale: f32) -> FxCtx<'static> {
         clip_name: "x",
         project: None,
         env: None,
+        frame_rate: 24.0,
         working: filmcraft_color::WorkingSpace::Rec709,
     }
 }
