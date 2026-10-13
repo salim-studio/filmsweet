@@ -1677,7 +1677,7 @@ fn build() -> Vec<CommandSpec> {
             })?;
             Ok(Value::Null)
         }),
-        cmd!("edit.rippleDeleteHead", "Ripple Delete Head Frame", ["Edit"], None, r#"{"clip":id}?"#, has_selection, |s, p| {
+        cmd!("edit.rippleDeleteHead", "Ripple Delete Head Frame", ["Edit"], None, r#"{"clips":[id]?,"clip":id?}"#, has_selection, |s, p| {
             // #1357: remove the head — from each selected clip's in point through the playhead —
             // and ripple the sequence closed. Linked clips ripple as one group (the engine's
             // group trim moves every member's in point by one delta and shifts the synced
@@ -1718,11 +1718,11 @@ fn build() -> Vec<CommandSpec> {
                         }
                         continue;
                     }
-                    let before = live[0].1;
+                    let start = live.iter().map(|(_, s, _)| *s).min().unwrap_or(ph);
                     edit::ripple_trim_group(q, &ids, Edge::In, head, ctx)?;
                     if st.ripple_sequence_markers {
-                        let after = q.find_item(live[0].0).map(|(_, i)| i.start).unwrap_or(before);
-                        crate::sequence_tools::ripple_markers(&mut q.markers, after, -(after - before));
+                        // the head [start, start + head) closes: later markers move back by it
+                        crate::sequence_tools::ripple_markers(&mut q.markers, start + head, Tick::ZERO - head);
                     }
                 }
                 Ok(())

@@ -86,3 +86,23 @@ fn ripple_delete_head_past_the_end_removes_the_whole_clip() {
     assert_eq!(range(&s, pic3), (f(&s, 48), f(&s, 96)), "later clips closed the whole 48-frame gap");
     assert_eq!(range(&s, snd3), (f(&s, 48), f(&s, 96)));
 }
+
+/// With Ripple Sequence Markers on, markers after the removed head move back with the clips, and
+/// markers inside the head go with it.
+#[test]
+fn ripple_delete_head_ripples_sequence_markers() {
+    let mut s = Session::default();
+    let [(_, _), (pic2, _), (_, _), (_, _)] = four_clips(&mut s);
+    s.state.ripple_sequence_markers = true;
+    let at = |s: &Session, n: i64| s.sequence_rate().tick_of(n).0;
+    for (frame, name) in [(30, "before"), (52, "inside"), (120, "after")] {
+        s.execute("markers.add", json!({"time": at(&s, frame), "name": name})).unwrap();
+    }
+    s.set_playhead(f(&s, 60));
+    s.state.selection = vec![pic2];
+
+    s.execute("edit.rippleDeleteHead", json!({})).unwrap();
+    let q = s.active_sequence().unwrap();
+    let markers: Vec<(String, Tick)> = q.markers.iter().map(|m| (m.name.clone(), m.start)).collect();
+    assert_eq!(markers, vec![("before".to_string(), f(&s, 30)), ("after".to_string(), f(&s, 108))], "the 12-frame head closes");
+}
