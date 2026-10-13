@@ -874,11 +874,14 @@ mod tests {
     fn language_commands_switch_and_persist_without_a_document() {
         let mut app = crate::FilmcraftApp::new(filmcraft_engine::Session::default());
         let ctx = egui::Context::default();
-        crate::menus::invoke(&mut app, &ctx, "app.language.japanese", serde_json::json!({})).unwrap();
-        assert_eq!(app.ui.language, Language::Ja);
-        let saved = serde_json::to_string(&app.ui).unwrap();
-        let restored: crate::state::UiState = serde_json::from_str(&saved).unwrap();
-        assert_eq!(restored.language, Language::Ja);
+        // Japanese needs an installed font (see `japanese_needs_an_installed_font`); skip that step without one
+        if craft_japanese_font() || system_japanese_font().is_some() {
+            crate::menus::invoke(&mut app, &ctx, "app.language.japanese", serde_json::json!({})).unwrap();
+            assert_eq!(app.ui.language, Language::Ja);
+            let saved = serde_json::to_string(&app.ui).unwrap();
+            let restored: crate::state::UiState = serde_json::from_str(&saved).unwrap();
+            assert_eq!(restored.language, Language::Ja);
+        }
         crate::menus::invoke(&mut app, &ctx, "app.language.spanish", serde_json::json!({})).unwrap();
         assert_eq!(app.ui.language, Language::Es);
         let prefs = serde_json::to_string(&app.session.prefs).unwrap();
