@@ -1182,7 +1182,7 @@ fn thirty_two_bit_audio_in_every_container() {
                 .output()
                 .unwrap();
             assert!(out.status.success(), "{name}: {}", String::from_utf8_lossy(&out.stderr));
-            out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect::<Vec<f32>>()
+            out.stdout.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect::<Vec<f32>>()
         };
         let reference = raw("f.wav");
         assert_eq!(reference.len(), 24_000 * 2);
