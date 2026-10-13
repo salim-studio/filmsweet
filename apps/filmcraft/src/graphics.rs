@@ -427,6 +427,11 @@ fn apply_for(options: &mut NativeOptions, mode: Mode, backend_override: Option<B
     let WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup else {
         return;
     };
+    // Nothing draws or dispatches indirectly, so wgpu's check of indirect arguments only costs a
+    // compute shader when the device is created, one that Metal can't compile on an Intel Iris
+    // Pro: the device is lost and the window never opens. `WGPU_VALIDATION_INDIRECT_CALL=1` turns
+    // the check back on.
+    create.instance_descriptor.flags = create.instance_descriptor.flags.difference(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL).with_env();
     match mode {
         // eframe's default (`WGPU_BACKEND`, else PRIMARY | GL), except on Windows: there it
         // includes GL. Creating that backend can crash inside AMD's atio6axx.dll before adapter
@@ -482,6 +487,22 @@ mod tests {
             panic!("default native options must create a wgpu instance");
         };
         (create.instance_descriptor.backends, create.native_adapter_selector.is_some())
+    }
+
+    #[test]
+    fn no_mode_validates_indirect_calls() {
+        if std::env::var_os("WGPU_VALIDATION_INDIRECT_CALL").is_some() {
+            return;
+        }
+        for mode in [Mode::Default, Mode::Dx12, Mode::Software] {
+            let mut options = NativeOptions::default();
+            apply_for(&mut options, mode, None, false);
+            let WgpuSetup::CreateNew(create) = options.wgpu_options.wgpu_setup else {
+                panic!("default native options must create a wgpu instance");
+            };
+            // Intel Metal can't compile the validation's compute shader, and the device is lost.
+            assert!(!create.instance_descriptor.flags.contains(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL), "{mode:?}");
+        }
     }
 
     #[test]
