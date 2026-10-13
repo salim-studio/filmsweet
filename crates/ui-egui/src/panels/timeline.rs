@@ -168,6 +168,7 @@ pub enum Drag {
         start: Pos2,
         before: Vec<ClipId>,
         add: bool,
+        individual: bool,
     },
     Divider,
     ZoomBar {
@@ -2438,7 +2439,7 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             // the video and audio tracks, #683)
             (_, Grab::Other(hit @ (Hit::Empty { .. } | Hit::None))) if layout.content.contains(p) => {
                 if resp.drag_started() {
-                    Some(Drag::Marquee { start: p, before: app.session.state.selection.clone(), add: mods.shift || mods.command })
+                    Some(Drag::Marquee { start: p, before: app.session.state.selection.clone(), add: mods.shift || mods.command, individual: mods.alt })
                 } else {
                     app.session.state.selection.clear();
                     app.session.state.edit_points.clear();
@@ -2581,20 +2582,22 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                 Some(Drag::Transition { id, edge, from, start, duration })
             }
             Drag::Volume(v) => Some(Drag::Volume(super::timeline_volume::drag(app, ui, seq, layout, v, p.y))),
-            Drag::Marquee { start, before, add } => {
+            Drag::Marquee { start, before, add, individual } => {
                 let r = Rect::from_two_pos(start, p);
                 ui.painter().rect_filled(r, 0.0, Color32::from_white_alpha(18));
                 ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, Color32::from_white_alpha(140)), StrokeKind::Inside);
                 // the clips in the box are selected as it grows and shrinks; only the release runs
                 // the command, so the drag is one selection change
                 let mut sel = if add { before.clone() } else { Vec::new() };
-                for c in filmcraft_engine::commands::with_links(&app.session, &marquee_clips(seq, layout, r)) {
+                let clips = marquee_clips(seq, layout, r);
+                let clips = if individual { clips } else { filmcraft_engine::commands::with_links(&app.session, &clips) };
+                for c in clips {
                     if !sel.contains(&c) {
                         sel.push(c);
                     }
                 }
                 app.session.state.selection = sel;
-                Some(Drag::Marquee { start, before, add })
+                Some(Drag::Marquee { start, before, add, individual })
             }
             other => Some(other),
         };
@@ -2644,13 +2647,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     let moved = seq.all_tracks().find_map(|tr| tr.transitions.iter().find(|x| x.id == id)).is_some_and(|x| (x.start, x.duration) != (start, duration));
                     moved.then(|| app.session.execute("sequence.setTransition", json!({"transition": id.0, "start": start.0, "duration": duration.0})))
                 }
-                Drag::Marquee { start, before, add } => {
+                Drag::Marquee { start, before, add, individual } => {
                     app.session.state.selection = before;
                     // egui ends a drag on Escape: that cancels the box, as in the Project panel
                     match resp.interact_pointer_pos() {
                         Some(end) if !ctx.input(|i| i.key_pressed(egui::Key::Escape)) => {
                             let ids: Vec<u64> = marquee_clips(seq, layout, Rect::from_two_pos(start, end)).iter().map(|c| c.0).collect();
-                            Some(app.session.execute("timeline.select", json!({"clips": ids, "add": add})))
+                            Some(app.session.execute("timeline.select", json!({"clips": ids, "add": add, "linked": !individual})))
                         }
                         _ => None,
                     }
