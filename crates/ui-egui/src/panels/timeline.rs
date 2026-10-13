@@ -233,6 +233,19 @@ fn new_track_at(seq: &Sequence, layout: &Layout, y: f32, vh: f32, ah: f32) -> Op
     }
 }
 
+/// The top of each of `n` video rows `vh` high, V1 first: V1 sits at the bottom of `area` and the
+/// tracks stack upward; `v_scroll` (clamped here) shifts them up. Also gives the largest `v_scroll`.
+/// The scroll range includes one empty track's height above the top track: without it, tracks that
+/// fill the area leave no space where a drop adds a new one (#1522).
+fn video_row_tops(area: Rect, n: usize, vh: f32, v_scroll: &mut f32) -> (Vec<f32>, f32) {
+    let total = (n + 1) as f32 * vh;
+    let v_off = (area.height() - total).max(0.0);
+    let max_vs = (total - area.height()).max(0.0);
+    *v_scroll = v_scroll.clamp(0.0, max_vs);
+    let tops = (0..n).map(|i| area.min.y + v_off + (n - i) as f32 * vh - (max_vs - *v_scroll)).collect();
+    (tops, max_vs)
+}
+
 /// How far the Timeline reaches, in seconds: ten minutes past the end of the sequence. Premiere
 /// Pro's Timeline does the same (on a 6 s sequence its view stops with 00:10:06 at the right
 /// edge). The view cannot be scrolled past it and the scroll bar spans it.
@@ -412,14 +425,9 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let vh = app.ui.timeline.video_track_h;
     let ah = app.ui.timeline.audio_track_h;
     let mut rows = Vec::new();
-    // Video: V1 at the bottom of the video area, stacking upward; v_scroll shifts up.
     let nv = seq.video_tracks.len();
-    let video_total = nv as f32 * vh;
-    let v_off = (video_area.height() - video_total).max(0.0);
-    let max_vs = (video_total - video_area.height()).max(0.0);
-    app.ui.timeline.v_scroll = app.ui.timeline.v_scroll.clamp(0.0, max_vs);
-    for (i, tr) in seq.video_tracks.iter().enumerate() {
-        let top = video_area.min.y + v_off + (nv - 1 - i) as f32 * vh - (max_vs - app.ui.timeline.v_scroll);
+    let (video_tops, max_vs) = video_row_tops(video_area, nv, vh, &mut app.ui.timeline.v_scroll);
+    for ((i, tr), top) in seq.video_tracks.iter().enumerate().zip(video_tops) {
         let rect = Rect::from_min_max(pos2(content.min.x, top), pos2(content.max.x, top + vh));
         rows.push(Row { track: tr.id, kind: TrackKind::Video, index: i, rect, lane: false });
     }
@@ -581,6 +589,25 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
             while x < content.max.x {
                 p.line_segment([pos2(x, row.max.y), pos2(x + row.height(), row.min.y)], Stroke::new(1.0, color));
                 x += 8.0;
+            }
+        }
+    }
+
+    // An existing clip dragged past the outer row previews its new destination (#1187).
+    if let Some(Drag::Move { clips, offset, new_track: Some((kind, band)), .. }) = app.tl.drag.clone() {
+        let preview = painter.with_clip_rect(band.intersect(content));
+        for clip in clips {
+            if let Some((track, it)) = seq.find_item(clip)
+                && seq.track(track).is_some_and(|t| t.kind == kind)
+            {
+                let start = (it.start + offset).max(Tick::ZERO);
+                let body = Rect::from_min_max(pos2(layout.x_of(start), band.min.y + 1.0), pos2(layout.x_of(start + it.duration), band.max.y - 1.0));
+                preview.rect_filled(body, 3.0, t.accent.gamma_multiply(0.4));
+                preview.rect_stroke(body, 3.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+                if body.height() >= 20.0 {
+                    preview.text(body.left_top() + vec2(4.0, 2.0), Align2::LEFT_TOP, &it.name, Tokens::ui(11.0), t.text);
+                }
+                app.auto.add(&format!("timeline.newTrackPreview.{}", clip.0), body.intersect(band), &it.name);
             }
         }
     }
@@ -1363,6 +1390,22 @@ fn draw_headers(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, rows:
     }
 }
 
+/// The Ruler's two strides, in frames: `(tick, label)`.
+///
+/// `label` is the first ladder step wide enough to keep timestamps apart (110 pt); `tick` is the
+/// finest divisor of `label` that still leaves ticks 12 pt apart. Deriving the tick stride as a
+/// divisor puts every label on a tick and keeps the ticks between labels evenly spaced.
+pub fn ruler_steps(frame_px: f64, base: i64) -> (i64, i64) {
+    // `FrameRate` is plain serde data, so a step past `base` can overflow; saturate instead.
+    let big = |k: i64| base.saturating_mul(k);
+    let steps = [1, 2, 5, 10, base / 2, base, big(2), big(5), big(10), big(15), big(30), big(60), big(120), big(300), big(600), big(1800), big(3600)];
+    let label_step = (*steps.iter().find(|s| **s as f64 * frame_px >= 110.0).unwrap_or(&big(3600))).max(1);
+    // Labels are at least 110 pt apart, so a divisor no larger than 9 keeps ticks >= 12 pt.
+    let minor =
+        (1..=9).rev().filter(|k| label_step.rem_euclid(*k) == 0).map(|k| label_step / k).find(|m| *m as f64 * frame_px >= 12.0).unwrap_or(label_step).max(1);
+    (minor, label_step)
+}
+
 fn draw_top(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq: &Sequence, layout: &Layout, t: &Tokens, seq_id: ItemId) {
     let p = ui.painter().clone();
     let rate = seq.settings.frame_rate;
@@ -1456,30 +1499,7 @@ fn draw_top(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect, seq: &Sequenc
     let marker_y = ruler.min.y + 2.0;
     let label_y = ruler.min.y + 24.0;
     let tick_base = ruler.max.y - 3.0;
-    let fps = rate.as_f64();
-    let base = rate.timecode_base();
-    let steps: Vec<i64> = vec![
-        1,
-        2,
-        5,
-        10,
-        base / 2,
-        base,
-        base * 2,
-        base * 5,
-        base * 10,
-        base * 15,
-        base * 30,
-        base * 60,
-        base * 120,
-        base * 300,
-        base * 600,
-        base * 1800,
-        base * 3600,
-    ];
-    let frame_px = layout.pps / fps;
-    let label_step = *steps.iter().find(|s| **s as f64 * frame_px >= 110.0).unwrap_or(&(base * 3600));
-    let minor = *steps.iter().find(|s| **s as f64 * frame_px >= 12.0).unwrap_or(&label_step);
+    let (minor, label_step) = ruler_steps(layout.pps / rate.as_f64(), rate.timecode_base());
     // In/Out band
     if seq.mark_in.is_some() || seq.mark_out.is_some() {
         let a = layout.x_of(seq.mark_in.unwrap_or(Tick::ZERO));
@@ -1792,6 +1812,7 @@ fn preview_drag(app: &FilmcraftApp, seq: &Sequence, out: &mut HashMap<ClipId, (T
     };
     let Some(d) = &app.tl.drag else { return };
     match d {
+        Drag::Move { new_track: Some(_), .. } => {}
         Drag::Move { clips, offset, track_delta, .. } => {
             for c in clips {
                 if let Some((tid, it)) = seq.find_item(*c) {
@@ -1937,6 +1958,7 @@ pub(crate) const CLIP_MENU: &[&[(&str, &str)]] = &[
         ("Multi-Camera", "clip.multicam"),
     ],
     &[("Label", "edit.label")],
+    &[("Add Marker", "markers.add")],
     &[("Speed/Duration…", "clip.speedDuration"), ("Scene Edit Detection…", "clip.sceneEditDetection")],
     &[
         ("Frame Hold Options…", "clip.frameHoldOptions"),
@@ -2280,6 +2302,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
             g => g,
         };
         let started = match (tool, grab) {
+            // a middle-button drag pans whatever the tool and whatever it starts on, as in the
+            // monitors (#824) and DaVinci Resolve (#1490); only a primary press is kept in
+            // `pressed`, so the pan starts from where the button went down
+            _ if resp.drag_started_by(egui::PointerButton::Middle) => {
+                let last = ctx.input(|i| i.pointer.press_origin()).unwrap_or(p);
+                Some(Drag::Pan { last, start_scroll: app.ui.timeline.target_scroll, start_v: app.ui.timeline.v_scroll })
+            }
             (_, Grab::Other(Hit::Ruler)) => Some(Drag::Scrub { initial: app.session.playhead() }),
             (Tool::Hand, _) => Some(Drag::Pan { last: p, start_scroll: app.ui.timeline.target_scroll, start_v: app.ui.timeline.v_scroll }),
             (Tool::Zoom, _) => {
@@ -2513,16 +2542,13 @@ fn interact(app: &mut FilmcraftApp, ui: &mut egui::Ui, seq: &Sequence, layout: &
                     ctx.set_cursor_icon(CursorIcon::NotAllowed);
                     Some(Drag::Move { clips, grab_tick, start_track, offset: Tick::ZERO, track_delta: 0, new_track: None, copy: mods.alt })
                 } else {
-                    // #1104: past the last track of the clips' kind, a new track (only for clips of one track)
-                    let new_track = start_row.filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(t, _)| t == start_track))).and_then(|s| {
-                        let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
-                        new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
-                    });
-                    if let Some((_, band)) = new_track {
-                        let (x0, x1) = (layout.x_of((first + offset).max(Tick::ZERO)), layout.x_of((last + offset).max(Tick::ZERO)));
-                        let r = Rect::from_min_max(pos2(x0, band.min.y + 1.0), pos2(x1, band.max.y - 1.0));
-                        ui.painter().rect_stroke(r, 3.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Inside);
-                    }
+                    // A linked or multitrack selection gets one destination per source track.
+                    let new_track = start_row
+                        .filter(|_| clips.iter().all(|c| seq.find_item(*c).is_some_and(|(tid, _)| seq.track(tid).is_some_and(|t| !t.locked))))
+                        .and_then(|s| {
+                            let (vh, ah) = (app.ui.timeline.video_track_h, app.ui.timeline.audio_track_h);
+                            new_track_at(seq, layout, p.y, vh, ah).filter(|(kind, _)| *kind == s.kind)
+                        });
                     Some(Drag::Move { clips, grab_tick, start_track, offset, track_delta, new_track, copy: mods.alt })
                 }
             }
@@ -3264,5 +3290,83 @@ mod new_track_tests {
         for y in [160.0, 202.0, 230.0, 480.0] {
             assert_eq!(at(y), None, "y = {y}");
         }
+    }
+
+    /// #1522: when the video tracks fill the video area, scrolling all the way up still leaves a
+    /// track's height of empty space above the top one, so a drop there can add a fourth track.
+    #[test]
+    fn a_full_video_area_scrolls_to_space_for_a_new_track() {
+        let mut p = Project::new("t");
+        let id = p.new_sequence("s", SequenceSettings::default(), 3, 1, None);
+        let seq = p.sequence(id).cloned().expect("sequence");
+        // video area 0..150 holds V1..V3 exactly; scrolled up as far as it goes
+        let area = Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 150.0));
+        let mut v_scroll = f32::MAX;
+        let (tops, _) = video_row_tops(area, 3, 50.0, &mut v_scroll);
+        let rows = seq
+            .video_tracks
+            .iter()
+            .zip(&tops)
+            .enumerate()
+            .map(|(index, (t, &y0))| Row {
+                track: t.id,
+                kind: TrackKind::Video,
+                index,
+                rect: Rect::from_min_max(pos2(0.0, y0), pos2(800.0, y0 + 50.0)),
+                lane: false,
+            })
+            .collect();
+        let layout = Layout {
+            content: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 500.0)),
+            ruler: Rect::from_min_max(pos2(0.0, -20.0), pos2(800.0, 0.0)),
+            rows,
+            pps: 100.0,
+            scroll: 0.0,
+            split_y: 150.0,
+        };
+        assert_eq!(new_track_at(&seq, &layout, 10.0, 50.0, 50.0), Some((TrackKind::Video, Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 50.0)))));
+        // scrolled to the bottom, V1..V3 fill the area as before
+        let mut v_scroll = 0.0;
+        assert_eq!(video_row_tops(area, 3, 50.0, &mut v_scroll).0, vec![100.0, 50.0, 0.0]);
+    }
+}
+
+#[cfg(test)]
+mod ruler_tests {
+    use super::ruler_steps;
+
+    /// Every combination keeps both minimums and has the tick stride divide the label stride.
+    #[test]
+    fn labels_sit_on_evenly_spaced_ticks() {
+        for base in [24, 25, 30, 50, 60, 120] {
+            for frame_px in [0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 8.0, 20.0, 400.0] {
+                let (minor, label) = ruler_steps(frame_px, base);
+                let what = format!("{base} fps at {frame_px} pt a frame: tick {minor}, label {label}");
+                assert!(minor >= 1, "{what}");
+                assert_eq!(label % minor, 0, "every label must fall on a tick: {what}");
+                assert!(minor as f64 * frame_px >= 12.0 || minor == label, "ticks at least 12 pt apart: {what}");
+                assert!(label as f64 * frame_px >= 110.0, "labels at least 110 pt apart: {what}");
+            }
+        }
+    }
+
+    /// At 24 fps and 100 pt a second the ruler labels every 2 s, with evenly spaced ticks between.
+    #[test]
+    fn a_24_fps_view_at_100_pt_a_second_labels_every_two_seconds() {
+        let (minor, label) = ruler_steps(100.0 / 24.0, 24);
+        assert_eq!(label, 48, "2 s at 24 fps");
+        assert_eq!(label % minor, 0);
+        assert!(minor as f64 * (100.0 / 24.0) >= 12.0);
+    }
+
+    /// Degenerate inputs still give non-zero strides that divide.
+    #[test]
+    fn damaged_rates_give_usable_strides() {
+        for frame_px in [f64::NAN, f64::INFINITY, 0.0, -1.0] {
+            let (minor, label) = ruler_steps(frame_px, 24);
+            assert!(minor >= 1 && label >= 1 && label % minor == 0, "{frame_px} pt a frame: tick {minor}, label {label}");
+        }
+        let (minor, label) = ruler_steps(1.0, i64::MAX);
+        assert!(minor >= 1 && label >= 1 && label % minor == 0, "an unrepresentable rate: tick {minor}, label {label}");
     }
 }
