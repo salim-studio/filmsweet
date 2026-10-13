@@ -231,6 +231,11 @@ fn effects_panel_lists_the_premiere_transition_folders() {
     for id in ["additive_dissolve_legacy", "clock_wipe_legacy", "cross_dissolve_legacy", "push_legacy", "whip_legacy"] {
         assert!(items.iter().any(|i| i == &format!("effects.item.{id}")), "{id}: {items:?}");
     }
+    // a folder whose own name has a slash keeps all of it (Noise Reduction/Restoration, not Restoration)
+    d.ok("ui.set", json!({"effectsSearch": "denoise"}));
+    d.frames(3);
+    let noise = d.ok("ui.elements", json!({"prefix": "effects.folder.Audio Effects/Noise Reduction/Restoration"}));
+    assert_eq!(noise[0]["label"], json!("Noise Reduction/Restoration"), "{noise}");
     // obsolete transitions stay out of the panel
     d.ok("ui.set", json!({"effectsSearch": "venetian"}));
     d.frames(3);
