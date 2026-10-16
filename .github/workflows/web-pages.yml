@@ -1,0 +1,62 @@
+name: Web App (Pages)
+
+# Deploys the official FilmCraft web build (the same app as app.getartcraft.com)
+# to https://salim-studio.github.io/filmsweet/
+# Uses the prebuilt filmcraft-web-*.zip from the upstream release: fast, no Rust build.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      web_version:
+        description: "Upstream filmcraft-web version (e.g. 0.8.0)"
+        default: "0.8.0"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download official web build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.web_version || '0.8.0' }}
+        run: |
+          rm -rf /tmp/web site && mkdir -p /tmp/web site
+          gh release download "v$VERSION" --repo storytold/filmcraft --pattern 'filmcraft-web-*.zip' --dir /tmp/web
+          unzip -o /tmp/web/filmcraft-web-*.zip -d /tmp/web/dist
+          # the zip may wrap files in one top-level folder: flatten it if so
+          if [ ! -f /tmp/web/dist/index.html ]; then
+            sub=$(find /tmp/web/dist -mindepth 1 -maxdepth 1 -type d | head -n 1)
+            if [ -n "$sub" ] && [ -f "$sub/index.html" ]; then
+              cp -r "$sub"/. site/
+            else
+              cp -r /tmp/web/dist/. site/
+            fi
+          else
+            cp -r /tmp/web/dist/. site/
+          fi
+          touch site/.nojekyll
+          ls -la site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
