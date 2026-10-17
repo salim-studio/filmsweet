@@ -1,0 +1,8 @@
+asset:        filmsweet-audio.png
+title:        README gallery: Audio workspace on the demo project
+author:       salim-slimani
+source:       original work (screenshot of the FilmSweet demo project, captured with the app's ui.screenshot control command)
+license:      MIT OR Apache-2.0
+license-file:
+added:        2026-10-17 by salim-slimani (agent)
+notes:        Audio workspace: the Audio Track Mixer with faders, pan, mute, solo and per-track meters, the Audio Clip Mixer and Effect Controls tabs, the Essential Sound panel, and the demo sequence with its audio tracks below. 1600x900. Every frame shown is FilmSweet's own procedurally generated demo media (crates/media/src/generators.rs); contains no third-party, Adobe or copyrighted footage. All UI icons are drawn in code; fonts are Inter and JetBrains Mono (OFL-1.1).
