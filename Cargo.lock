@@ -1673,7 +1673,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft"
+name = "filmsweet"
 version = "0.8.0"
 dependencies = [
  "arboard",
@@ -1681,14 +1681,14 @@ dependencies = [
  "cpal",
  "eframe",
  "egui",
- "filmcraft-engine",
- "filmcraft-export",
- "filmcraft-gpu",
- "filmcraft-platform",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-time",
- "filmcraft-ui-egui",
+ "filmsweet-engine",
+ "filmsweet-export",
+ "filmsweet-gpu",
+ "filmsweet-platform",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-time",
+ "filmsweet-ui-egui",
  "glob",
  "log",
  "muda",
@@ -1706,47 +1706,47 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-aac"
+name = "filmsweet-aac"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-ac3"
+name = "filmsweet-ac3"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-apv"
+name = "filmsweet-apv"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-audio-dsp"
+name = "filmsweet-audio-dsp"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
 ]
 
 [[package]]
-name = "filmcraft-automation"
+name = "filmsweet-automation"
 version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
- "filmcraft-engine",
- "filmcraft-time",
+ "filmsweet-engine",
+ "filmsweet-time",
  "image",
  "rmcp",
  "schemars",
@@ -1757,98 +1757,98 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-av1"
+name = "filmsweet-av1"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "rustix 1.1.5",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-avi"
+name = "filmsweet-avi"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
 ]
 
 [[package]]
-name = "filmcraft-bitstream"
+name = "filmsweet-bitstream"
 version = "0.8.0"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
-name = "filmcraft-captions"
+name = "filmsweet-captions"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-project",
- "filmcraft-text",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-project",
+ "filmsweet-text",
+ "filmsweet-time",
  "proptest",
  "roxmltree",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-cfb"
+name = "filmsweet-cfb"
 version = "0.8.0"
 
 [[package]]
-name = "filmcraft-cli"
+name = "filmsweet-cli"
 version = "0.8.0"
 dependencies = [
- "filmcraft-automation",
- "filmcraft-codecs",
- "filmcraft-engine",
- "filmcraft-export",
- "filmcraft-gpu",
- "filmcraft-media",
- "filmcraft-mpegts",
- "filmcraft-mxf",
- "filmcraft-ogg",
- "filmcraft-platform",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-testkit",
- "filmcraft-time",
+ "filmsweet-automation",
+ "filmsweet-codecs",
+ "filmsweet-engine",
+ "filmsweet-export",
+ "filmsweet-gpu",
+ "filmsweet-media",
+ "filmsweet-mpegts",
+ "filmsweet-mxf",
+ "filmsweet-ogg",
+ "filmsweet-platform",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-testkit",
+ "filmsweet-time",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "filmcraft-codecs"
+name = "filmsweet-codecs"
 version = "0.8.0"
 dependencies = [
- "filmcraft-aac",
- "filmcraft-ac3",
- "filmcraft-apv",
- "filmcraft-av1",
- "filmcraft-avi",
- "filmcraft-bitstream",
- "filmcraft-color",
- "filmcraft-dnx",
- "filmcraft-frame",
- "filmcraft-h264",
- "filmcraft-hevc",
- "filmcraft-isobmff",
- "filmcraft-matroska",
- "filmcraft-media",
- "filmcraft-mpa",
- "filmcraft-mpeg2v",
- "filmcraft-mpegts",
- "filmcraft-mxf",
- "filmcraft-ogg",
- "filmcraft-opus",
- "filmcraft-prores",
- "filmcraft-testkit",
- "filmcraft-time",
- "filmcraft-vp8",
- "filmcraft-vp9",
+ "filmsweet-aac",
+ "filmsweet-ac3",
+ "filmsweet-apv",
+ "filmsweet-av1",
+ "filmsweet-avi",
+ "filmsweet-bitstream",
+ "filmsweet-color",
+ "filmsweet-dnx",
+ "filmsweet-frame",
+ "filmsweet-h264",
+ "filmsweet-hevc",
+ "filmsweet-isobmff",
+ "filmsweet-matroska",
+ "filmsweet-media",
+ "filmsweet-mpa",
+ "filmsweet-mpeg2v",
+ "filmsweet-mpegts",
+ "filmsweet-mxf",
+ "filmsweet-ogg",
+ "filmsweet-opus",
+ "filmsweet-prores",
+ "filmsweet-testkit",
+ "filmsweet-time",
+ "filmsweet-vp8",
+ "filmsweet-vp9",
  "image",
  "log",
  "rayon",
@@ -1859,7 +1859,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-color"
+name = "filmsweet-color"
 version = "0.8.0"
 dependencies = [
  "proptest",
@@ -1867,63 +1867,63 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-dng"
+name = "filmsweet-dng"
 version = "0.8.0"
 dependencies = [
- "filmcraft-dng",
+ "filmsweet-dng",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-dnx"
+name = "filmsweet-dnx"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-edit"
+name = "filmsweet-edit"
 version = "0.8.0"
 dependencies = [
- "filmcraft-geom",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-time",
+ "filmsweet-geom",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-time",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-engine"
+name = "filmsweet-engine"
 version = "0.8.0"
 dependencies = [
- "filmcraft-audio-dsp",
- "filmcraft-captions",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-dng",
- "filmcraft-edit",
- "filmcraft-export",
- "filmcraft-format",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-interchange",
- "filmcraft-isobmff",
- "filmcraft-media",
- "filmcraft-mxf",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-scopes",
- "filmcraft-speech",
- "filmcraft-testkit",
- "filmcraft-text",
- "filmcraft-time",
- "filmcraft-tts",
+ "filmsweet-audio-dsp",
+ "filmsweet-captions",
+ "filmsweet-codecs",
+ "filmsweet-color",
+ "filmsweet-dng",
+ "filmsweet-edit",
+ "filmsweet-export",
+ "filmsweet-format",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-interchange",
+ "filmsweet-isobmff",
+ "filmsweet-media",
+ "filmsweet-mxf",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-scopes",
+ "filmsweet-speech",
+ "filmsweet-testkit",
+ "filmsweet-text",
+ "filmsweet-time",
+ "filmsweet-tts",
  "image",
  "log",
  "serde",
@@ -1933,28 +1933,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-export"
+name = "filmsweet-export"
 version = "0.8.0"
 dependencies = [
- "filmcraft-aac",
- "filmcraft-apv",
- "filmcraft-audio-dsp",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-dnx",
- "filmcraft-flac",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-h264enc",
- "filmcraft-isobmff",
- "filmcraft-media",
- "filmcraft-mxf",
- "filmcraft-project",
- "filmcraft-prores",
- "filmcraft-render",
- "filmcraft-testkit",
- "filmcraft-text",
- "filmcraft-time",
+ "filmsweet-aac",
+ "filmsweet-apv",
+ "filmsweet-audio-dsp",
+ "filmsweet-codecs",
+ "filmsweet-color",
+ "filmsweet-dnx",
+ "filmsweet-flac",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-h264enc",
+ "filmsweet-isobmff",
+ "filmsweet-media",
+ "filmsweet-mxf",
+ "filmsweet-project",
+ "filmsweet-prores",
+ "filmsweet-render",
+ "filmsweet-testkit",
+ "filmsweet-text",
+ "filmsweet-time",
  "image",
  "rayon",
  "serde",
@@ -1964,21 +1964,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-flac"
+name = "filmsweet-flac"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-format"
+name = "filmsweet-format"
 version = "0.8.0"
 dependencies = [
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-time",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-time",
  "log",
  "serde",
  "serde_json",
@@ -1986,17 +1986,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-frame"
+name = "filmsweet-frame"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-time",
  "rayon",
  "serde",
 ]
 
 [[package]]
-name = "filmcraft-geom"
+name = "filmsweet-geom"
 version = "0.8.0"
 dependencies = [
  "proptest",
@@ -2004,34 +2004,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-golden"
+name = "filmsweet-golden"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-gpu",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-testkit",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-gpu",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-testkit",
+ "filmsweet-time",
  "pollster 0.4.0",
  "wgpu",
 ]
 
 [[package]]
-name = "filmcraft-gpu"
+name = "filmsweet-gpu"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-export",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-export",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-time",
  "image",
  "log",
  "pollster 0.4.0",
@@ -2040,45 +2040,45 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-h264"
+name = "filmsweet-h264"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-h264enc"
+name = "filmsweet-h264enc"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-hevc"
+name = "filmsweet-hevc"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-interchange"
+name = "filmsweet-interchange"
 version = "0.8.0"
 dependencies = [
- "filmcraft-cfb",
- "filmcraft-color",
- "filmcraft-geom",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-time",
+ "filmsweet-cfb",
+ "filmsweet-color",
+ "filmsweet-geom",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-time",
  "proptest",
  "roxmltree",
  "serde",
@@ -2087,33 +2087,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-isobmff"
+name = "filmsweet-isobmff"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-matroska"
+name = "filmsweet-matroska"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
  "serde_json",
 ]
 
 [[package]]
-name = "filmcraft-media"
+name = "filmsweet-media"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-dng",
- "filmcraft-frame",
- "filmcraft-testkit",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-dng",
+ "filmsweet-frame",
+ "filmsweet-testkit",
+ "filmsweet-time",
  "image",
  "png",
  "rayon",
@@ -2122,69 +2122,69 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-mpa"
+name = "filmsweet-mpa"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-mpeg2v"
+name = "filmsweet-mpeg2v"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-mpegts"
+name = "filmsweet-mpegts"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-mxf"
+name = "filmsweet-mxf"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
 ]
 
 [[package]]
-name = "filmcraft-ogg"
+name = "filmsweet-ogg"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
 ]
 
 [[package]]
-name = "filmcraft-opus"
+name = "filmsweet-opus"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
 ]
 
 [[package]]
-name = "filmcraft-platform"
+name = "filmsweet-platform"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-export",
- "filmcraft-frame",
- "filmcraft-h264",
- "filmcraft-hevc",
- "filmcraft-isobmff",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-testkit",
- "filmcraft-time",
+ "filmsweet-bitstream",
+ "filmsweet-codecs",
+ "filmsweet-color",
+ "filmsweet-export",
+ "filmsweet-frame",
+ "filmsweet-h264",
+ "filmsweet-hevc",
+ "filmsweet-isobmff",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-testkit",
+ "filmsweet-time",
  "libloading",
  "log",
  "objc2-core-foundation",
@@ -2195,13 +2195,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-project"
+name = "filmsweet-project"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
- "filmcraft-geom",
- "filmcraft-media",
- "filmcraft-time",
+ "filmsweet-color",
+ "filmsweet-geom",
+ "filmsweet-media",
+ "filmsweet-time",
  "proptest",
  "serde",
  "serde_json",
@@ -2209,28 +2209,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-prores"
+name = "filmsweet-prores"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
- "filmcraft-testkit",
+ "filmsweet-bitstream",
+ "filmsweet-testkit",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-render"
+name = "filmsweet-render"
 version = "0.8.0"
 dependencies = [
- "filmcraft-audio-dsp",
- "filmcraft-captions",
- "filmcraft-color",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-text",
- "filmcraft-time",
+ "filmsweet-audio-dsp",
+ "filmsweet-captions",
+ "filmsweet-color",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-media",
+ "filmsweet-project",
+ "filmsweet-text",
+ "filmsweet-time",
  "image",
  "rayon",
  "rustix 1.1.5",
@@ -2239,22 +2239,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-scopes"
+name = "filmsweet-scopes"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
+ "filmsweet-color",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "filmcraft-speech"
+name = "filmsweet-speech"
 version = "0.8.0"
 dependencies = [
  "candle-core",
  "candle-nn",
- "filmcraft-project",
- "filmcraft-time",
+ "filmsweet-project",
+ "filmsweet-time",
  "rayon",
  "rustls",
  "rustls-rustcrypto",
@@ -2266,17 +2266,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-testkit"
+name = "filmsweet-testkit"
 version = "0.8.0"
 dependencies = [
  "png",
 ]
 
 [[package]]
-name = "filmcraft-text"
+name = "filmsweet-text"
 version = "0.8.0"
 dependencies = [
- "filmcraft-color",
+ "filmsweet-color",
  "harfrust",
  "skrifa",
  "unicode-bidi",
@@ -2285,7 +2285,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-time"
+name = "filmsweet-time"
 version = "0.8.0"
 dependencies = [
  "proptest",
@@ -2293,13 +2293,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-tts"
+name = "filmsweet-tts"
 version = "0.8.0"
 dependencies = [
  "candle-core",
  "candle-nn",
- "filmcraft-audio-dsp",
- "filmcraft-tts-text",
+ "filmsweet-audio-dsp",
+ "filmsweet-tts-text",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2307,7 +2307,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-tts-text"
+name = "filmsweet-tts-text"
 version = "0.8.0"
 dependencies = [
  "serde",
@@ -2315,7 +2315,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-ui-egui"
+name = "filmsweet-ui-egui"
 version = "0.8.0"
 dependencies = [
  "cpu-time",
@@ -2323,24 +2323,24 @@ dependencies = [
  "eframe",
  "egui",
  "egui_kittest",
- "filmcraft-audio-dsp",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-edit",
- "filmcraft-engine",
- "filmcraft-export",
- "filmcraft-frame",
- "filmcraft-geom",
- "filmcraft-gpu",
- "filmcraft-interchange",
- "filmcraft-media",
- "filmcraft-platform",
- "filmcraft-project",
- "filmcraft-render",
- "filmcraft-scopes",
- "filmcraft-text",
- "filmcraft-time",
- "filmcraft-tts",
+ "filmsweet-audio-dsp",
+ "filmsweet-codecs",
+ "filmsweet-color",
+ "filmsweet-edit",
+ "filmsweet-engine",
+ "filmsweet-export",
+ "filmsweet-frame",
+ "filmsweet-geom",
+ "filmsweet-gpu",
+ "filmsweet-interchange",
+ "filmsweet-media",
+ "filmsweet-platform",
+ "filmsweet-project",
+ "filmsweet-render",
+ "filmsweet-scopes",
+ "filmsweet-text",
+ "filmsweet-time",
+ "filmsweet-tts",
  "image",
  "log",
  "pollster 0.4.0",
@@ -2354,36 +2354,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "filmcraft-vp8"
+name = "filmsweet-vp8"
 version = "0.8.0"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-vp9"
+name = "filmsweet-vp9"
 version = "0.8.0"
 dependencies = [
- "filmcraft-bitstream",
+ "filmsweet-bitstream",
  "rayon",
  "thiserror 2.0.21",
 ]
 
 [[package]]
-name = "filmcraft-web"
+name = "filmsweet-web"
 version = "0.8.0"
 dependencies = [
  "eframe",
  "egui",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-engine",
- "filmcraft-format",
- "filmcraft-frame",
- "filmcraft-isobmff",
- "filmcraft-media",
- "filmcraft-time",
- "filmcraft-ui-egui",
+ "filmsweet-codecs",
+ "filmsweet-color",
+ "filmsweet-engine",
+ "filmsweet-format",
+ "filmsweet-frame",
+ "filmsweet-isobmff",
+ "filmsweet-media",
+ "filmsweet-time",
+ "filmsweet-ui-egui",
  "js-sys",
  "log",
  "serde_json",
@@ -7398,7 +7398,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 name = "xtask"
 version = "0.8.0"
 dependencies = [
- "filmcraft-testkit",
+ "filmsweet-testkit",
  "serde_json",
 ]
 

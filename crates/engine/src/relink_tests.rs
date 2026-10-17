@@ -2,9 +2,9 @@
 //! relinking one file finds the others by folder remap, fingerprint mismatches are refused,
 //! Make Offline, folder search and undo.
 
-use filmcraft_media::DemoScene;
-use filmcraft_project::ItemId;
-use filmcraft_render::offline::{OfflineReason, slate_rgba8};
+use filmsweet_media::DemoScene;
+use filmsweet_project::ItemId;
+use filmsweet_render::offline::{OfflineReason, slate_rgba8};
 use serde_json::json;
 
 use crate::Session;
@@ -14,7 +14,7 @@ use crate::relink::{apply_remap, derive_remap};
 const W: u32 = 160;
 const H: u32 = 90;
 
-/// A saved project at `<root>/Project/p.fcproj` using `<root>/Media/{a,b}.mov`.
+/// A saved project at `<root>/Project/p.fsproj` using `<root>/Media/{a,b}.mov`.
 fn saved_project(root: &std::path::Path) -> (String, Vec<ItemId>) {
     let media = root.join("Media");
     std::fs::create_dir_all(&media).unwrap();
@@ -24,7 +24,7 @@ fn saved_project(root: &std::path::Path) -> (String, Vec<ItemId>) {
     let (mut s, items, _) = session_with(&[&a, &b]);
     let proj = root.join("Project");
     std::fs::create_dir_all(&proj).unwrap();
-    let path = proj.join("p.fcproj").to_string_lossy().into_owned();
+    let path = proj.join("p.fsproj").to_string_lossy().into_owned();
     s.execute("file.save", json!({"path": path})).unwrap();
     (path, items)
 }
@@ -76,7 +76,7 @@ fn moved_media_opens_offline_and_relinks_others_by_folder() {
     assert!(!s.offline.prompt);
     assert_eq!(frame_rgba(&mut s, 3, 1.0).2, online, "relinked media renders as before the move");
     let b_path = s.project.item(items[1]).unwrap().as_media().unwrap().media.clone();
-    let filmcraft_project::MediaRef::File { path: b_path } = b_path else { panic!("relinked media must remain file-based") };
+    let filmsweet_project::MediaRef::File { path: b_path } = b_path else { panic!("relinked media must remain file-based") };
     assert_eq!(std::path::Path::new(&b_path), moved.join("b.mov"));
     // undo brings the old (missing) paths back, and the slate with them
     s.execute("edit.undo", json!({})).unwrap();
@@ -278,9 +278,9 @@ fn deleting_bin_keeps_subclip_source_but_removes_unused_media() {
     let mut s = open(&path);
     let p = std::sync::Arc::make_mut(&mut s.project);
     let seq = s.state.active_sequence.unwrap();
-    let range = filmcraft_time::TimeRange::new(filmcraft_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
+    let range = filmsweet_time::TimeRange::new(filmsweet_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
     let sub =
-        p.add_item("Subclip", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
+        p.add_item("Subclip", filmsweet_project::Label::Iris, filmsweet_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
     for track in p.sequence_mut(seq).unwrap().all_tracks_mut() {
         track.items.retain(|clip| clip.item != items[1]);
         for clip in &mut track.items {
@@ -322,9 +322,9 @@ fn deleting_subclip_and_source_does_not_keep_an_unused_source() {
     let mut s = open(&path);
     let seq = s.state.active_sequence.unwrap();
     let p = std::sync::Arc::make_mut(&mut s.project);
-    let range = filmcraft_time::TimeRange::new(filmcraft_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
+    let range = filmsweet_time::TimeRange::new(filmsweet_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
     let sub =
-        p.add_item("Subclip", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
+        p.add_item("Subclip", filmsweet_project::Label::Iris, filmsweet_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
     for t in p.sequence_mut(seq).unwrap().all_tracks_mut() {
         for c in &mut t.items {
             if c.item == items[0] {
@@ -345,10 +345,10 @@ fn deleting_bin_preserves_intermediate_subclip_needed_by_surviving_clip() {
     let mut s = open(&path);
     let seq = s.state.active_sequence.unwrap();
     let p = std::sync::Arc::make_mut(&mut s.project);
-    let range = filmcraft_time::TimeRange::new(filmcraft_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
+    let range = filmsweet_time::TimeRange::new(filmsweet_time::Tick::ZERO, p.item(items[0]).unwrap().duration());
     let parent =
-        p.add_item("Parent", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
-    let outer = p.add_item("Outer", filmcraft_project::Label::Iris, filmcraft_project::ItemKind::Subclip { parent, range, restrict_trims: false }, None);
+        p.add_item("Parent", filmsweet_project::Label::Iris, filmsweet_project::ItemKind::Subclip { parent: items[0], range, restrict_trims: false }, None);
+    let outer = p.add_item("Outer", filmsweet_project::Label::Iris, filmsweet_project::ItemKind::Subclip { parent, range, restrict_trims: false }, None);
     for t in p.sequence_mut(seq).unwrap().all_tracks_mut() {
         for c in &mut t.items {
             if c.item == items[0] {

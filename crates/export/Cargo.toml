@@ -1,5 +1,5 @@
 [package]
-name = "filmcraft-export"
+name = "filmsweet-export"
 description = "Export pipeline: parallel render → encode → mux, presets, progress/cancel"
 version.workspace = true
 edition.workspace = true
@@ -10,23 +10,23 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-filmcraft-time = { workspace = true }
-filmcraft-frame = { workspace = true }
-filmcraft-color = { workspace = true }
-filmcraft-media = { workspace = true }
-filmcraft-project = { workspace = true }
-filmcraft-render = { workspace = true }
-filmcraft-audio-dsp = { workspace = true }
-filmcraft-geom = { workspace = true }
-filmcraft-text = { workspace = true }
-filmcraft-isobmff = { workspace = true }
-filmcraft-prores = { workspace = true }
-filmcraft-dnx = { workspace = true }
-filmcraft-apv = { workspace = true }
-filmcraft-mxf = { workspace = true }
-filmcraft-aac = { workspace = true }
-filmcraft-flac = { workspace = true }
-filmcraft-h264enc = { workspace = true }
+filmsweet-time = { workspace = true }
+filmsweet-frame = { workspace = true }
+filmsweet-color = { workspace = true }
+filmsweet-media = { workspace = true }
+filmsweet-project = { workspace = true }
+filmsweet-render = { workspace = true }
+filmsweet-audio-dsp = { workspace = true }
+filmsweet-geom = { workspace = true }
+filmsweet-text = { workspace = true }
+filmsweet-isobmff = { workspace = true }
+filmsweet-prores = { workspace = true }
+filmsweet-dnx = { workspace = true }
+filmsweet-apv = { workspace = true }
+filmsweet-mxf = { workspace = true }
+filmsweet-aac = { workspace = true }
+filmsweet-flac = { workspace = true }
+filmsweet-h264enc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -35,5 +35,5 @@ web-time = "1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "tiff", "bmp"] }
 
 [dev-dependencies]
-filmcraft-testkit = { workspace = true }
-filmcraft-codecs = { workspace = true }
+filmsweet-testkit = { workspace = true }
+filmsweet-codecs = { workspace = true }

@@ -1,0 +1,8 @@
+asset:        io.github.salimstudio.filmsweet.png
+title:        FilmSweet app icon, Linux hicolor theme 512 px
+author:       salim-slimani, for the FilmSweet project
+source:       original work (geometric FilmSweet mark, generated for this project)
+license:      MIT OR Apache-2.0
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-17 by salim-slimani
+notes:        Rendered from filmsweet.svg by the FilmSweet icon generator.

@@ -1,5 +1,5 @@
 [package]
-name = "filmcraft-render"
+name = "filmsweet-render"
 description = "Sequence evaluation and CPU reference compositor (linear-light premultiplied f32)"
 version.workspace = true
 edition.workspace = true
@@ -10,15 +10,15 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-filmcraft-time = { workspace = true }
-filmcraft-geom = { workspace = true }
-filmcraft-color = { workspace = true }
-filmcraft-frame = { workspace = true }
-filmcraft-media = { workspace = true }
-filmcraft-project = { workspace = true }
-filmcraft-audio-dsp = { workspace = true }
-filmcraft-captions = { workspace = true }
-filmcraft-text = { workspace = true }
+filmsweet-time = { workspace = true }
+filmsweet-geom = { workspace = true }
+filmsweet-color = { workspace = true }
+filmsweet-frame = { workspace = true }
+filmsweet-media = { workspace = true }
+filmsweet-project = { workspace = true }
+filmsweet-audio-dsp = { workspace = true }
+filmsweet-captions = { workspace = true }
+filmsweet-text = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

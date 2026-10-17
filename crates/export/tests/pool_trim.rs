@@ -1,17 +1,17 @@
 //! A standalone export gives back the float images it left on the frame pool
-//! (`filmcraft_frame::pool`) when it ends, however it ends; one part of a batch keeps them. One test in this file on purpose: the pool is shared by every test of a binary,
+//! (`filmsweet_frame::pool`) when it ends, however it ends; one part of a batch keeps them. One test in this file on purpose: the pool is shared by every test of a binary,
 //! and its numbers mean something only while nothing else renders.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use filmcraft_export::{ExportSettings, Exporter, Format, Progress, Step, export};
-use filmcraft_frame::pool;
-use filmcraft_media::generators::GeneratorSource;
-use filmcraft_media::{Generator, MediaSource};
-use filmcraft_project::{ItemId, ItemKind, Label, MediaClip, MediaRef, Project, SequenceSettings, TrackKind};
-use filmcraft_render::SourceMap;
-use filmcraft_time::{FrameRate, TICKS_PER_SECOND, Tick, TimeRange};
+use filmsweet_export::{ExportSettings, Exporter, Format, Progress, Step, export};
+use filmsweet_frame::pool;
+use filmsweet_media::generators::GeneratorSource;
+use filmsweet_media::{Generator, MediaSource};
+use filmsweet_project::{ItemId, ItemKind, Label, MediaClip, MediaRef, Project, SequenceSettings, TrackKind};
+use filmsweet_render::SourceMap;
+use filmsweet_time::{FrameRate, TICKS_PER_SECOND, Tick, TimeRange};
 
 /// A red matte filling a 320×180 sequence for a second.
 fn project() -> (Arc<Project>, ItemId, SourceMap) {

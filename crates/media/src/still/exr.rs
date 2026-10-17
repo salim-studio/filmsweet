@@ -14,9 +14,9 @@ mod inflate;
 
 use std::sync::Arc;
 
-use filmcraft_color::{ColorInfo, Transfer};
-use filmcraft_frame::VideoFrame;
-use filmcraft_time::FrameRate;
+use filmsweet_color::{ColorInfo, Transfer};
+use filmsweet_frame::VideoFrame;
+use filmsweet_time::FrameRate;
 use rayon::prelude::*;
 
 use super::{DEFAULT_STILL_DURATION, StillSource};

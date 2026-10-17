@@ -3,8 +3,8 @@
 //! and each sequence's playhead). Premiere's tab behaviour was observed in Premiere Pro 26.5.2.
 
 use super::*;
-use filmcraft_project::SequenceView;
-use filmcraft_time::TICKS_PER_SECOND;
+use filmsweet_project::SequenceView;
+use filmsweet_time::TICKS_PER_SECOND;
 use serde_json::json;
 
 /// The demo project with two more sequences open: tabs [main, b, c], `c` active.
@@ -24,7 +24,7 @@ fn view(pps: f64, scroll: f64) -> SequenceView {
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("filmcraft-tabs-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("filmsweet-tabs-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -74,7 +74,7 @@ fn a_saved_project_reopens_with_its_tabs_and_their_views() {
     s.state.timeline_views.insert(main, view(12.5, 3.0));
     s.state.timeline_views.insert(b, view(400.0, 0.25));
     let dir = temp_dir("reopen");
-    let path = dir.join("tabs.fcproj").to_string_lossy().to_string();
+    let path = dir.join("tabs.fsproj").to_string_lossy().to_string();
     s.execute("file.saveAs", json!({"path": path})).unwrap();
 
     let mut t = Session::default();
@@ -121,7 +121,7 @@ fn each_sequence_reopens_with_its_playhead_where_it_was_left() {
     assert_eq!(s.playhead(), b_at);
     assert_eq!(s.project_view().playheads.get(&c), None, "a playhead that never moved is not written");
     let dir = temp_dir("playheads");
-    let path = dir.join("tabs.fcproj").to_string_lossy().to_string();
+    let path = dir.join("tabs.fsproj").to_string_lossy().to_string();
     s.execute("file.saveAs", json!({"path": path})).unwrap();
 
     let mut t = Session::default();
@@ -161,7 +161,7 @@ fn a_damaged_view_in_a_project_file_is_cleaned_up_or_ignored() {
     let (mut s, [main, b, c]) = three_tabs();
     let footage = s.project.sequence(main).unwrap().video_tracks[0].items[0].item;
     let dir = temp_dir("damaged");
-    let path = dir.join("tabs.fcproj").to_string_lossy().to_string();
+    let path = dir.join("tabs.fsproj").to_string_lossy().to_string();
     s.execute("file.saveAs", json!({"path": path})).unwrap();
     let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let with_view = |view: serde_json::Value| {
@@ -203,7 +203,7 @@ fn a_damaged_view_in_a_project_file_is_cleaned_up_or_ignored() {
         ids
     });
     assert_eq!(t.state.playheads[&c], Tick::ZERO);
-    assert_eq!(t.state.playheads[&b], rate(b).snap(filmcraft_project::ProjectView::MAX_PLAYHEAD));
+    assert_eq!(t.state.playheads[&b], rate(b).snap(filmsweet_project::ProjectView::MAX_PLAYHEAD));
     assert_eq!(t.state.playheads[&main], rate(main).snap(Tick(TICKS_PER_SECOND + 1)));
 
     // not a view at all: the project opens as it does without one

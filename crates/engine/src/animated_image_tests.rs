@@ -1,9 +1,9 @@
 //! Animated GIF and APNG files import as movie clips that play every frame with its transparency
 //! (#402), and reopen that way from a saved project.
 
-use filmcraft_media::{FrameRequest, MediaKind};
-use filmcraft_project::ItemId;
-use filmcraft_time::{TICKS_PER_SECOND, Tick};
+use filmsweet_media::{FrameRequest, MediaKind};
+use filmsweet_project::ItemId;
+use filmsweet_time::{TICKS_PER_SECOND, Tick};
 use serde_json::{Value, json};
 
 use crate::Session;
@@ -32,7 +32,7 @@ fn pixel_at(s: &Session, item: ItemId, ms: i64, x: usize) -> [u8; 4] {
     let src = s.media.source_for(&s.project, item, &*s.services).unwrap();
     let f = src.video_frame(FrameRequest::full(Tick(ms * TICKS_PER_SECOND / 1000))).unwrap();
     match &f.data {
-        filmcraft_frame::PixelData::Rgba8(p) => [p[4 * x], p[4 * x + 1], p[4 * x + 2], p[4 * x + 3]],
+        filmsweet_frame::PixelData::Rgba8(p) => [p[4 * x], p[4 * x + 1], p[4 * x + 2], p[4 * x + 3]],
         _ => panic!("rgba frames"),
     }
 }
@@ -52,7 +52,7 @@ fn animated_gif_imports_as_a_clip_and_reopens() {
     assert_eq!(pixel_at(&s, id, 250, 12), [80, 0, 0, 255], "the third frame plays");
     assert_eq!(pixel_at(&s, id, 250, 2)[3], 0, "transparent pixels stay transparent, not black");
 
-    let proj = dir.join("anim.fcproj");
+    let proj = dir.join("anim.fsproj");
     s.execute("file.saveAs", json!({"path": proj.to_string_lossy()})).unwrap();
     let mut t = Session::default();
     t.execute("file.open", json!({"path": proj.to_string_lossy()})).unwrap();

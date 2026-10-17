@@ -1,5 +1,5 @@
 [package]
-name = "filmcraft-bitstream"
+name = "filmsweet-bitstream"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

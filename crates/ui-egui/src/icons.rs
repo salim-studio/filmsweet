@@ -83,8 +83,7 @@ pub enum Icon {
     Undo,
     Redo,
     Bell,
-    /// Community chat (the ArtCraft Discord): a speech bubble with three dots. Our own drawing,
-    /// not the Discord logo.
+    /// Community chat: a speech bubble with three dots. Our own drawing, not any chat logo.
     Chat,
     /// Website: a globe.
     Globe,

@@ -1,4 +1,4 @@
-# Contributing to FilmCraft
+# Contributing to FilmSweet
 
 Thanks for helping. Before you start:
 

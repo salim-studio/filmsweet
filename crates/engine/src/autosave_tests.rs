@@ -62,7 +62,7 @@ fn preferences_get_set_and_persist() {
 #[test]
 fn crash_recovery_end_to_end() {
     let d = temp_dir("recover");
-    let proj = d.join("film.fcproj").to_string_lossy().to_string();
+    let proj = d.join("film.fsproj").to_string_lossy().to_string();
     // Session A: saved project, then unsaved edits, then a crash.
     let mut a = demo();
     start(&mut a, &d);
@@ -101,7 +101,7 @@ fn crash_recovery_end_to_end() {
     c.execute("file.save", json!({})).unwrap();
     wait_for("journal cleared", || {
         c.poll_persistence();
-        !c.persistence.as_ref().unwrap().session_dir.join("snapshot.fcproj").exists()
+        !c.persistence.as_ref().unwrap().session_dir.join("snapshot.fsproj").exists()
     });
     let session_dir = c.persistence.as_ref().unwrap().session_dir.clone();
     c.shutdown();
@@ -138,7 +138,7 @@ fn quitting_with_unsaved_changes_keeps_them_for_next_launch() {
 #[test]
 fn auto_save_ring_rotates_and_can_save_the_project() {
     let d = temp_dir("ring");
-    let proj = d.join("ring.fcproj").to_string_lossy().to_string();
+    let proj = d.join("ring.fsproj").to_string_lossy().to_string();
     let mut s = demo();
     start(&mut s, &d);
     s.execute("prefs.set", json!({"values": {"autoSave.maxVersions": 2}})).unwrap();
@@ -184,17 +184,17 @@ fn scan_keeps_snapshot_when_session_metadata_is_unreadable() {
     let root = autosave::recovery_root(&d);
     let sess = root.join("123-1");
     std::fs::create_dir_all(&sess).unwrap();
-    let snap = filmcraft_format::encode(&filmcraft_project::Project::default(), false);
-    std::fs::write(sess.join("snapshot.fcproj"), snap).unwrap();
+    let snap = filmsweet_format::encode(&filmsweet_project::Project::default(), false);
+    std::fs::write(sess.join("snapshot.fsproj"), snap).unwrap();
     std::fs::write(sess.join("session.json"), b"not json {").unwrap();
     let found = autosave::scan_candidates(&d, None);
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].id, "123-1");
-    assert!(sess.join("snapshot.fcproj").is_file(), "snapshot must survive the scan");
+    assert!(sess.join("snapshot.fsproj").is_file(), "snapshot must survive the scan");
     std::fs::remove_file(sess.join("session.json")).unwrap();
     let found = autosave::scan_candidates(&d, None);
     assert_eq!(found.len(), 1, "missing metadata still lists the snapshot");
-    assert!(sess.join("snapshot.fcproj").is_file());
+    assert!(sess.join("snapshot.fsproj").is_file());
     let _ = std::fs::remove_dir_all(&d);
 }
 

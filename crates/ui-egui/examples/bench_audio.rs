@@ -3,8 +3,8 @@
 //! would hear them. Nothing is played out loud.
 //!
 //! ```sh
-//! FILMCRAFT_DATA_DIR=/tmp/fc-bench cargo run --release -p filmcraft-ui-egui --example bench_audio -- \
-//!     "Project.fcproj" --seconds 20 [--sequence "One hero" …] [--mode direct|ahead|both] [--json out.json] [--wav dir]
+//! FILMSWEET_DATA_DIR=/tmp/fc-bench cargo run --release -p filmsweet-ui-egui --example bench_audio -- \
+//!     "Project.fsproj" --seconds 20 [--sequence "One hero" …] [--mode direct|ahead|both] [--json out.json] [--wav dir]
 //! ```
 //!
 //! `direct` mixes inside the device callback (how playback worked before sound was mixed ahead);
@@ -20,9 +20,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use filmcraft_engine::Session;
-use filmcraft_project::ItemId;
-use filmcraft_ui_egui::play_ahead::{self, AudioStats};
+use filmsweet_engine::Session;
+use filmsweet_project::ItemId;
+use filmsweet_ui_egui::play_ahead::{self, AudioStats};
 use serde_json::{Value, json};
 
 const SR: u32 = 48_000;
@@ -118,7 +118,7 @@ fn write_wav(path: &std::path::Path, samples: &[f32]) -> std::io::Result<()> {
 }
 
 fn play(s: &Session, seq: ItemId, mode: &str, seconds: f64) -> Run {
-    let mut mix = filmcraft_ui_egui::playback_mix(s, seq, SR);
+    let mut mix = filmsweet_ui_egui::playback_mix(s, seq, SR);
     match mode {
         "direct" => {
             let mut cursor = 0i64;
@@ -141,7 +141,7 @@ fn play(s: &Session, seq: ItemId, mode: &str, seconds: f64) -> Run {
 }
 
 fn main() {
-    filmcraft_platform::register();
+    filmsweet_platform::register();
     let mut args = std::env::args().skip(1);
     let (mut project, mut seconds, mut only, mut mode, mut json_out, mut wav_dir) = (None, 20.0, Vec::new(), "both".to_string(), None, None);
     while let Some(a) = args.next() {
@@ -155,7 +155,7 @@ fn main() {
         }
     }
     let Some(project) = project else {
-        eprintln!("usage: bench_audio <project.fcproj> [--seconds N] [--sequence NAME] [--mode direct|ahead|both] [--json PATH] [--wav DIR]");
+        eprintln!("usage: bench_audio <project.fsproj> [--seconds N] [--sequence NAME] [--mode direct|ahead|both] [--json PATH] [--wav DIR]");
         std::process::exit(2);
     };
     let mut s = Session::default();

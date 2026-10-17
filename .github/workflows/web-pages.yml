@@ -1,17 +1,12 @@
 name: Web App (Pages)
 
-# Deploys the official FilmCraft web build (the same app as app.getartcraft.com)
-# to https://salim-studio.github.io/filmsweet/
-# Uses the prebuilt filmcraft-web-*.zip from the upstream release: fast, no Rust build.
+# Builds the FilmSweet web app (WebAssembly) from this repository's source and deploys it to
+# https://salim-studio.github.io/filmsweet/
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      web_version:
-        description: "Upstream filmcraft-web version (e.g. 0.8.0)"
-        default: "0.8.0"
 
 permissions:
   contents: read
@@ -23,32 +18,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy-app:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 60
     steps:
-      - name: Download official web build
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.web_version || '0.8.0' }}
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen CLI (must match the crate)
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+
+      - name: Install wasm-opt (optional, smaller wasm)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Build the web app
+        run: cargo xtask web
+
+      - name: Prepare the Pages site
         run: |
-          rm -rf /tmp/web site && mkdir -p /tmp/web site
-          gh release download "v$VERSION" --repo storytold/filmcraft --pattern 'filmcraft-web-*.zip' --dir /tmp/web
-          unzip -o /tmp/web/filmcraft-web-*.zip -d /tmp/web/dist
-          # the zip may wrap files in one top-level folder: flatten it if so
-          if [ ! -f /tmp/web/dist/index.html ]; then
-            sub=$(find /tmp/web/dist -mindepth 1 -maxdepth 1 -type d | head -n 1)
-            if [ -n "$sub" ] && [ -f "$sub/index.html" ]; then
-              cp -r "$sub"/. site/
-            else
-              cp -r /tmp/web/dist/. site/
-            fi
-          else
-            cp -r /tmp/web/dist/. site/
-          fi
+          rm -rf site && mkdir -p site
+          cp -r target/web/dist/. site/
           touch site/.nojekyll
           ls -la site
 
@@ -57,6 +51,13 @@ jobs:
         with:
           path: site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

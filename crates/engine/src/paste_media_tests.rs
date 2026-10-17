@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use filmcraft_project::{BinEntry, BinId, ClipId, ItemId, TrackKind};
-use filmcraft_time::Tick;
+use filmsweet_project::{BinEntry, BinId, ClipId, ItemId, TrackKind};
+use filmsweet_time::Tick;
 use serde_json::{Value, json};
 
 use crate::Session;
@@ -85,7 +85,7 @@ fn a_track_is_added_when_every_track_is_busy() {
     // fill every track at the playhead
     for _ in 0..8 {
         let q = s.active_sequence().unwrap();
-        let busy = |ts: &[filmcraft_project::Track]| ts.iter().all(|t| t.items.iter().any(|c| c.start <= at && c.end() > at + Tick::from_seconds_f64(5.0)));
+        let busy = |ts: &[filmsweet_project::Track]| ts.iter().all(|t| t.items.iter().any(|c| c.start <= at && c.end() > at + Tick::from_seconds_f64(5.0)));
         if busy(&q.video_tracks) && busy(&q.audio_tracks) {
             break;
         }
@@ -159,7 +159,7 @@ fn without_place_files_are_only_imported() {
 fn pasted_images_are_saved_next_to_the_project() {
     let dir = tmp_dir("paste-media-save");
     let mut s = demo();
-    s.path = Some(dir.join("film.fcproj").to_string_lossy().into_owned());
+    s.path = Some(dir.join("film.fsproj").to_string_lossy().into_owned());
     let mut png = Vec::new();
     image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 0, 0, 255])).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
     let first = crate::paste_media::save_pasted_image(&mut s, &png).unwrap();

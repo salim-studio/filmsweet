@@ -1,0 +1,8 @@
+asset:        filmsweet.svg
+title:        FilmSweet app icon, canonical vector (rose tile, film-frame play mark)
+author:       salim-slimani, for the FilmSweet project
+source:       original work (geometric FilmSweet mark, generated for this project)
+license:      MIT OR Apache-2.0
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-17 by salim-slimani
+notes:        Hand-written SVG: 512-unit viewBox, rounded tile rx=112. Palette: rose #ff4d8e (field), ink #1b1c1f (frame), light #f4f4f6 (play mark). See assets/app-icon/README.md.

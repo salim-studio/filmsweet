@@ -5,52 +5,52 @@
 mod common;
 
 use common::*;
-use filmcraft_media::FrameRequest;
+use filmsweet_media::FrameRequest;
 
 #[test]
 fn off_uses_the_software_decoder() {
-    let ff = filmcraft_testkit::require_ffmpeg!();
+    let ff = filmsweet_testkit::require_ffmpeg!();
     let Some(path) = named(&ff, "hevc_main.mp4") else { return };
     let s = read_stream(&path);
-    let available = filmcraft_platform::register();
-    assert_eq!(filmcraft_platform::register(), available, "registering twice is harmless");
+    let available = filmsweet_platform::register();
+    assert_eq!(filmsweet_platform::register(), available, "registering twice is harmless");
 
-    filmcraft_codecs::hw::set_hardware_decoding(false);
-    let d = filmcraft_codecs::make_video_decoder(&s.entry).unwrap();
-    assert_eq!(d.name(), "FilmCraft HEVC");
+    filmsweet_codecs::hw::set_hardware_decoding(false);
+    let d = filmsweet_codecs::make_video_decoder(&s.entry).unwrap();
+    assert_eq!(d.name(), "FilmSweet HEVC");
     let bytes: std::sync::Arc<[u8]> = std::fs::read(&path).unwrap().into();
-    let (g0, h0) = (filmcraft_codecs::gop_stats(), filmcraft_codecs::hw::hw_stats());
-    let src = filmcraft_codecs::open_bytes("hevc_main.mp4", bytes.clone()).unwrap();
+    let (g0, h0) = (filmsweet_codecs::gop_stats(), filmsweet_codecs::hw::hw_stats());
+    let src = filmsweet_codecs::open_bytes("hevc_main.mp4", bytes.clone()).unwrap();
     let rate = src.info().frame_rate();
     for i in 0..30 {
         src.video_frame(FrameRequest::full(rate.tick_of(i))).unwrap();
     }
-    assert!(filmcraft_codecs::gop_stats().frames > g0.frames, "frames counted");
-    assert_eq!(filmcraft_codecs::hw::hw_stats().frames, h0.frames, "Off: no hardware frames");
+    assert!(filmsweet_codecs::gop_stats().frames > g0.frames, "frames counted");
+    assert_eq!(filmsweet_codecs::hw::hw_stats().frames, h0.frames, "Off: no hardware frames");
 
-    filmcraft_codecs::hw::set_hardware_decoding(true);
-    let d = filmcraft_codecs::make_video_decoder(&s.entry).unwrap();
-    let hw = filmcraft_platform::hardware_decoder_for(&s.entry);
+    filmsweet_codecs::hw::set_hardware_decoding(true);
+    let d = filmsweet_codecs::make_video_decoder(&s.entry).unwrap();
+    let hw = filmsweet_platform::hardware_decoder_for(&s.entry);
     if !hw {
         eprintln!("SKIPPED (Auto half): no hardware decoder ({available:?})");
-        assert_eq!(d.name(), "FilmCraft HEVC");
+        assert_eq!(d.name(), "FilmSweet HEVC");
         return;
     }
     // Linux has two backends (NVDEC in front of VA-API): `register` reports the front one, but
     // a stream NVDEC declines (an older GPU without HEVC) can still go to VA-API on a second GPU
     let backend = match available {
-        filmcraft_platform::Availability::Available(name) => name,
-        filmcraft_platform::Availability::Unavailable(why) => panic!("a hardware decoder, but register() said {why}"),
+        filmsweet_platform::Availability::Available(name) => name,
+        filmsweet_platform::Availability::Unavailable(why) => panic!("a hardware decoder, but register() said {why}"),
     };
     let decoders: &[&str] = if backend == "NVDEC" { &["NVDEC", "VA-API"] } else { &[backend] };
     assert!(decoders.iter().any(|b| d.name().starts_with(b)) && d.name().contains("HEVC"), "{} from {backend}", d.name());
-    assert_eq!(filmcraft_codecs::hw::hw_backend(), Some(backend), "perf.stats reports the backend");
-    assert!(filmcraft_platform::registered(), "register() put the factory in the registry");
-    let h1 = filmcraft_codecs::hw::hw_stats();
-    let src = filmcraft_codecs::open_bytes("hevc_main.mp4", bytes).unwrap();
+    assert_eq!(filmsweet_codecs::hw::hw_backend(), Some(backend), "perf.stats reports the backend");
+    assert!(filmsweet_platform::registered(), "register() put the factory in the registry");
+    let h1 = filmsweet_codecs::hw::hw_stats();
+    let src = filmsweet_codecs::open_bytes("hevc_main.mp4", bytes).unwrap();
     for i in 0..30 {
         src.video_frame(FrameRequest::full(rate.tick_of(i))).unwrap();
     }
-    let h2 = filmcraft_codecs::hw::hw_stats();
+    let h2 = filmsweet_codecs::hw::hw_stats();
     assert!(h2.frames > h1.frames && h2.sessions > h1.sessions, "Auto: hardware frames {h1:?} → {h2:?}");
 }

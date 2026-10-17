@@ -4,10 +4,10 @@
 //! three-box Gaussian rounds to zero-width boxes, so the unsharp mask subtracted the image from
 //! itself and the effect vanished while playing, though it showed on the paused (Full) frame.
 
-use filmcraft_project::{ParamValue, find_effect};
-use filmcraft_render::effects::{FxCtx, apply};
-use filmcraft_render::image::Image;
-use filmcraft_time::Tick;
+use filmsweet_project::{ParamValue, find_effect};
+use filmsweet_render::effects::{FxCtx, apply};
+use filmsweet_render::image::Image;
+use filmsweet_time::Tick;
 
 fn cx(px_scale: f32) -> FxCtx<'static> {
     FxCtx {
@@ -19,7 +19,7 @@ fn cx(px_scale: f32) -> FxCtx<'static> {
         project: None,
         env: None,
         frame_rate: 24.0,
-        working: filmcraft_color::WorkingSpace::Rec709,
+        working: filmsweet_color::WorkingSpace::Rec709,
     }
 }
 

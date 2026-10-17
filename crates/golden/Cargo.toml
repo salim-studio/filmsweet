@@ -1,5 +1,5 @@
 [package]
-name = "filmcraft-golden"
+name = "filmsweet-golden"
 description = "Golden-image tests for the CPU renderer/compositor and GPU-vs-CPU parity (test-only crate)"
 version.workspace = true
 edition.workspace = true
@@ -15,14 +15,14 @@ workspace = true
 [dependencies]
 
 [dev-dependencies]
-filmcraft-testkit = { workspace = true }
-filmcraft-color = { workspace = true }
-filmcraft-frame = { workspace = true }
-filmcraft-time = { workspace = true }
-filmcraft-geom = { workspace = true }
-filmcraft-media = { workspace = true }
-filmcraft-project = { workspace = true }
-filmcraft-render = { workspace = true }
-filmcraft-gpu = { workspace = true }
+filmsweet-testkit = { workspace = true }
+filmsweet-color = { workspace = true }
+filmsweet-frame = { workspace = true }
+filmsweet-time = { workspace = true }
+filmsweet-geom = { workspace = true }
+filmsweet-media = { workspace = true }
+filmsweet-project = { workspace = true }
+filmsweet-render = { workspace = true }
+filmsweet-gpu = { workspace = true }
 pollster = "0.4"
 wgpu = { version = "30", features = ["wgsl", "metal", "vulkan", "dx12", "gles"] }

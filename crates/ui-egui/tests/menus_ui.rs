@@ -6,14 +6,14 @@
 use std::sync::mpsc::{Sender, channel};
 
 use egui_kittest::Harness;
-use filmcraft_engine::Session;
-use filmcraft_engine::project::ItemId;
-use filmcraft_ui_egui::FilmcraftApp;
-use filmcraft_ui_egui::control::ControlRequest;
+use filmsweet_engine::Session;
+use filmsweet_engine::project::ItemId;
+use filmsweet_ui_egui::FilmsweetApp;
+use filmsweet_ui_egui::control::ControlRequest;
 use serde_json::{Value, json};
 
 struct Driver {
-    harness: Harness<'static, FilmcraftApp>,
+    harness: Harness<'static, FilmsweetApp>,
     tx: Sender<ControlRequest>,
 }
 
@@ -22,7 +22,7 @@ impl Driver {
         let mut s = Session::default();
         s.execute("file.openDemoProject", json!({})).unwrap();
         let (tx, rx) = channel();
-        let mut app = FilmcraftApp::new(s).with_control(rx);
+        let mut app = FilmsweetApp::new(s).with_control(rx);
         // never hand paths to the real OS opener from a test
         app.hooks.open_path = Some(Box::new(|_, _| Ok(())));
         let harness = Harness::builder().with_size(egui::vec2(1600.0, 980.0)).with_max_steps(10_000).build_eframe(move |_cc| app);
@@ -79,7 +79,7 @@ impl Driver {
         v.as_array().unwrap().iter().any(|e| e["id"] == json!(id))
     }
 
-    fn app(&mut self) -> &mut FilmcraftApp {
+    fn app(&mut self) -> &mut FilmsweetApp {
         self.harness.state_mut()
     }
 
@@ -141,7 +141,7 @@ fn import_image_sequence_from_the_file_menu_and_media_browser() {
     assert_eq!(r["imageSequences"][0]["frames"], 5);
     let id = ItemId(r["items"][0].as_u64().unwrap());
     let kind = d.app().session.project.item(id).unwrap().as_media().unwrap().info.kind;
-    assert_eq!(kind, filmcraft_media::MediaKind::ImageSequence);
+    assert_eq!(kind, filmsweet_media::MediaKind::ImageSequence);
     // Media Browser ▸ Import as Image Sequence (the selection, from frame 3)
     d.exec("mediaBrowser.select", json!({"paths": [paths[2]]}));
     let r = d.ok("ui.menu.invoke", json!({"id": "file.importFromMediaBrowser", "params": {"imageSequence": true}}));
@@ -209,7 +209,7 @@ fn project_settings_dialog() {
     }
     d.ok(
         "ui.set",
-        json!({"menuDialog": {"titleSafe": [15.0, 12.0], "renderer": filmcraft_engine::project_tools::RENDERER_SOFTWARE, "captured": "/tmp/fc-captured"}}),
+        json!({"menuDialog": {"titleSafe": [15.0, 12.0], "renderer": filmsweet_engine::project_tools::RENDERER_SOFTWARE, "captured": "/tmp/fc-captured"}}),
     );
     d.click("projectSettings.tab.ingest");
     assert!(d.has("projectSettings.ingest.enabled"));
@@ -217,9 +217,9 @@ fn project_settings_dialog() {
     assert!(!d.dialog_open());
     let st = d.app().session.project.settings.clone();
     assert_eq!(st.title_safe, (15.0, 12.0));
-    assert_eq!(st.renderer, filmcraft_engine::project_tools::RENDERER_SOFTWARE);
+    assert_eq!(st.renderer, filmsweet_engine::project_tools::RENDERER_SOFTWARE);
     assert_eq!(st.scratch.captured.as_deref(), Some("/tmp/fc-captured"));
-    assert!(filmcraft_ui_egui::panels::menu_dialogs::software_renderer(d.app()));
+    assert!(filmsweet_ui_egui::panels::menu_dialogs::software_renderer(d.app()));
 }
 
 #[test]
@@ -276,8 +276,8 @@ fn clip_and_sequence_dialogs() {
 fn color_matte_dialog_picks_and_changes_the_color() {
     let mut d = Driver::new();
     let matte_color = |d: &mut Driver, id: u64| match &d.app().session.project.item(ItemId(id)).unwrap().kind {
-        filmcraft_engine::project::ItemKind::Media(m) => match &m.media {
-            filmcraft_engine::project::MediaRef::Generator(filmcraft_media::Generator::ColorMatte { color }) => filmcraft_color::to_hex(*color),
+        filmsweet_engine::project::ItemKind::Media(m) => match &m.media {
+            filmsweet_engine::project::MediaRef::Generator(filmsweet_media::Generator::ColorMatte { color }) => filmsweet_color::to_hex(*color),
             g => panic!("not a matte: {g:?}"),
         },
         _ => panic!("not media"),
@@ -329,8 +329,8 @@ fn reveal_in_finder_opens_an_imported_clip() {
 fn saved_projects_are_listed_in_home_and_open_recent() {
     let dir = std::env::temp_dir().join(format!("fc-ui-recent-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let a = dir.join("first cut.fcproj").to_string_lossy().to_string();
-    let b = dir.join("second cut.fcproj").to_string_lossy().to_string();
+    let a = dir.join("first cut.fsproj").to_string_lossy().to_string();
+    let b = dir.join("second cut.fsproj").to_string_lossy().to_string();
     let mut d = Driver::new();
     d.exec("file.saveAs", json!({"path": a}));
     d.exec("file.newProject", json!({"name": "Second"}));
@@ -338,7 +338,7 @@ fn saved_projects_are_listed_in_home_and_open_recent() {
     let menus = d.ok("ui.menu.list", json!({}));
     let recent: Vec<&Value> = menus.as_array().unwrap().iter().filter(|m| m["path"] == json!(["File", "Open Recent"])).collect();
     let labels: Vec<&str> = recent.iter().map(|m| m["label"].as_str().unwrap()).collect();
-    assert_eq!(labels, ["second cut.fcproj", "first cut.fcproj", "Clear Recent Files"]);
+    assert_eq!(labels, ["second cut.fsproj", "first cut.fsproj", "Clear Recent Files"]);
     assert_eq!(recent[0]["id"], "file.openRecent.0");
     // File ▸ Open Recent reopens the older one, which moves to the top
     d.menu("file.openRecent.1");
@@ -348,7 +348,7 @@ fn saved_projects_are_listed_in_home_and_open_recent() {
     d.click("header.home");
     let rows = d.ok("ui.elements", json!({"prefix": "import.recent."}));
     let rows: Vec<&str> = rows.as_array().unwrap().iter().map(|e| e["label"].as_str().unwrap()).collect();
-    assert_eq!(rows, ["first cut.fcproj", "second cut.fcproj"]);
+    assert_eq!(rows, ["first cut.fsproj", "second cut.fsproj"]);
     d.click("import.recent.1");
     assert_eq!(d.app().session.path.as_deref(), Some(b.as_str()));
     // Clear Recent Files empties both lists

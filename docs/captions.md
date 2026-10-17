@@ -1,7 +1,7 @@
 # Captions
 
-FilmCraft keeps captions on **caption tracks** in the sequence, shown in their own area above the
-video tracks (as Premiere does). Caption tracks are saved in the `.fcproj` (project format
+FilmSweet keeps captions on **caption tracks** in the sequence, shown in their own area above the
+video tracks (as Premiere does). Caption tracks are saved in the `.fsproj` (project format
 version 2; version 1 projects open with no caption tracks).
 
 ## Model

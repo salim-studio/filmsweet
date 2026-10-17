@@ -4,8 +4,8 @@
 
 Containers, stills, audio files, project and interchange files, captions and presets. Codecs inside
 the containers are in [codec-parity.md](codec-parity.md). Our import list is
-`filmcraft_media::{VIDEO,AUDIO,STILL}_EXTENSIONS` plus the openers in `filmcraft_codecs::openers()`;
-our export list is `filmcraft_export::Format`. Premiere's list is from Adobe's supported-formats
+`filmsweet_media::{VIDEO,AUDIO,STILL}_EXTENSIONS` plus the openers in `filmsweet_codecs::openers()`;
+our export list is `filmsweet_export::Format`. Premiere's list is from Adobe's supported-formats
 documentation and the exporter folders in the installed bundle's `MediaIO/systempresets` (names
 only). "Tested" names the evidence.
 
@@ -14,7 +14,7 @@ only). "Tested" names the evidence.
 | Format | Premiere | Read | Write | Tested | % |
 |---|---|---|---|---|---|
 | **Premiere project `.prproj`** | native | **no** | **no** | — | **0%** ([G2](gaps.md#g2-premieres-prproj-cannot-be-opened)) |
-| Our project `.fcproj` | — | yes, schema migrations | yes, atomic, auto-save, recovery journal | migration tests | — |
+| Our project `.fsproj` | — | yes, schema migrations | yes, atomic, auto-save, recovery journal | migration tests | — |
 | FCP7 XML (`xmeml`) | read + write | yes | yes | round-trip tests; Premiere-exported XML slow (#461) | 75% |
 | FCPXML | read (via XtoCC) | yes | yes | round-trip tests | 80% |
 | AAF (Edit Protocol) | read + write | yes | yes (embedded / linked / consolidated) | own CFB; **never opened in Media Composer / Pro Tools** | 55% |
@@ -23,7 +23,7 @@ only). "Tested" names the evidence.
 | OpenTimelineIO | read + write (26.0) | yes | yes | tests | 80% |
 | Avid Log Exchange (ALE) | write | no | yes | — | 70% |
 | Marker CSV / text | write | — | yes (#454) | — | 80% |
-| Selection as project | Premiere project | — | `.fcproj` only | — | 50% |
+| Selection as project | Premiere project | — | `.fsproj` only | — | 50% |
 | Templates (`.prproj` templates) | yes | — | our templates | — | 70% |
 | Motion Graphics templates `.mogrt` | read + write | **refused by design** (clean-room, AGENTS.md §1); our `.fcgt` instead | `.fcgt` | — | n/a |
 | Effect presets `.prfpset` | read + write | no | our JSON presets | — | 40% |

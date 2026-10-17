@@ -1,6 +1,6 @@
-# filmcraft-text
+# filmsweet-text
 
-FilmCraft's text engine (layer L1: depends on `filmcraft-color`, `skrifa`, `harfrust`,
+FilmSweet's text engine (layer L1: depends on `filmsweet-color`, `skrifa`, `harfrust`,
 `unicode-bidi` and `unicode-linebreak`). It draws graphic-clip text and shapes, caption burn-in
 and the Timecode / Clip Name effects. Pure Rust; it builds for `wasm32-unknown-unknown`.
 
