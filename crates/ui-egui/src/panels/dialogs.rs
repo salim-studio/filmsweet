@@ -409,42 +409,14 @@ fn delete_tracks(app: &mut FilmsweetApp, ctx: &egui::Context) -> bool {
     keep
 }
 
-/// Help ▸ About FilmSweet, in three tabs: About (version and the FilmSweet links),
-/// Contributors and Models (the credits compiled in from `contributors/contributors.json`, see
-/// `crate::credits` and docs/contributors.md).
+/// Help ▸ About FilmSweet: version, licence and the FilmSweet links.
 ///
-/// Automation ids: `about.tab.about`, `about.tab.contributors`, `about.tab.models`; the About tab's
-/// links and the credits controls are listed on [`about_tab`] and [`crate::credits::contributors_ui`].
+/// Automation ids: the links are listed on [`about_tab`].
 fn about(app: &mut FilmsweetApp, ui: &mut egui::Ui) {
-    let tab_id = egui::Id::new("about_tab");
-    let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
-    ui.horizontal(|ui| {
-        for (i, (id, label)) in [("about", tl!("About")), ("contributors", tl!("Contributors")), ("models", tl!("Models"))].into_iter().enumerate() {
-            let i = i as u8;
-            let r = ui.selectable_label(tab == i, label);
-            app.auto.add(&format!("about.tab.{id}"), r.rect, label);
-            if r.clicked() {
-                tab = i;
-            }
-        }
-    });
-    ui.data_mut(|d| d.insert_temp(tab_id, tab));
-    ui.separator();
-    let t = app.tokens;
-    match tab {
-        1 => {
-            ui.set_width(680.0);
-            crate::credits::contributors_ui(ui, &t, &mut app.auto);
-        }
-        2 => {
-            ui.set_width(680.0);
-            crate::credits::models_ui(ui);
-        }
-        _ => about_tab(app, ui),
-    }
+    about_tab(app, ui);
 }
 
-/// About ▸ About: version, licence and the FilmSweet links. Opening the website is the first,
+/// About: version, licence and the FilmSweet links. Opening the website is the first,
 /// accented button.
 ///
 /// Automation ids: `about.website`, `about.github`, `about.reportIssue`.
