@@ -49,7 +49,8 @@ pub fn paint_wordmark(ui: &Ui, left_center: Pos2, height: f32, dark: bool) -> Op
 
     // Name: "Film" in ink, "Sweet" in the accent.
     let base = Pos2::new(min.x + mark + gap, left_center.y);
+    let film_w = film.size().x;
     p.galley(Pos2::new(base.x, base.y - film.size().y / 2.0), film, Color32::PLACEHOLDER);
-    p.galley(Pos2::new(base.x + film.size().x, base.y - sweet.size().y / 2.0), sweet, Color32::PLACEHOLDER);
+    p.galley(Pos2::new(base.x + film_w, base.y - sweet.size().y / 2.0), sweet, Color32::PLACEHOLDER);
     Some(rect)
 }
