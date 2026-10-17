@@ -430,6 +430,7 @@ fn about_tab(app: &mut FilmsweetApp, ui: &mut egui::Ui) {
     crate::brand::paint_wordmark(ui, egui::pos2(r.min.x, r.center().y), 20.0, app.ui.dark);
     ui.add_space(6.0);
     ui.label(tlf!("Version {version}", version = env!("CARGO_PKG_VERSION")));
+    ui.label(tl!("Copyright salim-slimani 2026+"));
     ui.label(tl!("A clean-room, pure-Rust non-linear video editor."));
     ui.add_space(10.0);
     let mut link = |ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, url: &str, primary: bool| {

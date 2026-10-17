@@ -1674,7 +1674,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -1707,7 +1707,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-aac"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-ac3"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
  "thiserror 2.0.21",
@@ -1725,7 +1725,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-apv"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -1735,14 +1735,14 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-audio-dsp"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
 ]
 
 [[package]]
 name = "filmsweet-automation"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "filmsweet-engine",
@@ -1758,7 +1758,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-av1"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -1769,21 +1769,21 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-avi"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
 ]
 
 [[package]]
 name = "filmsweet-bitstream"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
 ]
 
 [[package]]
 name = "filmsweet-captions"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-project",
@@ -1796,11 +1796,11 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-cfb"
-version = "0.8.0"
+version = "1.0.0"
 
 [[package]]
 name = "filmsweet-cli"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-automation",
  "filmsweet-codecs",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-codecs"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-aac",
  "filmsweet-ac3",
@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-color"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
  "serde",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-dng"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-dng",
  "rayon",
@@ -1877,7 +1877,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-dnx"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -1887,7 +1887,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-edit"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-geom",
  "filmsweet-media",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-engine"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-audio-dsp",
  "filmsweet-captions",
@@ -1934,7 +1934,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-export"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-aac",
  "filmsweet-apv",
@@ -1965,7 +1965,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-flac"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -1974,7 +1974,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-format"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-media",
  "filmsweet-project",
@@ -1987,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-frame"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-time",
@@ -1997,7 +1997,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-geom"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
  "serde",
@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-golden"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-frame",
@@ -2022,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-gpu"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-export",
@@ -2041,7 +2041,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-h264"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-h264enc"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2061,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-hevc"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2071,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-interchange"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-cfb",
  "filmsweet-color",
@@ -2088,7 +2088,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-isobmff"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-matroska"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
  "serde_json",
@@ -2107,7 +2107,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-media"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-dng",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-mpa"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-mpeg2v"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
  "rayon",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-mpegts"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
  "thiserror 2.0.21",
@@ -2149,28 +2149,28 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-mxf"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
 ]
 
 [[package]]
 name = "filmsweet-ogg"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
 ]
 
 [[package]]
 name = "filmsweet-opus"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
 ]
 
 [[package]]
 name = "filmsweet-platform"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-codecs",
@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-project"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "filmsweet-geom",
@@ -2210,7 +2210,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-prores"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "filmsweet-testkit",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-render"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-audio-dsp",
  "filmsweet-captions",
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-scopes"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "serde",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-speech"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -2267,14 +2267,14 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-testkit"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "png",
 ]
 
 [[package]]
 name = "filmsweet-text"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-color",
  "harfrust",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-time"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "proptest",
  "serde",
@@ -2294,7 +2294,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-tts"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-tts-text"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-ui-egui"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "cpu-time",
  "craft-ui",
@@ -2355,14 +2355,14 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-vp8"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "filmsweet-vp9"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-bitstream",
  "rayon",
@@ -2371,7 +2371,7 @@ dependencies = [
 
 [[package]]
 name = "filmsweet-web"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "eframe",
  "egui",
@@ -7396,7 +7396,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.8.0"
+version = "1.0.0"
 dependencies = [
  "filmsweet-testkit",
  "serde_json",
