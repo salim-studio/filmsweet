@@ -33,8 +33,15 @@ jobs:
       - name: Install wasm-bindgen CLI (must match the crate)
         run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
 
-      - name: Install wasm-opt (optional, smaller wasm)
-        run: sudo apt-get update && sudo apt-get install -y binaryen
+      # apt's binaryen is too old and corrupts wasm-bindgen's externref table
+      # ("WebAssembly.Table.grow(): failed to grow table by 4"), so use a current release.
+      - name: Install wasm-opt (modern binaryen; apt's is too old for externref tables)
+        run: |
+          curl -sSL -o /tmp/binaryen.tar.gz \
+            https://github.com/WebAssembly/binaryen/releases/download/version_125/binaryen-version_125-x86_64-linux.tar.gz
+          tar -xzf /tmp/binaryen.tar.gz -C /tmp
+          echo "/tmp/binaryen-version_125/bin" >> "$GITHUB_PATH"
+          /tmp/binaryen-version_125/bin/wasm-opt --version
 
       - name: Build the web app
         run: cargo xtask web
